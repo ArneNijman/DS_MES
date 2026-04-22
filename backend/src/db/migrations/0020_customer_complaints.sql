@@ -1,0 +1,21 @@
+CREATE TABLE "customer_complaints" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "klm_id" text UNIQUE NOT NULL,
+  "status" text DEFAULT 'open' NOT NULL,
+  "klantnaam" text,
+  "ncr_id" text,
+  "assigned_to_id" uuid REFERENCES "public"."employees"("id") ON DELETE SET NULL,
+  "assigned_to_name" text,
+  "datum" text,
+  "completed_at" text,
+  "description" text,
+  "resultaat" text,
+  "production_order" text,
+  "item_ref" text,
+  "item_name" text,
+  "created_by_name" text,
+  "stilstand_registreren" boolean DEFAULT false,
+  "created_by_id" uuid REFERENCES "public"."employees"("id") ON DELETE SET NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
