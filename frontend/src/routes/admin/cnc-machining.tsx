@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   RefreshCw,
   ChevronDown,
@@ -591,6 +591,61 @@ function ComponentBrowser() {
   )
 }
 
+// ── Herlaad bibliotheek knop ─────────────────────────────────────────────────
+
+function ReloadLibraryButton() {
+  const queryClient = useQueryClient()
+  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [result, setResult] = useState<{ items: number; assemblies: number; components: number } | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  async function handleReload() {
+    setState('loading')
+    setResult(null)
+    setErrorMsg(null)
+    try {
+      const data = await apiFetch<{ ok: boolean; items: number; assemblies: number; components: number }>(
+        '/admin/cnc/reload-tool-library',
+        { method: 'POST' },
+      )
+      setResult(data)
+      setState('success')
+      queryClient.invalidateQueries({ queryKey: ['cnc-assemblies'] })
+      queryClient.invalidateQueries({ queryKey: ['cnc-components'] })
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Herlaad mislukt')
+      setState('error')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 pb-1">
+      <button
+        onClick={handleReload}
+        disabled={state === 'loading'}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg hover:border-gray-400 disabled:opacity-60 transition-colors"
+      >
+        <RefreshCw size={13} className={cn('text-gray-400', state === 'loading' && 'animate-spin')} />
+        <span className="text-gray-600">
+          {state === 'loading' ? 'Bezig...' : 'Herlaad bibliotheek'}
+        </span>
+      </button>
+      {state === 'success' && result && (
+        <span className="text-xs text-green-600 flex items-center gap-1">
+          <CheckCircle size={12} />
+          {result.items} items · {result.assemblies} samenst. · {result.components} comp.
+        </span>
+      )}
+      {state === 'error' && errorMsg && (
+        <span className="text-xs text-red-500 flex items-center gap-1">
+          <XCircle size={12} />
+          {errorMsg}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── Tooling Library tabs (Samenstellingen / Componenten) ─────────────────────
 
 function ToolingLibraryTabs() {
@@ -599,29 +654,32 @@ function ToolingLibraryTabs() {
   return (
     <>
       {/* Sub-tab balk */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-0 bg-white border-b border-gray-200 shrink-0">
-        <button
-          onClick={() => setMode('assemblies')}
-          className={cn(
-            'px-3 py-1.5 text-sm rounded-t font-medium transition-colors border-b-2 -mb-px',
-            mode === 'assemblies'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-500 hover:text-gray-700',
-          )}
-        >
-          Samenstellingen
-        </button>
-        <button
-          onClick={() => setMode('components')}
-          className={cn(
-            'px-3 py-1.5 text-sm rounded-t font-medium transition-colors border-b-2 -mb-px',
-            mode === 'components'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-500 hover:text-gray-700',
-          )}
-        >
-          Componenten
-        </button>
+      <div className="flex items-center justify-between px-4 pt-3 pb-0 bg-white border-b border-gray-200 shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setMode('assemblies')}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded-t font-medium transition-colors border-b-2 -mb-px',
+              mode === 'assemblies'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700',
+            )}
+          >
+            Samenstellingen
+          </button>
+          <button
+            onClick={() => setMode('components')}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded-t font-medium transition-colors border-b-2 -mb-px',
+              mode === 'components'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700',
+            )}
+          >
+            Componenten
+          </button>
+        </div>
+        <ReloadLibraryButton />
       </div>
 
       {/* Inhoud */}

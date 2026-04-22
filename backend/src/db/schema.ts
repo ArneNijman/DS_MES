@@ -552,3 +552,10 @@ export const toolLibraryAssemblyComponents = pgTable('tool_library_assembly_comp
 export type ToolLibraryItem             = typeof toolLibraryItems.$inferSelect
 export type ToolLibraryAssembly         = typeof toolLibraryAssemblies.$inferSelect
 export type ToolLibraryAssemblyComponent = typeof toolLibraryAssemblyComponents.$inferSelect
+
+// ── App settings (key-value) ─────────────────────────────────────────────────
+
+export const appSettings = pgTable('app_settings', {
+  key:   text('key').primaryKey(),
+  value: text('value').notNull(),
+})

@@ -1,10 +1,18 @@
 import { FastifyInstance } from 'fastify'
 import { eq, desc, isNotNull, or, and, asc, ilike, sql, inArray } from 'drizzle-orm'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { writeFile, unlink } from 'node:fs/promises'
+import postgres from 'postgres'
 import {
   machines, cncToolEntries, cncSyncLogs,
   toolLibraryAssemblies, toolLibraryItems, toolLibraryAssemblyComponents,
+  appSettings,
 } from '../../db/schema.js'
 import { parseToolTable } from '../../cnc/toolTableParser.js'
+import { importToolLibraryFromFile } from '../../cnc/importToolLibrary.js'
 
 // Alias helpers voor dubbele join op tool_library_items
 const toolItem   = toolLibraryItems
@@ -543,6 +551,66 @@ export async function cncRoutes(fastify: FastifyInstance) {
           syncedAt:    i.syncedAt,
         })),
       })),
+    }
+  })
+
+  // ── WinTool database pad ophalen ─────────────────────────────────────────
+
+  fastify.get('/admin/cnc/wintool-path', auth, async () => {
+    const rows = await fastify.db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, 'wintool_db_path'))
+      .limit(1)
+    return { path: rows[0]?.value ?? null }
+  })
+
+  // ── WinTool database pad opslaan ──────────────────────────────────────────
+
+  fastify.put('/admin/cnc/wintool-path', auth, async (req, reply) => {
+    const { path } = req.body as { path: string }
+    if (!path || typeof path !== 'string') {
+      return reply.status(400).send({ error: 'Pad is verplicht' })
+    }
+    await fastify.db
+      .insert(appSettings)
+      .values({ key: 'wintool_db_path', value: path.trim() })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value: path.trim() } })
+    return { ok: true }
+  })
+
+  // ── WinTool bibliotheek herladen via geconfigureerd pad ───────────────────
+
+  fastify.post('/admin/cnc/reload-tool-library', auth, async (_req, reply) => {
+    // Haal geconfigureerd pad op
+    const rows = await fastify.db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, 'wintool_db_path'))
+      .limit(1)
+
+    const dbPath = rows[0]?.value
+    if (!dbPath) {
+      return reply.status(400).send({
+        error: 'Geen WinTool pad geconfigureerd. Stel het in via Admin → Dashboard.',
+      })
+    }
+
+    if (!existsSync(dbPath)) {
+      return reply.status(400).send({
+        error: `Bestand niet gevonden: ${dbPath}. Controleer of de netwerkshare gemount is.`,
+      })
+    }
+
+    const sql = postgres(process.env.DATABASE_URL!, { max: 1 })
+    try {
+      const result = await importToolLibraryFromFile(dbPath, sql)
+      return { ok: true, ...result }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Onbekende fout'
+      return reply.status(500).send({ error: `Import mislukt: ${message}` })
+    } finally {
+      await sql.end()
     }
   })
 

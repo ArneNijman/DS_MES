@@ -37,12 +37,12 @@ Maak een kopie van `.env.example` en noem het `.env`:
 Kopieer .env.example → .env
 ```
 
-Open `.env` en vul de gegevens in:
+Open `.env` in Kladblok en vul de gegevens in:
 
 ```
-BACKEND_URL=http://localhost:3000       ← adres van de MES backend
+BACKEND_URL=http://<server-ip>:8080     ← IP-adres van de Linux server (zie install.sh output)
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD="jouw_wachtwoord"        ← quotes verplicht als wachtwoord een # bevat
+ADMIN_PASSWORD="jouw_wachtwoord"        ← wachtwoord uit de install.sh output; quotes verplicht als het een # bevat
 
 TNCCMD_PATH=C:\Program Files (x86)\HEIDENHAIN\TNCremo\TNCcmd.exe
 TNCCMD_TIMEOUT_MS=30000                 ← max wachttijd per machine (milliseconden)
@@ -50,6 +50,8 @@ TNCCMD_TIMEOUT_MS=30000                 ← max wachttijd per machine (milliseco
 SYNC_INTERVAL_MIN=30                    ← automatische sync elke 30 minuten
 AGENT_PORT=3099                         ← HTTP poort voor de Sync-knop in de kiosk
 ```
+
+Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de Linux server.
 
 ### Stap 2 — Testen of de agent werkt
 
