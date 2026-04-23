@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { eq, desc, isNotNull, or, and, asc, ilike, sql, inArray } from 'drizzle-orm'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { writeFile, unlink } from 'node:fs/promises'
 import postgres from 'postgres'
@@ -205,6 +205,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
       holder_name: string | null
       holder_manufacturer: string | null
       component_count: string
+      machine_count: string
     }>(sql`
       SELECT
         a.id,
@@ -220,11 +221,13 @@ export async function cncRoutes(fastify: FastifyInstance) {
         t.manufacturer   AS tool_manufacturer,
         h.name           AS holder_name,
         h.manufacturer   AS holder_manufacturer,
-        COUNT(c.id)::text AS component_count
+        COUNT(DISTINCT c.id)::text         AS component_count,
+        COUNT(DISTINCT e.machine_id)::text AS machine_count
       FROM tool_library_assemblies a
       LEFT JOIN tool_library_items t ON a.tool_item_id    = t.id
       LEFT JOIN tool_library_items h ON a.holder_item_id  = h.id
       LEFT JOIN tool_library_assembly_components c ON c.assembly_id = a.id
+      LEFT JOIN cnc_tool_entries e ON e.name = a.nc_name
       WHERE (
         ${search ? sql`(
           a.nc_name ILIKE ${'%' + search + '%'}
@@ -253,6 +256,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
         holderName:       r.holder_name,
         holderManufacturer: r.holder_manufacturer,
         componentCount:   parseInt(r.component_count ?? '0', 10),
+        machineCount:     parseInt(r.machine_count   ?? '0', 10),
       })),
     }
   })
@@ -275,22 +279,30 @@ export async function cncRoutes(fastify: FastifyInstance) {
       tool_comment: string | null
       tool_ordering: string | null
       tool_manufacturer: string | null
+      tool_photo_url: string | null
+      tool_wisselplaat_photo_url: string | null
       holder_name: string | null
       holder_comment: string | null
       holder_ordering: string | null
       holder_manufacturer: string | null
+      holder_photo_url: string | null
+      holder_wisselplaat_photo_url: string | null
     }>(sql`
       SELECT
         a.id, a.nc_number, a.nc_name, a.comment, a.tool_length, a.preset_diameter,
-        t.name           AS tool_name,
-        t.item_category  AS tool_category,
-        t.comment        AS tool_comment,
-        t.ordering_code  AS tool_ordering,
-        t.manufacturer   AS tool_manufacturer,
-        h.name           AS holder_name,
-        h.comment        AS holder_comment,
-        h.ordering_code  AS holder_ordering,
-        h.manufacturer   AS holder_manufacturer
+        t.name                    AS tool_name,
+        t.item_category           AS tool_category,
+        t.comment                 AS tool_comment,
+        t.ordering_code           AS tool_ordering,
+        t.manufacturer            AS tool_manufacturer,
+        t.photo_url               AS tool_photo_url,
+        t.wisselplaat_photo_url   AS tool_wisselplaat_photo_url,
+        h.name                    AS holder_name,
+        h.comment                 AS holder_comment,
+        h.ordering_code           AS holder_ordering,
+        h.manufacturer            AS holder_manufacturer,
+        h.photo_url               AS holder_photo_url,
+        h.wisselplaat_photo_url   AS holder_wisselplaat_photo_url
       FROM tool_library_assemblies a
       LEFT JOIN tool_library_items t ON a.tool_item_id   = t.id
       LEFT JOIN tool_library_items h ON a.holder_item_id = h.id
@@ -306,13 +318,15 @@ export async function cncRoutes(fastify: FastifyInstance) {
     // Tussenstukken (componenten)
     const componentRows = await fastify.db
       .select({
-        position:     toolLibraryAssemblyComponents.position,
-        reach:        toolLibraryAssemblyComponents.reach,
-        name:         toolLibraryItems.name,
-        comment:      toolLibraryItems.comment,
-        orderingCode: toolLibraryItems.orderingCode,
-        manufacturer: toolLibraryItems.manufacturer,
-        itemCategory: toolLibraryItems.itemCategory,
+        position:            toolLibraryAssemblyComponents.position,
+        reach:               toolLibraryAssemblyComponents.reach,
+        name:                toolLibraryItems.name,
+        comment:             toolLibraryItems.comment,
+        orderingCode:        toolLibraryItems.orderingCode,
+        manufacturer:        toolLibraryItems.manufacturer,
+        itemCategory:        toolLibraryItems.itemCategory,
+        photoUrl:            toolLibraryItems.photoUrl,
+        wisselplaatPhotoUrl: toolLibraryItems.wisselplaatPhotoUrl,
       })
       .from(toolLibraryAssemblyComponents)
       .innerJoin(toolLibraryItems, eq(toolLibraryAssemblyComponents.itemId, toolLibraryItems.id))
@@ -347,44 +361,52 @@ export async function cncRoutes(fastify: FastifyInstance) {
       orderingCode: string | null
       manufacturer: string | null
       category: string | null
+      photoUrl: string | null
+      wisselplaatPhotoUrl: string | null
     }
 
     const components: AssemblyComponent[] = []
 
     if (a.holder_name) {
       components.push({
-        type:         'holder',
-        position:     -1,
-        name:         a.holder_name,
-        comment:      a.holder_comment,
-        orderingCode: a.holder_ordering,
-        manufacturer: a.holder_manufacturer,
-        category:     null,
+        type:                'holder',
+        position:            -1,
+        name:                a.holder_name,
+        comment:             a.holder_comment,
+        orderingCode:        a.holder_ordering,
+        manufacturer:        a.holder_manufacturer,
+        category:            null,
+        photoUrl:            a.holder_photo_url ?? null,
+        wisselplaatPhotoUrl: a.holder_wisselplaat_photo_url ?? null,
       })
     }
 
     for (const c of componentRows) {
       components.push({
-        type:         'extension',
-        position:     c.position,
-        reach:        c.reach,
-        name:         c.name,
-        comment:      c.comment,
-        orderingCode: c.orderingCode,
-        manufacturer: c.manufacturer,
-        category:     c.itemCategory,
+        type:                'extension',
+        position:            c.position,
+        reach:               c.reach,
+        name:                c.name,
+        comment:             c.comment,
+        orderingCode:        c.orderingCode,
+        manufacturer:        c.manufacturer,
+        category:            c.itemCategory,
+        photoUrl:            c.photoUrl ?? null,
+        wisselplaatPhotoUrl: c.wisselplaatPhotoUrl ?? null,
       })
     }
 
     if (a.tool_name) {
       components.push({
-        type:         'tool',
-        position:     999,
-        name:         a.tool_name,
-        comment:      a.tool_comment,
-        orderingCode: a.tool_ordering,
-        manufacturer: a.tool_manufacturer,
-        category:     a.tool_category,
+        type:                'tool',
+        position:            999,
+        name:                a.tool_name,
+        comment:             a.tool_comment,
+        orderingCode:        a.tool_ordering,
+        manufacturer:        a.tool_manufacturer,
+        category:            a.tool_category,
+        photoUrl:            a.tool_photo_url ?? null,
+        wisselplaatPhotoUrl: a.tool_wisselplaat_photo_url ?? null,
       })
     }
 
@@ -416,6 +438,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
       comment: string | null
       ordering_code: string | null
       manufacturer: string | null
+      photo_url: string | null
+      wisselplaat_photo_url: string | null
       assembly_count: string
       machine_count: string
     }>(sql`
@@ -427,6 +451,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         i.comment,
         i.ordering_code,
         i.manufacturer,
+        i.photo_url,
+        i.wisselplaat_photo_url,
         COUNT(DISTINCT agg.assembly_id)::text  AS assembly_count,
         COUNT(DISTINCT e.machine_id)::text     AS machine_count
       FROM tool_library_items i
@@ -446,15 +472,17 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
     return {
       items: rows.map(r => ({
-        id:            r.id,
-        itemType:      r.item_type,
-        itemCategory:  r.item_category,
-        name:          r.name,
-        comment:       r.comment,
-        orderingCode:  r.ordering_code,
-        manufacturer:  r.manufacturer,
-        assemblyCount: parseInt(r.assembly_count ?? '0', 10),
-        machineCount:  parseInt(r.machine_count  ?? '0', 10),
+        id:                  r.id,
+        itemType:            r.item_type,
+        itemCategory:        r.item_category,
+        name:                r.name,
+        comment:             r.comment,
+        orderingCode:        r.ordering_code,
+        manufacturer:        r.manufacturer,
+        photoUrl:            r.photo_url ?? null,
+        wisselplaatPhotoUrl: r.wisselplaat_photo_url ?? null,
+        assemblyCount:       parseInt(r.assembly_count ?? '0', 10),
+        machineCount:        parseInt(r.machine_count  ?? '0', 10),
       })),
     }
   })
@@ -532,13 +560,15 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
     return {
       item: {
-        id:           item.id,
-        itemType:     item.itemType,
-        itemCategory: item.itemCategory,
-        name:         item.name,
-        comment:      item.comment,
-        orderingCode: item.orderingCode,
-        manufacturer: item.manufacturer,
+        id:                  item.id,
+        itemType:            item.itemType,
+        itemCategory:        item.itemCategory,
+        name:                item.name,
+        comment:             item.comment,
+        orderingCode:        item.orderingCode,
+        manufacturer:        item.manufacturer,
+        photoUrl:            item.photoUrl ?? null,
+        wisselplaatPhotoUrl: item.wisselplaatPhotoUrl ?? null,
       },
       assemblies: usageRows.map(r => ({
         assemblyId: r.assembly_id,
@@ -612,6 +642,80 @@ export async function cncRoutes(fastify: FastifyInstance) {
     } finally {
       await sql.end()
     }
+  })
+
+  // ── Component foto uploaden ───────────────────────────────────────────────
+
+  fastify.post('/admin/cnc/components/:itemId/photo', auth, async (req, reply) => {
+    const { itemId } = req.params as { itemId: string }
+
+    const itemRows = await fastify.db
+      .select({ id: toolLibraryItems.id })
+      .from(toolLibraryItems)
+      .where(eq(toolLibraryItems.id, itemId))
+      .limit(1)
+    if (!itemRows.length) return reply.status(404).send({ error: 'Component niet gevonden' })
+
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const ext = extname(data.filename).toLowerCase()
+    const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+    if (!ALLOWED.has(ext)) {
+      return reply.status(400).send({ error: 'Bestandstype niet toegestaan (jpg, png, webp)' })
+    }
+
+    const filename = `cnc-component-${itemId}-${Date.now()}${ext}`
+    const dest = `/app/uploads/${filename}`
+
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) chunks.push(chunk as Buffer)
+    await writeFile(dest, Buffer.concat(chunks))
+
+    const photoUrl = `/uploads/${filename}`
+    await fastify.db
+      .update(toolLibraryItems)
+      .set({ photoUrl })
+      .where(eq(toolLibraryItems.id, itemId))
+
+    return { photoUrl }
+  })
+
+  // ── Wisselplaat foto uploaden ─────────────────────────────────────────────
+
+  fastify.post('/admin/cnc/components/:itemId/wisselplaat-photo', auth, async (req, reply) => {
+    const { itemId } = req.params as { itemId: string }
+
+    const itemRows = await fastify.db
+      .select({ id: toolLibraryItems.id })
+      .from(toolLibraryItems)
+      .where(eq(toolLibraryItems.id, itemId))
+      .limit(1)
+    if (!itemRows.length) return reply.status(404).send({ error: 'Component niet gevonden' })
+
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const ext = extname(data.filename).toLowerCase()
+    const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+    if (!ALLOWED.has(ext)) {
+      return reply.status(400).send({ error: 'Bestandstype niet toegestaan (jpg, png, webp)' })
+    }
+
+    const filename = `cnc-wisselplaat-${itemId}-${Date.now()}${ext}`
+    const dest = `/app/uploads/${filename}`
+
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) chunks.push(chunk as Buffer)
+    await writeFile(dest, Buffer.concat(chunks))
+
+    const wisselplaatPhotoUrl = `/uploads/${filename}`
+    await fastify.db
+      .update(toolLibraryItems)
+      .set({ wisselplaatPhotoUrl })
+      .where(eq(toolLibraryItems.id, itemId))
+
+    return { wisselplaatPhotoUrl }
   })
 
   // ── Upload TOOL.T bestand ─────────────────────────────────────────────────

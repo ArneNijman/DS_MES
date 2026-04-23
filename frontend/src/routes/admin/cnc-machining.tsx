@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, type ChangeEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   RefreshCw,
@@ -119,6 +119,15 @@ function formatDate(iso: string): string {
     day: '2-digit', month: '2-digit', year: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function parseWisselplaat(comment: string | null): { body: string; wisselplaat: string } | null {
+  if (!comment) return null
+  const idx = comment.indexOf('WP:')
+  if (idx === -1) return null
+  const body = comment.slice(0, idx).trim()
+  const wisselplaat = comment.slice(idx + 3).trim()
+  return body && wisselplaat ? { body, wisselplaat } : null
 }
 
 // ── Stats card ────────────────────────────────────────────────────────────────
@@ -279,6 +288,7 @@ interface AssemblyListItem {
   holderName: string | null
   holderManufacturer: string | null
   componentCount: number
+  machineCount: number
 }
 
 interface AssemblyComponent {
@@ -290,6 +300,8 @@ interface AssemblyComponent {
   orderingCode: string | null
   manufacturer: string | null
   category: string | null
+  photoUrl: string | null
+  wisselplaatPhotoUrl: string | null
 }
 
 interface AssemblyInstance {
@@ -358,6 +370,8 @@ interface ComponentListItem {
   comment: string | null
   orderingCode: string | null
   manufacturer: string | null
+  photoUrl: string | null
+  wisselplaatPhotoUrl: string | null
   assemblyCount: number
   machineCount: number
 }
@@ -379,6 +393,8 @@ interface ComponentDetail {
     comment: string | null
     orderingCode: string | null
     manufacturer: string | null
+    photoUrl: string | null
+    wisselplaatPhotoUrl: string | null
   }
   assemblies: ComponentAssemblyUsage[]
 }
@@ -404,6 +420,9 @@ function ComponentBrowser() {
   const [debouncedSearch, setDebounced] = useState('')
   const [selected, setSelected]         = useState<ComponentListItem | null>(null)
   const [expanded, setExpanded]         = useState<Set<string>>(new Set())
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadingWisselplaatPhoto, setUploadingWisselplaatPhoto] = useState(false)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 300)
@@ -412,6 +431,38 @@ function ComponentBrowser() {
 
   // Reset expanded state als een nieuw item geselecteerd wordt
   useEffect(() => { setExpanded(new Set()) }, [selected?.id])
+
+  async function handleComponentPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !selected) return
+    setUploadingPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await apiFetch(`/admin/cnc/components/${selected.id}/photo`, { method: 'POST', body: fd })
+      queryClient.invalidateQueries({ queryKey: ['cnc-components'] })
+      queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } finally {
+      setUploadingPhoto(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleWisselplaatPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !selected) return
+    setUploadingWisselplaatPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await apiFetch(`/admin/cnc/components/${selected.id}/wisselplaat-photo`, { method: 'POST', body: fd })
+      queryClient.invalidateQueries({ queryKey: ['cnc-components'] })
+      queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } finally {
+      setUploadingWisselplaatPhoto(false)
+      e.target.value = ''
+    }
+  }
 
   const { data: listData, isLoading: listLoading } = useQuery<{ items: ComponentListItem[] }>({
     queryKey: ['cnc-components', debouncedSearch],
@@ -473,13 +524,31 @@ function ComponentBrowser() {
                     selected?.id === item.id && 'bg-primary/5 border-l-2 border-primary',
                   )}
                 >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <ComponentBadge type={item.itemType} category={item.itemCategory} />
-                    <span className="text-sm font-medium text-gray-800 truncate">{item.name}</span>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    {item.photoUrl && (
+                      <div className="rounded overflow-hidden shrink-0" style={{ width: 32, height: 32, minWidth: 32, maxWidth: 32, maxHeight: 32 }}>
+                        <img src={item.photoUrl} alt="" style={{ width: 32, height: 32, objectFit: 'contain', display: 'block' }} />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <ComponentBadge type={item.itemType} category={item.itemCategory} />
+                        <span className="text-sm font-medium text-gray-800 truncate">{item.name}</span>
+                      </div>
+                      {(() => {
+                        const wp = parseWisselplaat(item.comment)
+                        if (wp) return (
+                          <div className="text-xs text-gray-400 truncate">
+                            {wp.body} <span className="text-gray-300 mx-0.5">·</span> WP: {wp.wisselplaat}
+                          </div>
+                        )
+                        if (item.comment) return (
+                          <div className="text-xs text-gray-400 truncate">{item.comment}</div>
+                        )
+                        return null
+                      })()}
+                    </div>
                   </div>
-                  {item.comment && (
-                    <div className="text-xs text-gray-400 truncate">{item.comment}</div>
-                  )}
                   <div className="text-xs text-gray-300 mt-0.5">
                     {item.assemblyCount > 0
                       ? `${item.assemblyCount} samenst.${item.machineCount > 0 ? ` · ${item.machineCount} machine${item.machineCount !== 1 ? 's' : ''}` : ''}`
@@ -515,13 +584,58 @@ function ComponentBrowser() {
                 <ComponentBadge type={detail.item.itemType} category={detail.item.itemCategory} />
                 <h2 className="text-lg font-semibold text-gray-900">{detail.item.name}</h2>
               </div>
-              {detail.item.comment && (
-                <p className="text-sm text-gray-500 mt-0.5">{detail.item.comment}</p>
-              )}
+              {(() => {
+                const wp = parseWisselplaat(detail.item.comment)
+                if (wp) return (
+                  <div className="text-sm text-gray-500 mt-1 space-y-0.5">
+                    <p><span className="font-medium">Body:</span> {wp.body}</p>
+                    <p><span className="font-medium">WP:</span> {wp.wisselplaat}</p>
+                  </div>
+                )
+                if (detail.item.comment) return (
+                  <p className="text-sm text-gray-500 mt-0.5">{detail.item.comment}</p>
+                )
+                return null
+              })()}
               <div className="flex gap-4 mt-1.5 text-xs text-gray-400 flex-wrap">
                 {detail.item.manufacturer && <span>{detail.item.manufacturer}</span>}
                 {detail.item.orderingCode  && <span className="font-mono">{detail.item.orderingCode}</span>}
               </div>
+            </div>
+
+            {/* Foto */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-start gap-6">
+              {/* Freeslichaam foto */}
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs font-medium text-gray-500">Freeslichaam</span>
+                <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
+                  {detail.item.photoUrl
+                    ? <img src={detail.item.photoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
+                    : <span className="text-xs text-gray-300">Geen foto</span>
+                  }
+                </div>
+                <label className="cursor-pointer text-xs text-gray-400 hover:text-primary border border-dashed border-gray-300 rounded px-2 py-1 transition-colors">
+                  <input type="file" accept="image/*" className="hidden" onChange={handleComponentPhotoUpload} />
+                  {uploadingPhoto ? 'Bezig...' : (detail.item.photoUrl ? 'Wijzigen' : 'Uploaden')}
+                </label>
+              </div>
+
+              {/* Wisselplaat foto — alleen tonen als comment WP: bevat */}
+              {parseWisselplaat(detail.item.comment) !== null && (
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-xs font-medium text-gray-500">Wisselplaat</span>
+                  <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
+                    {detail.item.wisselplaatPhotoUrl
+                      ? <img src={detail.item.wisselplaatPhotoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
+                      : <span className="text-xs text-gray-300">Geen foto</span>
+                    }
+                  </div>
+                  <label className="cursor-pointer text-xs text-gray-400 hover:text-primary border border-dashed border-gray-300 rounded px-2 py-1 transition-colors">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleWisselplaatPhotoUpload} />
+                    {uploadingWisselplaatPhoto ? 'Bezig...' : (detail.item.wisselplaatPhotoUrl ? 'Wijzigen' : 'Uploaden')}
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Samenstellingen */}
@@ -766,6 +880,11 @@ function AssemblyBrowser() {
                     {a.holderName && (
                       <div className="text-xs text-gray-300 truncate">{a.holderName}</div>
                     )}
+                    <div className="text-xs text-gray-300 mt-0.5">
+                      {a.machineCount > 0
+                        ? `${a.machineCount} machine${a.machineCount !== 1 ? 's' : ''}`
+                        : 'Niet in gebruik'}
+                    </div>
                   </div>
                   {a.componentCount > 0 && (
                     <span className="text-xs text-gray-300 shrink-0 mt-0.5">+{a.componentCount}</span>
@@ -828,14 +947,42 @@ function AssemblyBrowser() {
                       <div className="flex items-center gap-1 mt-0.5 shrink-0">
                         <span className="text-xs text-gray-300 w-5 text-right">{i + 1}</span>
                       </div>
+                      <div className="flex gap-1 shrink-0">
+                        {(c.photoUrl || c.wisselplaatPhotoUrl) ? (
+                          <>
+                            {c.photoUrl && (
+                              <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }}>
+                                <img src={c.photoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
+                              </div>
+                            )}
+                            {c.wisselplaatPhotoUrl && (
+                              <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }}>
+                                <img src={c.wisselplaatPhotoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }} />
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <ComponentBadge type={c.type} category={c.category} />
                           <span className="text-sm font-medium text-gray-800 truncate">{c.name}</span>
                         </div>
-                        {c.comment && (
-                          <div className="text-xs text-gray-500 mt-0.5 truncate">{c.comment}</div>
-                        )}
+                        {(() => {
+                          const wp = parseWisselplaat(c.comment)
+                          if (wp) return (
+                            <div className="text-xs text-gray-500 mt-0.5 space-y-0.5">
+                              <div><span className="font-medium">Body:</span> {wp.body}</div>
+                              <div><span className="font-medium">WP:</span> {wp.wisselplaat}</div>
+                            </div>
+                          )
+                          if (c.comment) return (
+                            <div className="text-xs text-gray-500 mt-0.5 truncate">{c.comment}</div>
+                          )
+                          return null
+                        })()}
                         <div className="flex gap-3 mt-1 text-xs text-gray-400 flex-wrap">
                           {c.manufacturer && <span>{c.manufacturer}</span>}
                           {c.orderingCode && <span className="font-mono">{c.orderingCode}</span>}

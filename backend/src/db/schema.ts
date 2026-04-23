@@ -526,6 +526,8 @@ export const toolLibraryItems = pgTable('tool_library_items', {
   comment:       text('comment'),
   orderingCode:  text('ordering_code'),
   manufacturer:  text('manufacturer'),
+  photoUrl:            text('photo_url'),
+  wisselplaatPhotoUrl: text('wisselplaat_photo_url'),
   importedAt:    timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
 })
 

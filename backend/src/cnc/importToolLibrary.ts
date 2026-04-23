@@ -81,13 +81,12 @@ export async function importToolLibraryFromFile(
 
     sqlite.close()
 
-    // ── Stap 2: Wis bestaande library data ───────────────────────────────────
+    // ── Stap 2: Wis samenstellingen (items worden bewaard via upsert) ──────────
 
-    await sql`DELETE FROM tool_library_assembly_components`
+    // Cascade verwijdert ook tool_library_assembly_components automatisch
     await sql`DELETE FROM tool_library_assemblies`
-    await sql`DELETE FROM tool_library_items`
 
-    // ── Stap 3: Importeer items ───────────────────────────────────────────────
+    // ── Stap 3: Importeer items via upsert (photo_url blijft behouden) ─────────
 
     const holderIdMap    = new Map<number, string>()
     const extensionIdMap = new Map<number, string>()
@@ -104,7 +103,16 @@ export async function importToolLibraryFromFile(
         manufacturer:  str(h.manufacturer),
       }))
       const inserted = await sql<{ id: string; source_id: number }[]>`
-        INSERT INTO tool_library_items ${sql(rows)} RETURNING id, source_id
+        INSERT INTO tool_library_items ${sql(rows)}
+        ON CONFLICT (source_id, item_type)
+        DO UPDATE SET
+          name          = EXCLUDED.name,
+          item_category = EXCLUDED.item_category,
+          comment       = EXCLUDED.comment,
+          ordering_code = EXCLUDED.ordering_code,
+          manufacturer  = EXCLUDED.manufacturer,
+          imported_at   = now()
+        RETURNING id, source_id
       `
       for (const row of inserted) holderIdMap.set(row.source_id, row.id)
     }
@@ -120,7 +128,16 @@ export async function importToolLibraryFromFile(
         manufacturer:  str(e.manufacturer),
       }))
       const inserted = await sql<{ id: string; source_id: number }[]>`
-        INSERT INTO tool_library_items ${sql(rows)} RETURNING id, source_id
+        INSERT INTO tool_library_items ${sql(rows)}
+        ON CONFLICT (source_id, item_type)
+        DO UPDATE SET
+          name          = EXCLUDED.name,
+          item_category = EXCLUDED.item_category,
+          comment       = EXCLUDED.comment,
+          ordering_code = EXCLUDED.ordering_code,
+          manufacturer  = EXCLUDED.manufacturer,
+          imported_at   = now()
+        RETURNING id, source_id
       `
       for (const row of inserted) extensionIdMap.set(row.source_id, row.id)
     }
@@ -136,9 +153,39 @@ export async function importToolLibraryFromFile(
         manufacturer:  str(t.manufacturer),
       }))
       const inserted = await sql<{ id: string; source_id: number }[]>`
-        INSERT INTO tool_library_items ${sql(rows)} RETURNING id, source_id
+        INSERT INTO tool_library_items ${sql(rows)}
+        ON CONFLICT (source_id, item_type)
+        DO UPDATE SET
+          name          = EXCLUDED.name,
+          item_category = EXCLUDED.item_category,
+          comment       = EXCLUDED.comment,
+          ordering_code = EXCLUDED.ordering_code,
+          manufacturer  = EXCLUDED.manufacturer,
+          imported_at   = now()
+        RETURNING id, source_id
       `
       for (const row of inserted) toolIdMap.set(row.source_id, row.id)
+    }
+
+    // Verwijder items die niet meer in WinTool voorkomen
+    const holderSourceIds    = holders.map(h => Number(h.id))
+    const extensionSourceIds = extensions.map(e => Number(e.id))
+    const toolSourceIds      = tools.map(t => Number(t.id))
+
+    if (holderSourceIds.length > 0) {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'holder' AND source_id != ALL(${holderSourceIds})`
+    } else {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'holder'`
+    }
+    if (extensionSourceIds.length > 0) {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'extension' AND source_id != ALL(${extensionSourceIds})`
+    } else {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'extension'`
+    }
+    if (toolSourceIds.length > 0) {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'tool' AND source_id != ALL(${toolSourceIds})`
+    } else {
+      await sql`DELETE FROM tool_library_items WHERE item_type = 'tool'`
     }
 
     const totalItems = holderIdMap.size + extensionIdMap.size + toolIdMap.size
