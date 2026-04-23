@@ -372,6 +372,8 @@ interface ComponentListItem {
   manufacturer: string | null
   photoUrl: string | null
   wisselplaatPhotoUrl: string | null
+  schroefOrderingCode: string | null
+  schroefPhotoUrl: string | null
   assemblyCount: number
   machineCount: number
 }
@@ -395,6 +397,8 @@ interface ComponentDetail {
     manufacturer: string | null
     photoUrl: string | null
     wisselplaatPhotoUrl: string | null
+    schroefOrderingCode: string | null
+    schroefPhotoUrl: string | null
   }
   assemblies: ComponentAssemblyUsage[]
 }
@@ -422,6 +426,9 @@ function ComponentBrowser() {
   const [expanded, setExpanded]         = useState<Set<string>>(new Set())
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingWisselplaatPhoto, setUploadingWisselplaatPhoto] = useState(false)
+  const [uploadingSchroefPhoto, setUploadingSchroefPhoto] = useState(false)
+  const [schroefCode, setSchroefCode] = useState('')
+  const [savingSchroef, setSavingSchroef] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -431,6 +438,11 @@ function ComponentBrowser() {
 
   // Reset expanded state als een nieuw item geselecteerd wordt
   useEffect(() => { setExpanded(new Set()) }, [selected?.id])
+
+  // Sync schroef artikelnummer met detail
+  useEffect(() => {
+    setSchroefCode(detail?.item.schroefOrderingCode ?? '')
+  }, [detail?.item.schroefOrderingCode])
 
   async function handleComponentPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -461,6 +473,36 @@ function ComponentBrowser() {
     } finally {
       setUploadingWisselplaatPhoto(false)
       e.target.value = ''
+    }
+  }
+
+  async function handleSchroefPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !selected) return
+    setUploadingSchroefPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await apiFetch(`/admin/cnc/components/${selected.id}/schroef-photo`, { method: 'POST', body: fd })
+      queryClient.invalidateQueries({ queryKey: ['cnc-components'] })
+      queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } finally {
+      setUploadingSchroefPhoto(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleSchroefSave() {
+    if (!selected) return
+    setSavingSchroef(true)
+    try {
+      await apiFetch(`/admin/cnc/components/${selected.id}/schroef`, {
+        method: 'PUT',
+        body: JSON.stringify({ orderingCode: schroefCode || null }),
+      })
+      queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } finally {
+      setSavingSchroef(false)
     }
   }
 
@@ -637,6 +679,50 @@ function ComponentBrowser() {
                 </div>
               )}
             </div>
+
+            {/* Schroef — alleen tonen als comment WP: bevat */}
+            {parseWisselplaat(detail.item.comment) !== null && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Schroef</p>
+                <div className="flex items-start gap-6">
+                  {/* Foto */}
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
+                      {detail.item.schroefPhotoUrl
+                        ? <img src={detail.item.schroefPhotoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
+                        : <span className="text-xs text-gray-300">Geen foto</span>
+                      }
+                    </div>
+                    <label className="cursor-pointer text-xs text-gray-400 hover:text-primary border border-dashed border-gray-300 rounded px-2 py-1 transition-colors">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleSchroefPhotoUpload} />
+                      {uploadingSchroefPhoto ? 'Bezig...' : (detail.item.schroefPhotoUrl ? 'Wijzigen' : 'Uploaden')}
+                    </label>
+                  </div>
+
+                  {/* Artikelnummer */}
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">Artikelnummer</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={schroefCode}
+                        onChange={e => setSchroefCode(e.target.value)}
+                        placeholder="bijv. T15MH"
+                        className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        onKeyDown={e => e.key === 'Enter' && handleSchroefSave()}
+                      />
+                      <button
+                        onClick={handleSchroefSave}
+                        disabled={savingSchroef}
+                        className="px-3 py-1.5 text-sm bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        {savingSchroef ? '...' : 'Opslaan'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Samenstellingen */}
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">

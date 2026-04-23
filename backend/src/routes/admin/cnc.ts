@@ -440,6 +440,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
       manufacturer: string | null
       photo_url: string | null
       wisselplaat_photo_url: string | null
+      schroef_ordering_code: string | null
+      schroef_photo_url: string | null
       assembly_count: string
       machine_count: string
     }>(sql`
@@ -453,6 +455,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         i.manufacturer,
         i.photo_url,
         i.wisselplaat_photo_url,
+        i.schroef_ordering_code,
+        i.schroef_photo_url,
         COUNT(DISTINCT agg.assembly_id)::text  AS assembly_count,
         COUNT(DISTINCT e.machine_id)::text     AS machine_count
       FROM tool_library_items i
@@ -481,6 +485,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         manufacturer:        r.manufacturer,
         photoUrl:            r.photo_url ?? null,
         wisselplaatPhotoUrl: r.wisselplaat_photo_url ?? null,
+        schroefOrderingCode: r.schroef_ordering_code ?? null,
+        schroefPhotoUrl:     r.schroef_photo_url     ?? null,
         assemblyCount:       parseInt(r.assembly_count ?? '0', 10),
         machineCount:        parseInt(r.machine_count  ?? '0', 10),
       })),
@@ -567,8 +573,10 @@ export async function cncRoutes(fastify: FastifyInstance) {
         comment:             item.comment,
         orderingCode:        item.orderingCode,
         manufacturer:        item.manufacturer,
-        photoUrl:            item.photoUrl ?? null,
-        wisselplaatPhotoUrl: item.wisselplaatPhotoUrl ?? null,
+        photoUrl:            item.photoUrl            ?? null,
+        wisselplaatPhotoUrl: item.wisselplaatPhotoUrl  ?? null,
+        schroefOrderingCode: item.schroefOrderingCode  ?? null,
+        schroefPhotoUrl:     item.schroefPhotoUrl      ?? null,
       },
       assemblies: usageRows.map(r => ({
         assemblyId: r.assembly_id,
@@ -716,6 +724,64 @@ export async function cncRoutes(fastify: FastifyInstance) {
       .where(eq(toolLibraryItems.id, itemId))
 
     return { wisselplaatPhotoUrl }
+  })
+
+  // ── Schroef artikelnummer opslaan ────────────────────────────────────────
+
+  fastify.put('/admin/cnc/components/:itemId/schroef', auth, async (req, reply) => {
+    const { itemId } = req.params as { itemId: string }
+    const { orderingCode } = req.body as { orderingCode: string | null }
+
+    const itemRows = await fastify.db
+      .select({ id: toolLibraryItems.id })
+      .from(toolLibraryItems)
+      .where(eq(toolLibraryItems.id, itemId))
+      .limit(1)
+    if (!itemRows.length) return reply.status(404).send({ error: 'Component niet gevonden' })
+
+    await fastify.db
+      .update(toolLibraryItems)
+      .set({ schroefOrderingCode: orderingCode ?? null })
+      .where(eq(toolLibraryItems.id, itemId))
+
+    return { ok: true }
+  })
+
+  // ── Schroef foto uploaden ─────────────────────────────────────────────────
+
+  fastify.post('/admin/cnc/components/:itemId/schroef-photo', auth, async (req, reply) => {
+    const { itemId } = req.params as { itemId: string }
+
+    const itemRows = await fastify.db
+      .select({ id: toolLibraryItems.id })
+      .from(toolLibraryItems)
+      .where(eq(toolLibraryItems.id, itemId))
+      .limit(1)
+    if (!itemRows.length) return reply.status(404).send({ error: 'Component niet gevonden' })
+
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const ext = extname(data.filename).toLowerCase()
+    const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+    if (!ALLOWED.has(ext)) {
+      return reply.status(400).send({ error: 'Bestandstype niet toegestaan (jpg, png, webp)' })
+    }
+
+    const filename = `cnc-schroef-${itemId}-${Date.now()}${ext}`
+    const dest = `/app/uploads/${filename}`
+
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) chunks.push(chunk as Buffer)
+    await writeFile(dest, Buffer.concat(chunks))
+
+    const schroefPhotoUrl = `/uploads/${filename}`
+    await fastify.db
+      .update(toolLibraryItems)
+      .set({ schroefPhotoUrl })
+      .where(eq(toolLibraryItems.id, itemId))
+
+    return { schroefPhotoUrl }
   })
 
   // ── Upload TOOL.T bestand ─────────────────────────────────────────────────

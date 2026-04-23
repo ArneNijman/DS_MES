@@ -528,6 +528,8 @@ export const toolLibraryItems = pgTable('tool_library_items', {
   manufacturer:  text('manufacturer'),
   photoUrl:            text('photo_url'),
   wisselplaatPhotoUrl: text('wisselplaat_photo_url'),
+  schroefOrderingCode: text('schroef_ordering_code'),
+  schroefPhotoUrl:     text('schroef_photo_url'),
   importedAt:    timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
