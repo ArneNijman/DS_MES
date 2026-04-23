@@ -134,6 +134,13 @@
       "when": 1778900000000,
       "tag": "0028_cnc_tool_name_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1779000000000,
+      "tag": "0034_tooling_articles",
+      "breakpoints": true
     }
   ]
 }

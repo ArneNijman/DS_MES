@@ -302,6 +302,8 @@ interface AssemblyComponent {
   category: string | null
   photoUrl: string | null
   wisselplaatPhotoUrl: string | null
+  schroefOrderingCode: string | null
+  schroefPhotoUrl: string | null
 }
 
 interface AssemblyInstance {
@@ -344,20 +346,83 @@ function componentLabel(type: string, category: string | null): string {
   return 'Gereedschap'
 }
 
-function ComponentBadge({ type, category }: { type: string; category: string | null }) {
+function componentBadgeColor(type: string, category: string | null): string {
   const label = componentLabel(type, category)
-  const color =
-    type === 'holder'    ? 'bg-blue-100 text-blue-700' :
-    type === 'extension' ? 'bg-gray-100 text-gray-600' :
-    label === 'Frees'    ? 'bg-green-100 text-green-700' :
-    label === 'Boor'     ? 'bg-orange-100 text-orange-700' :
-    label === 'Tap'      ? 'bg-purple-100 text-purple-700' :
-    'bg-gray-100 text-gray-600'
+  return type === 'holder'    ? 'bg-blue-100 text-blue-700' :
+         type === 'extension' ? 'bg-gray-100 text-gray-600' :
+         label === 'Frees'    ? 'bg-green-100 text-green-700' :
+         label === 'Boor'     ? 'bg-orange-100 text-orange-700' :
+         label === 'Tap'      ? 'bg-purple-100 text-purple-700' :
+         'bg-gray-100 text-gray-600'
+}
+
+function ComponentBadge({ type, category }: { type: string; category: string | null }) {
   return (
-    <span className={cn('inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide', color)}>
-      {label}
+    <span className={cn('inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide', componentBadgeColor(type, category))}>
+      {componentLabel(type, category)}
     </span>
   )
+}
+
+// ── Assembly display-rijen (explodeert WP-componenten naar sub-rijen) ─────────
+
+interface DisplayRow {
+  label: string
+  labelColor: string
+  name: string
+  photoUrl: string | null
+  orderingCode: string | null
+  manufacturer: string | null
+  reach: number | null
+}
+
+function expandComponents(components: AssemblyComponent[]): DisplayRow[] {
+  const rows: DisplayRow[] = []
+  for (const c of components) {
+    const wp = parseWisselplaat(c.comment)
+    if (wp) {
+      rows.push({
+        label:        componentLabel(c.type, c.category),
+        labelColor:   componentBadgeColor(c.type, c.category),
+        name:         wp.body,
+        photoUrl:     c.photoUrl,
+        orderingCode: c.orderingCode,
+        manufacturer: c.manufacturer,
+        reach:        c.reach,
+      })
+      rows.push({
+        label:        'Wisselplaat',
+        labelColor:   'bg-yellow-100 text-yellow-700',
+        name:         wp.wisselplaat,
+        photoUrl:     c.wisselplaatPhotoUrl,
+        orderingCode: null,
+        manufacturer: null,
+        reach:        null,
+      })
+      if (c.schroefOrderingCode || c.schroefPhotoUrl) {
+        rows.push({
+          label:        'Schroef',
+          labelColor:   'bg-gray-100 text-gray-500',
+          name:         c.schroefOrderingCode ?? '—',
+          photoUrl:     c.schroefPhotoUrl,
+          orderingCode: null,
+          manufacturer: null,
+          reach:        null,
+        })
+      }
+    } else {
+      rows.push({
+        label:        componentLabel(c.type, c.category),
+        labelColor:   componentBadgeColor(c.type, c.category),
+        name:         c.name,
+        photoUrl:     c.photoUrl,
+        orderingCode: c.orderingCode,
+        manufacturer: c.manufacturer,
+        reach:        c.reach,
+      })
+    }
+  }
+  return rows
 }
 
 // ── Component (where-used) types ─────────────────────────────────────────────
@@ -429,6 +494,7 @@ function ComponentBrowser() {
   const [uploadingSchroefPhoto, setUploadingSchroefPhoto] = useState(false)
   const [schroefCode, setSchroefCode] = useState('')
   const [savingSchroef, setSavingSchroef] = useState(false)
+  const [schroefError, setSchroefError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -436,13 +502,8 @@ function ComponentBrowser() {
     return () => clearTimeout(t)
   }, [search])
 
-  // Reset expanded state als een nieuw item geselecteerd wordt
-  useEffect(() => { setExpanded(new Set()) }, [selected?.id])
-
-  // Sync schroef artikelnummer met detail
-  useEffect(() => {
-    setSchroefCode(detail?.item.schroefOrderingCode ?? '')
-  }, [detail?.item.schroefOrderingCode])
+  // Reset expanded state en foutmelding als een nieuw item geselecteerd wordt
+  useEffect(() => { setExpanded(new Set()); setSchroefError(null) }, [selected?.id])
 
   async function handleComponentPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -480,12 +541,20 @@ function ComponentBrowser() {
     const file = e.target.files?.[0]
     if (!file || !selected) return
     setUploadingSchroefPhoto(true)
+    setSchroefError(null)
     try {
       const fd = new FormData()
       fd.append('file', file)
       await apiFetch(`/admin/cnc/components/${selected.id}/schroef-photo`, { method: 'POST', body: fd })
       queryClient.invalidateQueries({ queryKey: ['cnc-components'] })
       queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload mislukt'
+      setSchroefError(
+        msg.includes('rechten') || msg.includes('sessie') || msg.includes('401') || msg.includes('403')
+          ? `${msg} — log opnieuw in als admin`
+          : msg
+      )
     } finally {
       setUploadingSchroefPhoto(false)
       e.target.value = ''
@@ -495,12 +564,20 @@ function ComponentBrowser() {
   async function handleSchroefSave() {
     if (!selected) return
     setSavingSchroef(true)
+    setSchroefError(null)
     try {
       await apiFetch(`/admin/cnc/components/${selected.id}/schroef`, {
         method: 'PUT',
         body: JSON.stringify({ orderingCode: schroefCode || null }),
       })
       queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Opslaan mislukt'
+      setSchroefError(
+        msg.includes('rechten') || msg.includes('sessie') || msg.includes('401') || msg.includes('403')
+          ? `${msg} — log opnieuw in als admin`
+          : msg
+      )
     } finally {
       setSavingSchroef(false)
     }
@@ -520,6 +597,11 @@ function ComponentBrowser() {
     queryFn: () => apiFetch(`/kiosk/cnc/components/${selected!.id}`),
     enabled: !!selected,
   })
+
+  // Sync schroef artikelnummer met detail (staat ná de useQuery declaratie)
+  useEffect(() => {
+    setSchroefCode(detail?.item.schroefOrderingCode ?? '')
+  }, [detail?.item.schroefOrderingCode])
 
   const items = listData?.items ?? []
 
@@ -721,6 +803,9 @@ function ComponentBrowser() {
                     </div>
                   </div>
                 </div>
+                {schroefError && (
+                  <p className="text-xs text-red-500 mt-2">{schroefError}</p>
+                )}
               </div>
             )}
 
@@ -1028,51 +1113,29 @@ function AssemblyBrowser() {
                 <div className="px-4 py-6 text-sm text-gray-400 text-center">Geen componenten geregistreerd</div>
               ) : (
                 <div className="divide-y divide-gray-50">
-                  {detail.components.map((c, i) => (
+                  {expandComponents(detail.components).map((row, i) => (
                     <div key={i} className="flex items-start gap-3 px-4 py-3">
-                      <div className="flex items-center gap-1 mt-0.5 shrink-0">
-                        <span className="text-xs text-gray-300 w-5 text-right">{i + 1}</span>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        {(c.photoUrl || c.wisselplaatPhotoUrl) ? (
-                          <>
-                            {c.photoUrl && (
-                              <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }}>
-                                <img src={c.photoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
-                              </div>
-                            )}
-                            {c.wisselplaatPhotoUrl && (
-                              <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }}>
-                                <img src={c.wisselplaatPhotoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
-                              </div>
-                            )}
-                          </>
+                      <span className="text-xs text-gray-300 w-5 text-right shrink-0 mt-1">{i + 1}</span>
+                      <div className="shrink-0">
+                        {row.photoUrl ? (
+                          <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 80, height: 80 }}>
+                            <img src={row.photoUrl} alt="" style={{ width: 80, height: 80, objectFit: 'contain', display: 'block' }} />
+                          </div>
                         ) : (
-                          <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 100, height: 100, minWidth: 100 }} />
+                          <div className="rounded bg-gray-50 border border-gray-100" style={{ width: 80, height: 80 }} />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <ComponentBadge type={c.type} category={c.category} />
-                          <span className="text-sm font-medium text-gray-800 truncate">{c.name}</span>
+                          <span className={cn('inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide', row.labelColor)}>
+                            {row.label}
+                          </span>
+                          <span className="text-sm font-medium text-gray-800 truncate">{row.name}</span>
                         </div>
-                        {(() => {
-                          const wp = parseWisselplaat(c.comment)
-                          if (wp) return (
-                            <div className="text-xs text-gray-500 mt-0.5 space-y-0.5">
-                              <div><span className="font-medium">Body:</span> {wp.body}</div>
-                              <div><span className="font-medium">WP:</span> {wp.wisselplaat}</div>
-                            </div>
-                          )
-                          if (c.comment) return (
-                            <div className="text-xs text-gray-500 mt-0.5 truncate">{c.comment}</div>
-                          )
-                          return null
-                        })()}
-                        <div className="flex gap-3 mt-1 text-xs text-gray-400 flex-wrap">
-                          {c.manufacturer && <span>{c.manufacturer}</span>}
-                          {c.orderingCode && <span className="font-mono">{c.orderingCode}</span>}
-                          {c.reach != null && <span>Bereik: {c.reach.toFixed(1)} mm</span>}
+                        <div className="flex gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
+                          {row.manufacturer && <span>{row.manufacturer}</span>}
+                          {row.orderingCode && <span className="font-mono">{row.orderingCode}</span>}
+                          {row.reach != null && <span>Bereik: {row.reach.toFixed(1)} mm</span>}
                         </div>
                       </div>
                     </div>

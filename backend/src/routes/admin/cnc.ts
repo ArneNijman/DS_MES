@@ -13,6 +13,7 @@ import {
 } from '../../db/schema.js'
 import { parseToolTable } from '../../cnc/toolTableParser.js'
 import { importToolLibraryFromFile } from '../../cnc/importToolLibrary.js'
+import { syncToolingArticles } from '../../cnc/syncToolingArticles.js'
 
 // Alias helpers voor dubbele join op tool_library_items
 const toolItem   = toolLibraryItems
@@ -281,12 +282,16 @@ export async function cncRoutes(fastify: FastifyInstance) {
       tool_manufacturer: string | null
       tool_photo_url: string | null
       tool_wisselplaat_photo_url: string | null
+      tool_schroef_ordering_code: string | null
+      tool_schroef_photo_url: string | null
       holder_name: string | null
       holder_comment: string | null
       holder_ordering: string | null
       holder_manufacturer: string | null
       holder_photo_url: string | null
       holder_wisselplaat_photo_url: string | null
+      holder_schroef_ordering_code: string | null
+      holder_schroef_photo_url: string | null
     }>(sql`
       SELECT
         a.id, a.nc_number, a.nc_name, a.comment, a.tool_length, a.preset_diameter,
@@ -297,12 +302,16 @@ export async function cncRoutes(fastify: FastifyInstance) {
         t.manufacturer            AS tool_manufacturer,
         t.photo_url               AS tool_photo_url,
         t.wisselplaat_photo_url   AS tool_wisselplaat_photo_url,
+        t.schroef_ordering_code   AS tool_schroef_ordering_code,
+        t.schroef_photo_url       AS tool_schroef_photo_url,
         h.name                    AS holder_name,
         h.comment                 AS holder_comment,
         h.ordering_code           AS holder_ordering,
         h.manufacturer            AS holder_manufacturer,
         h.photo_url               AS holder_photo_url,
-        h.wisselplaat_photo_url   AS holder_wisselplaat_photo_url
+        h.wisselplaat_photo_url   AS holder_wisselplaat_photo_url,
+        h.schroef_ordering_code   AS holder_schroef_ordering_code,
+        h.schroef_photo_url       AS holder_schroef_photo_url
       FROM tool_library_assemblies a
       LEFT JOIN tool_library_items t ON a.tool_item_id   = t.id
       LEFT JOIN tool_library_items h ON a.holder_item_id = h.id
@@ -327,6 +336,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         itemCategory:        toolLibraryItems.itemCategory,
         photoUrl:            toolLibraryItems.photoUrl,
         wisselplaatPhotoUrl: toolLibraryItems.wisselplaatPhotoUrl,
+        schroefOrderingCode: toolLibraryItems.schroefOrderingCode,
+        schroefPhotoUrl:     toolLibraryItems.schroefPhotoUrl,
       })
       .from(toolLibraryAssemblyComponents)
       .innerJoin(toolLibraryItems, eq(toolLibraryAssemblyComponents.itemId, toolLibraryItems.id))
@@ -363,6 +374,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
       category: string | null
       photoUrl: string | null
       wisselplaatPhotoUrl: string | null
+      schroefOrderingCode: string | null
+      schroefPhotoUrl: string | null
     }
 
     const components: AssemblyComponent[] = []
@@ -378,6 +391,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         category:            null,
         photoUrl:            a.holder_photo_url ?? null,
         wisselplaatPhotoUrl: a.holder_wisselplaat_photo_url ?? null,
+        schroefOrderingCode: a.holder_schroef_ordering_code ?? null,
+        schroefPhotoUrl:     a.holder_schroef_photo_url ?? null,
       })
     }
 
@@ -393,6 +408,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         category:            c.itemCategory,
         photoUrl:            c.photoUrl ?? null,
         wisselplaatPhotoUrl: c.wisselplaatPhotoUrl ?? null,
+        schroefOrderingCode: c.schroefOrderingCode ?? null,
+        schroefPhotoUrl:     c.schroefPhotoUrl ?? null,
       })
     }
 
@@ -407,6 +424,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
         category:            a.tool_category,
         photoUrl:            a.tool_photo_url ?? null,
         wisselplaatPhotoUrl: a.tool_wisselplaat_photo_url ?? null,
+        schroefOrderingCode: a.tool_schroef_ordering_code ?? null,
+        schroefPhotoUrl:     a.tool_schroef_photo_url ?? null,
       })
     }
 
@@ -643,6 +662,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
     const sql = postgres(process.env.DATABASE_URL!, { max: 1 })
     try {
       const result = await importToolLibraryFromFile(dbPath, sql)
+      await syncToolingArticles(fastify.db)
       return { ok: true, ...result }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Onbekende fout'
@@ -728,7 +748,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
   // ── Schroef artikelnummer opslaan ────────────────────────────────────────
 
-  fastify.put('/admin/cnc/components/:itemId/schroef', auth, async (req, reply) => {
+  fastify.put('/admin/cnc/components/:itemId/schroef', authRead, async (req, reply) => {
     const { itemId } = req.params as { itemId: string }
     const { orderingCode } = req.body as { orderingCode: string | null }
 
@@ -749,7 +769,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
   // ── Schroef foto uploaden ─────────────────────────────────────────────────
 
-  fastify.post('/admin/cnc/components/:itemId/schroef-photo', auth, async (req, reply) => {
+  fastify.post('/admin/cnc/components/:itemId/schroef-photo', authRead, async (req, reply) => {
     const { itemId } = req.params as { itemId: string }
 
     const itemRows = await fastify.db

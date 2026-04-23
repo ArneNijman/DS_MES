@@ -24,6 +24,8 @@ import { kioskPreventiefRoutes } from './routes/kiosk/preventief.js'
 import { kioskKlantmeldingRoutes } from './routes/kiosk/klantmelding.js'
 import { kioskMeetmiddelenRoutes } from './routes/kiosk/meetmiddelen.js'
 import { cncRoutes } from './routes/admin/cnc.js'
+import { kioskToolingRoutes } from './routes/kiosk/tooling.js'
+import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
 import { validateEncryptionKey } from './utils/crypto.js'
 import { migrateClientSecrets } from './utils/migrate-secrets.js'
@@ -52,6 +54,7 @@ async function main() {
   await seedAdminUser(fastify)
   await seedAdminEmployee(fastify)
   await migrateClientSecrets(fastify)
+  await syncToolingArticles(fastify.db)
   startPolling(fastify)
   startMaintenanceIntervalChecker(fastify)
 
@@ -70,6 +73,7 @@ async function main() {
   await fastify.register(kioskKlantmeldingRoutes, { prefix: '/api' })
   await fastify.register(kioskMeetmiddelenRoutes, { prefix: '/api' })
   await fastify.register(cncRoutes, { prefix: '/api' })
+  await fastify.register(kioskToolingRoutes, { prefix: '/api' })
 
   // Graceful shutdown
   const shutdown = async () => {

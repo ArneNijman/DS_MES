@@ -563,3 +563,43 @@ export const appSettings = pgTable('app_settings', {
   key:   text('key').primaryKey(),
   value: text('value').notNull(),
 })
+
+// ── Tooling Beheer (kiosk module) ────────────────────────────────────────────
+
+export const toolingArticles = pgTable('tooling_articles', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  articleType:  text('article_type').notNull(),
+  name:         text('name').notNull(),
+  orderingCode: text('ordering_code'),
+  manufacturer: text('manufacturer'),
+  photoUrl:     text('photo_url'),
+  sourceItemId: uuid('source_item_id').references(() => toolLibraryItems.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const toolingStockLocations = pgTable('tooling_stock_locations', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  articleId:    uuid('article_id').notNull().references(() => toolingArticles.id, { onDelete: 'cascade' }),
+  locationCode: text('location_code').notNull(),
+  quantity:     integer('quantity').notNull().default(0),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const toolingMutations = pgTable('tooling_mutations', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  articleId:     uuid('article_id').notNull().references(() => toolingArticles.id, { onDelete: 'cascade' }),
+  employeeId:    uuid('employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  locationCode:  text('location_code').notNull(),
+  quantityDelta: integer('quantity_delta').notNull(),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const toolingFavorites = pgTable('tooling_favorites', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  articleId:  uuid('article_id').notNull().references(() => toolingArticles.id, { onDelete: 'cascade' }),
+})
+
+export type ToolingArticle       = typeof toolingArticles.$inferSelect
+export type ToolingStockLocation = typeof toolingStockLocations.$inferSelect
+export type ToolingMutation      = typeof toolingMutations.$inferSelect
