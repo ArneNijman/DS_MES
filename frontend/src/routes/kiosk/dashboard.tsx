@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
 import { MachinesContent } from '@/routes/admin/machines'
 import { NCRContent } from '@/routes/kiosk/ncr'
@@ -11,6 +11,7 @@ import { KlantmeldingContent } from '@/routes/kiosk/klantmelding'
 import { MeetmiddelenContent, useMeetmiddelenCounts } from '@/routes/kiosk/meetmiddelen'
 import { CncMachiningContent } from '@/routes/admin/cnc-machining'
 import { ToolingContent } from '@/routes/kiosk/tooling'
+import { ProductSetupContent } from '@/routes/kiosk/product-setup'
 import { cn } from '@/lib/utils'
 
 interface UserInfo {
@@ -18,7 +19,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -292,6 +293,12 @@ export default function KioskDashboard() {
             <Package size={15} />
             <span className="flex-1 text-left">Tooling beheer</span>
           </NavBtn>
+
+          {/* Product Setup */}
+          <NavBtn active={active === 'product_setup'} onClick={() => setActive('product_setup')}>
+            <Layers size={15} />
+            <span className="flex-1 text-left">Product Setup</span>
+          </NavBtn>
         </nav>
 
         {/* Gebruikersinfo + uitloggen onderaan */}
@@ -326,6 +333,7 @@ export default function KioskDashboard() {
         {active === 'mijn_todo'      && <MijnTakenTodoContent />}
         {active === 'cnc_machining'  && <CncMachiningContent />}
         {active === 'tooling'        && <ToolingContent />}
+        {active === 'product_setup'  && <ProductSetupContent />}
       </div>
     </div>
   )

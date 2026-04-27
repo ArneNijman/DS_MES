@@ -2,145 +2,41 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1776174634737,
-      "tag": "0000_stale_inhumans",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1776200000000,
-      "tag": "0001_machines_maintenance",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1776300000000,
-      "tag": "0002_maintenance_logs",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1776400000000,
-      "tag": "0003_logs_per_task",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1776500000000,
-      "tag": "0004_maintenance_interval",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1776600000000,
-      "tag": "0005_maintenance_attachments",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1776700000000,
-      "tag": "0006_breakdown_improvements",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1776800000000,
-      "tag": "0007_service",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1776900000000,
-      "tag": "0008_machine_documents",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1777000000000,
-      "tag": "0009_machine_invoices",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1777100000000,
-      "tag": "0010_machine_photo",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1777200000000,
-      "tag": "0011_ncr_registrations",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1777300000000,
-      "tag": "0012_ncr_fields",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1777400000000,
-      "tag": "0013_ncr_oplossing",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1777500000000,
-      "tag": "0014_ncr_attachments",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1777600000000,
-      "tag": "0015_ncr_assigned_to",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1777700000000,
-      "tag": "0016_tasks",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1777800000000,
-      "tag": "0017_tasks_machine_ids",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1778900000000,
-      "tag": "0028_cnc_tool_name_nullable",
-      "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1779000000000,
-      "tag": "0034_tooling_articles",
-      "breakpoints": true
-    }
+    { "idx": 0,  "version": "7", "when": 1776174634737, "tag": "0000_stale_inhumans",             "breakpoints": true },
+    { "idx": 1,  "version": "7", "when": 1776200000000, "tag": "0001_machines_maintenance",       "breakpoints": true },
+    { "idx": 2,  "version": "7", "when": 1776300000000, "tag": "0002_maintenance_logs",           "breakpoints": true },
+    { "idx": 3,  "version": "7", "when": 1776400000000, "tag": "0003_logs_per_task",              "breakpoints": true },
+    { "idx": 4,  "version": "7", "when": 1776500000000, "tag": "0004_maintenance_interval",       "breakpoints": true },
+    { "idx": 5,  "version": "7", "when": 1776600000000, "tag": "0005_maintenance_attachments",    "breakpoints": true },
+    { "idx": 6,  "version": "7", "when": 1776700000000, "tag": "0006_breakdown_improvements",     "breakpoints": true },
+    { "idx": 7,  "version": "7", "when": 1776800000000, "tag": "0007_service",                    "breakpoints": true },
+    { "idx": 8,  "version": "7", "when": 1776900000000, "tag": "0008_machine_documents",          "breakpoints": true },
+    { "idx": 9,  "version": "7", "when": 1777000000000, "tag": "0009_machine_invoices",           "breakpoints": true },
+    { "idx": 10, "version": "7", "when": 1777100000000, "tag": "0010_machine_photo",              "breakpoints": true },
+    { "idx": 11, "version": "7", "when": 1777200000000, "tag": "0011_ncr_registrations",          "breakpoints": true },
+    { "idx": 12, "version": "7", "when": 1777300000000, "tag": "0012_ncr_fields",                 "breakpoints": true },
+    { "idx": 13, "version": "7", "when": 1777400000000, "tag": "0013_ncr_oplossing",              "breakpoints": true },
+    { "idx": 14, "version": "7", "when": 1777500000000, "tag": "0014_ncr_attachments",            "breakpoints": true },
+    { "idx": 15, "version": "7", "when": 1777600000000, "tag": "0015_ncr_assigned_to",            "breakpoints": true },
+    { "idx": 16, "version": "7", "when": 1777700000000, "tag": "0016_tasks",                      "breakpoints": true },
+    { "idx": 17, "version": "7", "when": 1777800000000, "tag": "0017_tasks_machine_ids",          "breakpoints": true },
+    { "idx": 18, "version": "7", "when": 1777810000000, "tag": "0018_preventive_actions",         "breakpoints": true },
+    { "idx": 19, "version": "7", "when": 1777820000000, "tag": "0019_preventive_actions_detail",  "breakpoints": true },
+    { "idx": 20, "version": "7", "when": 1777830000000, "tag": "0020_customer_complaints",        "breakpoints": true },
+    { "idx": 21, "version": "7", "when": 1777840000000, "tag": "0021_customer_complaints_v2",     "breakpoints": true },
+    { "idx": 22, "version": "7", "when": 1777850000000, "tag": "0022_measuring_tools",            "breakpoints": true },
+    { "idx": 23, "version": "7", "when": 1777860000000, "tag": "0023_gecontroleerd",              "breakpoints": true },
+    { "idx": 24, "version": "7", "when": 1777870000000, "tag": "0024_internal_calibration",       "breakpoints": true },
+    { "idx": 25, "version": "7", "when": 1777880000000, "tag": "0025_klantmelding_oplossing",     "breakpoints": true },
+    { "idx": 26, "version": "7", "when": 1777890000000, "tag": "0026_klantmelding_documents",     "breakpoints": true },
+    { "idx": 27, "version": "7", "when": 1778000000000, "tag": "0027_cnc_tooling",                "breakpoints": true },
+    { "idx": 28, "version": "7", "when": 1778900000000, "tag": "0028_cnc_tool_name_nullable",     "breakpoints": true },
+    { "idx": 29, "version": "7", "when": 1778910000000, "tag": "0029_tool_library",               "breakpoints": true },
+    { "idx": 30, "version": "7", "when": 1778920000000, "tag": "0030_app_settings",               "breakpoints": true },
+    { "idx": 31, "version": "7", "when": 1778930000000, "tag": "0031_cnc_component_photos",       "breakpoints": true },
+    { "idx": 32, "version": "7", "when": 1778940000000, "tag": "0032_wisselplaat_photo",          "breakpoints": true },
+    { "idx": 33, "version": "7", "when": 1778950000000, "tag": "0033_schroef",                    "breakpoints": true },
+    { "idx": 34, "version": "7", "when": 1779000000000, "tag": "0034_tooling_articles",           "breakpoints": true },
+    { "idx": 35, "version": "7", "when": 1779100000000, "tag": "0035_product_setups",             "breakpoints": true }
   ]
 }

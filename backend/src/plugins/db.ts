@@ -19,10 +19,7 @@ export default fp(async (fastify: FastifyInstance) => {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) throw new Error('DATABASE_URL is niet ingesteld')
 
-  const migrationsFolder =
-    process.env.NODE_ENV === 'production'
-      ? path.join(__dirname, '../../db/migrations')
-      : path.join(__dirname, '../db/migrations')
+  const migrationsFolder = path.join(__dirname, '../db/migrations')
 
   // Migratie client (max 1 connectie)
   const migrationClient = postgres(databaseUrl, { max: 1 })

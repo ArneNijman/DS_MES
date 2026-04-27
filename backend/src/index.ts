@@ -25,6 +25,7 @@ import { kioskKlantmeldingRoutes } from './routes/kiosk/klantmelding.js'
 import { kioskMeetmiddelenRoutes } from './routes/kiosk/meetmiddelen.js'
 import { cncRoutes } from './routes/admin/cnc.js'
 import { kioskToolingRoutes } from './routes/kiosk/tooling.js'
+import { productSetupRoutes } from './routes/kiosk/product-setup.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
 import { validateEncryptionKey } from './utils/crypto.js'
@@ -74,6 +75,7 @@ async function main() {
   await fastify.register(kioskMeetmiddelenRoutes, { prefix: '/api' })
   await fastify.register(cncRoutes, { prefix: '/api' })
   await fastify.register(kioskToolingRoutes, { prefix: '/api' })
+  await fastify.register(productSetupRoutes, { prefix: '/api' })
 
   // Graceful shutdown
   const shutdown = async () => {

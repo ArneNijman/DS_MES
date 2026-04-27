@@ -499,6 +499,89 @@ export type CncToolEntry = typeof cncToolEntries.$inferSelect
 export type NewCncToolEntry = typeof cncToolEntries.$inferInsert
 export type CncSyncLog = typeof cncSyncLogs.$inferSelect
 
+export const productSetups = pgTable('product_setups', {
+  id:                uuid('id').primaryKey().defaultRandom(),
+  productionOrderNo: text('production_order_no'),
+  articleNo:         text('article_no'),
+  articleName:       text('article_name').notNull(),
+  description:       text('description'),
+  origin:            text('origin').notNull().default('manual'),
+  createdBy:         uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const productSetupSteps = pgTable('product_setup_steps', {
+  id:              uuid('id').primaryKey().defaultRandom(),
+  setupId:         uuid('setup_id').notNull().references(() => productSetups.id, { onDelete: 'cascade' }),
+  stepNumber:      integer('step_number').notNull(),
+  stepName:        text('step_name').notNull(),
+  machineId:       uuid('machine_id').references(() => machines.id, { onDelete: 'set null' }),
+  zeroX:           numeric('zero_x', { precision: 12, scale: 4 }),
+  zeroY:           numeric('zero_y', { precision: 12, scale: 4 }),
+  zeroZ:           numeric('zero_z', { precision: 12, scale: 4 }),
+  stepDescription: text('step_description'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:       timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const productSetupNcFiles = pgTable('product_setup_nc_files', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  stepId:        uuid('step_id').notNull().references(() => productSetupSteps.id, { onDelete: 'cascade' }),
+  fileName:      text('file_name').notNull(),
+  programName:   text('program_name'),
+  fileContent:   text('file_content').notNull(),
+  toolCallCount: integer('tool_call_count').notNull().default(0),
+  uploadedAt:    timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const productSetupToolCalls = pgTable('product_setup_tool_calls', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  ncFileId:     uuid('nc_file_id').notNull().references(() => productSetupNcFiles.id, { onDelete: 'cascade' }),
+  sequence:     integer('sequence').notNull(),
+  toolNumber:   integer('tool_number'),
+  toolName:     text('tool_name'),
+  axis:         text('axis'),
+  spindleSpeed: integer('spindle_speed'),
+  dl:           numeric('dl', { precision: 10, scale: 3 }),
+  dr:           numeric('dr', { precision: 10, scale: 3 }),
+})
+
+export const productSetupDocuments = pgTable('product_setup_documents', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  setupId:      uuid('setup_id').notNull().references(() => productSetups.id, { onDelete: 'cascade' }),
+  documentType: text('document_type').notNull(),
+  fileUrl:      text('file_url').notNull(),
+  fileName:     text('file_name').notNull(),
+  versionNote:  text('version_note'),
+  mimeType:     text('mime_type'),
+  uploadedBy:   uuid('uploaded_by').references(() => employees.id, { onDelete: 'set null' }),
+  uploadedAt:   timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const productSetupAttachments = pgTable('product_setup_attachments', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  stepId:    uuid('step_id').notNull().references(() => productSetupSteps.id, { onDelete: 'cascade' }),
+  fileUrl:   text('file_url').notNull(),
+  fileName:  text('file_name').notNull(),
+  caption:   text('caption'),
+  mimeType:  text('mime_type'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type ProductSetup            = typeof productSetups.$inferSelect
+export type NewProductSetup         = typeof productSetups.$inferInsert
+export type ProductSetupStep        = typeof productSetupSteps.$inferSelect
+export type NewProductSetupStep     = typeof productSetupSteps.$inferInsert
+export type ProductSetupNcFile      = typeof productSetupNcFiles.$inferSelect
+export type NewProductSetupNcFile   = typeof productSetupNcFiles.$inferInsert
+export type ProductSetupToolCall    = typeof productSetupToolCalls.$inferSelect
+export type NewProductSetupToolCall = typeof productSetupToolCalls.$inferInsert
+export type ProductSetupDocument    = typeof productSetupDocuments.$inferSelect
+export type NewProductSetupDocument = typeof productSetupDocuments.$inferInsert
+export type ProductSetupAttachment  = typeof productSetupAttachments.$inferSelect
+export type NewProductSetupAttachment = typeof productSetupAttachments.$inferInsert
+
 export const statusLogs = pgTable('status_logs', {
   id:             uuid('id').primaryKey().defaultRandom(),
   entityType:     text('entity_type').notNull(),   // 'ncr' | 'preventief' | 'klantmelding'
