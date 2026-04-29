@@ -14,6 +14,9 @@ import {
   productSetupDocuments,
   productSetupAttachments,
   cncToolEntries,
+  cncSyncLogs,
+  productSetupOverdracht,
+  productSetupOverdrachtPhotos,
   toolLibraryAssemblies,
   toolLibraryItems,
   toolLibraryAssemblyComponents,
@@ -79,9 +82,15 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     if (machineId) {
       conditions.push(
-        sql`EXISTS (
-          SELECT 1 FROM product_setup_steps s
-          WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+        sql`(
+          EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id}
+          )
         )` as unknown as ReturnType<typeof eq>,
       )
     }
@@ -469,6 +478,8 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
           spindleSpeed: tc.spindleSpeed,
           status:       'onbekend' as const,
         })),
+        lastSyncAt:  null,
+        validatedAt: new Date().toISOString(),
       }
     }
 
@@ -482,7 +493,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       magazineEntries.filter(e => e.toolNumber != null).map(e => [e.toolNumber!, e]),
     )
     const magazineByName = new Map(
-      magazineEntries.filter(e => e.name).map(e => [e.name!, e]),
+      magazineEntries.filter(e => e.name).map(e => [e.name!.toLowerCase(), e]),
     )
 
     // Assemblies ophalen voor aanwezige tools (één query, geen N+1)
@@ -491,85 +502,173 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         calls
           .map(tc => {
             if (tc.toolNumber != null) return magazineByNumber.get(tc.toolNumber)?.name
-            if (tc.toolName)           return magazineByName.get(tc.toolName)?.name
+            if (tc.toolName)           return magazineByName.get(tc.toolName.toLowerCase())?.name
           })
           .filter((n): n is string => !!n),
       ),
     ]
 
-    // assemblies + componenten in één query
+    // assemblies + componenten in één query (houder → tussenstukken → snijgereedschap)
     type AssemblyRow = {
-      assemblyId:       string
-      ncName:           string
-      toolLength:       number | null
-      presetDiameter:   number | null
-      componentItemId:  string | null
-      itemType:         string | null
-      componentName:    string | null
-      orderingCode:     string | null
-      manufacturer:     string | null
-      photoUrl:         string | null
-      position:         number | null
-      holderItemId:     string | null
-      holderName:       string | null
-      toolItemId:       string | null
-      toolItemName:     string | null
+      assemblyId:               string
+      ncName:                   string
+      toolLength:               number | null
+      presetDiameter:           number | null
+      // Tussenstukken (tool_library_assembly_components)
+      componentItemId:          string | null
+      componentName:            string | null
+      componentComment:         string | null
+      componentCategory:        string | null
+      reach:                    number | null
+      componentOrderingCode:    string | null
+      componentManufacturer:    string | null
+      componentPhotoUrl:        string | null
+      componentWisselplaatPhotoUrl: string | null
+      componentSchroefOrderingCode: string | null
+      componentSchroefPhotoUrl: string | null
+      position:                 number | null
+      // Houder
+      holderItemId:             string | null
+      holderName:               string | null
+      holderComment:            string | null
+      holderOrderingCode:       string | null
+      holderManufacturer:       string | null
+      holderPhotoUrl:           string | null
+      holderWisselplaatPhotoUrl: string | null
+      holderSchroefOrderingCode: string | null
+      holderSchroefPhotoUrl:    string | null
+      // Snijgereedschap
+      toolItemId:               string | null
+      toolItemName:             string | null
+      toolComment:              string | null
+      toolCategory:             string | null
+      toolOrderingCode:         string | null
+      toolManufacturer:         string | null
+      toolPhotoUrl:             string | null
+      toolWisselplaatPhotoUrl:  string | null
+      toolSchroefOrderingCode:  string | null
+      toolSchroefPhotoUrl:      string | null
     }
 
-    let assemblyRows: AssemblyRow[] = []
-    if (presentNames.length > 0) {
-      assemblyRows = await fastify.db.execute(sql`
+    type AssemblyComponent = {
+      itemId: string | null
+      type: string; name: string; comment: string | null; category: string | null; reach: number | null
+      orderingCode: string | null; manufacturer: string | null; photoUrl: string | null
+      wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null
+    }
+
+    type AssemblyEntry = {
+      id: string; ncName: string; toolLength: number | null; presetDiameter: number | null
+      components: AssemblyComponent[]
+    }
+
+    function buildAssemblyMap(rows: AssemblyRow[]): Map<string, AssemblyEntry> {
+      // Groepeer rijen per ncName zodat we houder/tool eenmalig kunnen toevoegen
+      const grouped = new Map<string, AssemblyRow[]>()
+      for (const row of rows) {
+        if (!grouped.has(row.ncName)) grouped.set(row.ncName, [])
+        grouped.get(row.ncName)!.push(row)
+      }
+
+      const map = new Map<string, AssemblyEntry>()
+      for (const [ncName, group] of grouped) {
+        const first = group[0]
+        const components: AssemblyComponent[] = []
+
+        // 1. Houder
+        if (first.holderItemId && first.holderName) {
+          components.push({
+            itemId: first.holderItemId,
+            type: 'holder', name: first.holderName, comment: first.holderComment,
+            category: null, reach: null,
+            orderingCode: first.holderOrderingCode, manufacturer: first.holderManufacturer,
+            photoUrl: first.holderPhotoUrl, wisselplaatPhotoUrl: first.holderWisselplaatPhotoUrl,
+            schroefOrderingCode: first.holderSchroefOrderingCode, schroefPhotoUrl: first.holderSchroefPhotoUrl,
+          })
+        }
+
+        // 2. Tussenstukken
+        for (const row of group) {
+          if (row.componentItemId && row.componentName) {
+            components.push({
+              itemId: row.componentItemId,
+              type: 'extension', name: row.componentName, comment: row.componentComment,
+              category: row.componentCategory, reach: row.reach,
+              orderingCode: row.componentOrderingCode, manufacturer: row.componentManufacturer,
+              photoUrl: row.componentPhotoUrl, wisselplaatPhotoUrl: row.componentWisselplaatPhotoUrl,
+              schroefOrderingCode: row.componentSchroefOrderingCode, schroefPhotoUrl: row.componentSchroefPhotoUrl,
+            })
+          }
+        }
+
+        // 3. Snijgereedschap
+        if (first.toolItemId && first.toolItemName) {
+          components.push({
+            itemId: first.toolItemId,
+            type: 'tool', name: first.toolItemName, comment: first.toolComment,
+            category: first.toolCategory, reach: null,
+            orderingCode: first.toolOrderingCode, manufacturer: first.toolManufacturer,
+            photoUrl: first.toolPhotoUrl, wisselplaatPhotoUrl: first.toolWisselplaatPhotoUrl,
+            schroefOrderingCode: first.toolSchroefOrderingCode, schroefPhotoUrl: first.toolSchroefPhotoUrl,
+          })
+        }
+
+        map.set(ncName, { id: first.assemblyId, ncName, toolLength: first.toolLength, presetDiameter: first.presetDiameter, components })
+      }
+      return map
+    }
+
+    async function fetchAssemblyRows(names: string[]): Promise<AssemblyRow[]> {
+      return fastify.db.execute(sql`
         SELECT
-          a.id            AS "assemblyId",
-          a.nc_name       AS "ncName",
-          a.tool_length   AS "toolLength",
-          a.preset_diameter AS "presetDiameter",
-          ci.id           AS "componentItemId",
-          ci.item_type    AS "itemType",
-          ci.name         AS "componentName",
-          ci.ordering_code AS "orderingCode",
-          ci.manufacturer AS "manufacturer",
-          ci.photo_url    AS "photoUrl",
-          c.position      AS "position",
-          hi.id           AS "holderItemId",
-          hi.name         AS "holderName",
-          ti.id           AS "toolItemId",
-          ti.name         AS "toolItemName"
+          a.id                         AS "assemblyId",
+          a.nc_name                    AS "ncName",
+          a.tool_length                AS "toolLength",
+          a.preset_diameter            AS "presetDiameter",
+          ci.id                        AS "componentItemId",
+          ci.name                      AS "componentName",
+          ci.comment                   AS "componentComment",
+          ci.item_category             AS "componentCategory",
+          c.reach                      AS "reach",
+          ci.ordering_code             AS "componentOrderingCode",
+          ci.manufacturer              AS "componentManufacturer",
+          ci.photo_url                 AS "componentPhotoUrl",
+          ci.wisselplaat_photo_url     AS "componentWisselplaatPhotoUrl",
+          ci.schroef_ordering_code     AS "componentSchroefOrderingCode",
+          ci.schroef_photo_url         AS "componentSchroefPhotoUrl",
+          c.position                   AS "position",
+          hi.id                        AS "holderItemId",
+          hi.name                      AS "holderName",
+          hi.comment                   AS "holderComment",
+          hi.ordering_code             AS "holderOrderingCode",
+          hi.manufacturer              AS "holderManufacturer",
+          hi.photo_url                 AS "holderPhotoUrl",
+          hi.wisselplaat_photo_url     AS "holderWisselplaatPhotoUrl",
+          hi.schroef_ordering_code     AS "holderSchroefOrderingCode",
+          hi.schroef_photo_url         AS "holderSchroefPhotoUrl",
+          ti.id                        AS "toolItemId",
+          ti.name                      AS "toolItemName",
+          ti.comment                   AS "toolComment",
+          ti.item_category             AS "toolCategory",
+          ti.ordering_code             AS "toolOrderingCode",
+          ti.manufacturer              AS "toolManufacturer",
+          ti.photo_url                 AS "toolPhotoUrl",
+          ti.wisselplaat_photo_url     AS "toolWisselplaatPhotoUrl",
+          ti.schroef_ordering_code     AS "toolSchroefOrderingCode",
+          ti.schroef_photo_url         AS "toolSchroefPhotoUrl"
         FROM tool_library_assemblies a
         LEFT JOIN tool_library_assembly_components c ON c.assembly_id = a.id
         LEFT JOIN tool_library_items ci ON ci.id = c.item_id
         LEFT JOIN tool_library_items hi ON hi.id = a.holder_item_id
         LEFT JOIN tool_library_items ti ON ti.id = a.tool_item_id
-        WHERE a.nc_name = ANY(${presentNames})
+        WHERE a.nc_name IN (${sql.join(names.map(n => sql`${n}`), sql`, `)})
         ORDER BY a.nc_name, c.position
       `) as AssemblyRow[]
     }
 
-    // Groepeer assembly-rijen per ncName
-    const assemblyMap = new Map<string, {
-      id: string; ncName: string; toolLength: number | null; presetDiameter: number | null
-      components: { type: string; name: string; orderingCode: string | null; manufacturer: string | null; photoUrl: string | null }[]
-    }>()
-    for (const row of assemblyRows) {
-      if (!assemblyMap.has(row.ncName)) {
-        assemblyMap.set(row.ncName, {
-          id:             row.assemblyId,
-          ncName:         row.ncName,
-          toolLength:     row.toolLength,
-          presetDiameter: row.presetDiameter,
-          components:     [],
-        })
-      }
-      const asm = assemblyMap.get(row.ncName)!
-      if (row.componentItemId && row.componentName) {
-        asm.components.push({
-          type:         row.itemType ?? 'overig',
-          name:         row.componentName,
-          orderingCode: row.orderingCode,
-          manufacturer: row.manufacturer,
-          photoUrl:     row.photoUrl,
-        })
-      }
+    let assemblyMap = new Map<string, AssemblyEntry>()
+    if (presentNames.length > 0) {
+      assemblyMap = buildAssemblyMap(await fetchAssemblyRows(presentNames))
     }
 
     // Ontbrekende tools: in welke andere machines + componenten op voorraad
@@ -579,13 +678,19 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
           .filter(tc => {
             if (tc.toolNumber === 0) return false
             if (tc.toolNumber != null) return !magazineByNumber.has(tc.toolNumber)
-            if (tc.toolName)           return !magazineByName.has(tc.toolName)
+            if (tc.toolName)           return !magazineByName.has(tc.toolName.toLowerCase())
             return true
           })
           .map(tc => tc.toolName ?? null)
           .filter((n): n is string => n !== null),
       ),
     ]
+
+    // Assemblies voor ontbrekende tools (zelfde structuur als present)
+    let missingAssemblyMap = new Map<string, AssemblyEntry>()
+    if (missingNames.length > 0) {
+      missingAssemblyMap = buildAssemblyMap(await fetchAssemblyRows(missingNames))
+    }
 
     // In welke machines zitten ontbrekende assemblies?
     type MachineInstanceRow = { machineName: string; machineId: string; toolNumber: number; ncName: string }
@@ -596,7 +701,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
                e.tool_number AS "toolNumber", e.name AS "ncName"
         FROM cnc_tool_entries e
         JOIN machines m ON m.id = e.machine_id
-        WHERE e.name = ANY(${missingNames})
+        WHERE e.name IN (${sql.join(missingNames.map(n => sql`${n}`), sql`, `)})
           AND e.machine_id != ${machineId}
       `) as MachineInstanceRow[]
     }
@@ -631,7 +736,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         JOIN tool_library_items li ON li.id = a.tool_item_id OR li.id = a.holder_item_id
         JOIN tooling_articles ta ON ta.source_item_id = li.id
         JOIN tooling_stock_locations sl ON sl.article_id = ta.id
-        WHERE a.nc_name = ANY(${missingNames})
+        WHERE a.nc_name IN (${sql.join(missingNames.map(n => sql`${n}`), sql`, `)})
           AND sl.quantity > 0
         UNION ALL
         SELECT
@@ -647,7 +752,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         JOIN tool_library_items li ON li.id = c.item_id
         JOIN tooling_articles ta ON ta.source_item_id = li.id
         JOIN tooling_stock_locations sl ON sl.article_id = ta.id
-        WHERE a.nc_name = ANY(${missingNames})
+        WHERE a.nc_name IN (${sql.join(missingNames.map(n => sql`${n}`), sql`, `)})
           AND sl.quantity > 0
       `) as StockRow[]
     }
@@ -678,7 +783,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
       const entry = tc.toolNumber != null
         ? magazineByNumber.get(tc.toolNumber)
-        : tc.toolName ? magazineByName.get(tc.toolName) : undefined
+        : tc.toolName ? magazineByName.get(tc.toolName.toLowerCase()) : undefined
 
       if (entry) {
         present++
@@ -693,12 +798,14 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
           magazineEntry: {
             toolNumber: entry.toolNumber,
             name:       entry.name,
+            doc:        entry.doc,
             l:          entry.l,
             r:          entry.r,
             dl:         entry.dl,
             dr:         entry.dr,
             time2:      entry.time2,
             curTime:    entry.curTime,
+            locked:     entry.locked,
           },
           assembly,
         }
@@ -712,6 +819,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
           axis:         tc.axis,
           spindleSpeed: tc.spindleSpeed,
           status:       'ontbreekt' as const,
+          assembly:          name ? (missingAssemblyMap.get(name) ?? null) : null,
           inOtherMachines:   name ? (machineInstancesByName.get(name) ?? []) : [],
           componentsInStock: name ? (stockByName.get(name) ?? []) : [],
         }
@@ -724,6 +832,13 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         .map(tc => tc.toolNumber != null ? `T${tc.toolNumber}` : `N:${tc.toolName}`)
     ).size
 
+    const [lastSync] = await fastify.db
+      .select({ completedAt: cncSyncLogs.completedAt })
+      .from(cncSyncLogs)
+      .where(and(eq(cncSyncLogs.machineId, machineId), eq(cncSyncLogs.status, 'success')))
+      .orderBy(desc(cncSyncLogs.completedAt))
+      .limit(1)
+
     return {
       ncFileId,
       programName:  ncFile.programName,
@@ -731,7 +846,22 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       machineName,
       summary:      { total: uniqueTools, present, missing },
       toolCalls:    resultCalls,
+      lastSyncAt:   lastSync?.completedAt?.toISOString() ?? null,
+      validatedAt:  new Date().toISOString(),
     }
+  })
+
+  // ── NC bestand hernoemen ─────────────────────────────────────────────────
+
+  fastify.patch('/kiosk/product-setups/nc-files/:ncFileId', auth, async (req, reply) => {
+    const { ncFileId } = req.params as { ncFileId: string }
+    const { fileName } = req.body as { fileName?: string }
+    if (!fileName?.trim()) return reply.status(400).send({ error: 'Bestandsnaam is verplicht' })
+    await fastify.db
+      .update(productSetupNcFiles)
+      .set({ fileName: fileName.trim() })
+      .where(eq(productSetupNcFiles.id, ncFileId))
+    return { ok: true }
   })
 
   // ── NC bestand verwijderen ────────────────────────────────────────────────
@@ -879,6 +1009,122 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.delete('/kiosk/product-setups/attachments/:attachId', auth, async (req) => {
     const { attachId } = req.params as { attachId: string }
     await fastify.db.delete(productSetupAttachments).where(eq(productSetupAttachments.id, attachId))
+    return { ok: true }
+  })
+
+  // ── Overdracht: entries ophalen (incl. foto's) ───────────────────────────
+
+  fastify.get('/kiosk/product-setups/steps/:stepId/overdracht', auth, async (req) => {
+    const { stepId } = req.params as { stepId: string }
+
+    const entries = await fastify.db
+      .select({
+        id:            productSetupOverdracht.id,
+        tekst:         productSetupOverdracht.tekst,
+        createdByName: productSetupOverdracht.createdByName,
+        createdAt:     productSetupOverdracht.createdAt,
+      })
+      .from(productSetupOverdracht)
+      .where(eq(productSetupOverdracht.stepId, stepId))
+      .orderBy(desc(productSetupOverdracht.createdAt))
+
+    if (entries.length === 0) return []
+
+    const photos = await fastify.db
+      .select({
+        id:           productSetupOverdrachtPhotos.id,
+        overdrachtId: productSetupOverdrachtPhotos.overdrachtId,
+        fileUrl:      productSetupOverdrachtPhotos.fileUrl,
+        fileName:     productSetupOverdrachtPhotos.fileName,
+      })
+      .from(productSetupOverdrachtPhotos)
+      .where(inArray(productSetupOverdrachtPhotos.overdrachtId, entries.map(e => e.id)))
+      .orderBy(asc(productSetupOverdrachtPhotos.createdAt))
+
+    return entries.map(e => ({
+      ...e,
+      createdAt: e.createdAt.toISOString(),
+      photos: photos.filter(p => p.overdrachtId === e.id),
+    }))
+  })
+
+  // ── Overdracht: entry toevoegen ───────────────────────────────────────────
+
+  fastify.post('/kiosk/product-setups/steps/:stepId/overdracht', auth, async (req, reply) => {
+    const { stepId } = req.params as { stepId: string }
+    const { tekst }  = req.body as { tekst?: string }
+    if (!tekst?.trim()) return reply.status(400).send({ error: 'Tekst is verplicht' })
+
+    const employeeId: string | null = (req as any).employee?.employeeId ?? null
+    let createdByName: string | null = null
+    if (employeeId) {
+      const [emp] = await fastify.db
+        .select({ name: employees.name })
+        .from(employees)
+        .where(eq(employees.id, employeeId))
+        .limit(1)
+      createdByName = emp?.name ?? null
+    }
+
+    const [entry] = await fastify.db
+      .insert(productSetupOverdracht)
+      .values({ stepId, tekst: tekst.trim(), createdBy: employeeId, createdByName })
+      .returning()
+
+    return { ok: true, id: entry.id }
+  })
+
+  // ── Overdracht: entry bewerken ────────────────────────────────────────────
+
+  fastify.patch('/kiosk/product-setups/overdracht/:overdrachtId', auth, async (req, reply) => {
+    const { overdrachtId } = req.params as { overdrachtId: string }
+    const { tekst } = req.body as { tekst?: string }
+    if (!tekst?.trim()) return reply.status(400).send({ error: 'Tekst is verplicht' })
+    await fastify.db
+      .update(productSetupOverdracht)
+      .set({ tekst: tekst.trim() })
+      .where(eq(productSetupOverdracht.id, overdrachtId))
+    return { ok: true }
+  })
+
+  // ── Overdracht: entry verwijderen ─────────────────────────────────────────
+
+  fastify.delete('/kiosk/product-setups/overdracht/:overdrachtId', auth, async (req) => {
+    const { overdrachtId } = req.params as { overdrachtId: string }
+    await fastify.db.delete(productSetupOverdracht).where(eq(productSetupOverdracht.id, overdrachtId))
+    return { ok: true }
+  })
+
+  // ── Overdracht: foto uploaden ─────────────────────────────────────────────
+
+  fastify.post('/kiosk/product-setups/overdracht/:overdrachtId/photos', auth, async (req, reply) => {
+    const { overdrachtId } = req.params as { overdrachtId: string }
+
+    const parts = req.parts()
+    let fileField: import('@fastify/multipart').MultipartFile | null = null
+    for await (const part of parts) {
+      if (part.type === 'file') fileField = part
+    }
+    if (!fileField) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const ext      = extname(fileField.filename) || '.jpg'
+    const filename = `${randomUUID()}${ext}`
+    const dest     = `/app/uploads/${filename}`
+    await pipeline(fileField.file, createWriteStream(dest))
+
+    const [photo] = await fastify.db
+      .insert(productSetupOverdrachtPhotos)
+      .values({ overdrachtId, fileUrl: `/uploads/${filename}`, fileName: fileField.filename })
+      .returning()
+
+    return { ok: true, photoId: photo.id, fileUrl: photo.fileUrl }
+  })
+
+  // ── Overdracht: foto verwijderen ──────────────────────────────────────────
+
+  fastify.delete('/kiosk/product-setups/overdracht-photos/:photoId', auth, async (req) => {
+    const { photoId } = req.params as { photoId: string }
+    await fastify.db.delete(productSetupOverdrachtPhotos).where(eq(productSetupOverdrachtPhotos.id, photoId))
     return { ok: true }
   })
 }

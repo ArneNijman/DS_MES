@@ -34,6 +34,7 @@ export interface ParsedNcProgram {
   summary:     ParseSummary
 }
 
+const RE_BLOCK_NUM  = /^N?\d+\s+/i
 const RE_BEGIN_PGM  = /^BEGIN\s+PGM\s+(\S+)/i
 const RE_TOOL_CALL  = /^TOOL\s+CALL\s+/i
 const RE_BY_NAME    = /^"([^"]+)"/
@@ -65,20 +66,23 @@ export function parseNcProgram(content: string): ParsedNcProgram {
       continue
     }
 
-    const beginMatch = trimmed.match(RE_BEGIN_PGM)
+    // Bloknummer aan het begin van de regel verwijderen (bv. "5 " of "N10 ")
+    const line = trimmed.replace(RE_BLOCK_NUM, '')
+
+    const beginMatch = line.match(RE_BEGIN_PGM)
     if (beginMatch) {
       programName = beginMatch[1]
       skipped++
       continue
     }
 
-    if (!RE_TOOL_CALL.test(trimmed)) {
+    if (!RE_TOOL_CALL.test(line)) {
       skipped++
       continue
     }
 
     // Verwijder "TOOL CALL " prefix (hoofdletterongevoelig)
-    const rest = trimmed.replace(RE_TOOL_CALL, '').trim()
+    const rest = line.replace(RE_TOOL_CALL, '').trim()
     const tokens = rest.split(/\s+/)
 
     try {

@@ -517,9 +517,9 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   stepNumber:      integer('step_number').notNull(),
   stepName:        text('step_name').notNull(),
   machineId:       uuid('machine_id').references(() => machines.id, { onDelete: 'set null' }),
-  zeroX:           numeric('zero_x', { precision: 12, scale: 4 }),
-  zeroY:           numeric('zero_y', { precision: 12, scale: 4 }),
-  zeroZ:           numeric('zero_z', { precision: 12, scale: 4 }),
+  zeroX:           text('zero_x'),
+  zeroY:           text('zero_y'),
+  zeroZ:           text('zero_z'),
   stepDescription: text('step_description'),
   createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:       timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -686,3 +686,20 @@ export const toolingFavorites = pgTable('tooling_favorites', {
 export type ToolingArticle       = typeof toolingArticles.$inferSelect
 export type ToolingStockLocation = typeof toolingStockLocations.$inferSelect
 export type ToolingMutation      = typeof toolingMutations.$inferSelect
+
+export const productSetupOverdracht = pgTable('product_setup_overdracht', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  stepId:        uuid('step_id').notNull().references(() => productSetupSteps.id, { onDelete: 'cascade' }),
+  tekst:         text('tekst').notNull(),
+  createdBy:     uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
+  createdByName: text('created_by_name'),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const productSetupOverdrachtPhotos = pgTable('product_setup_overdracht_photos', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  overdrachtId: uuid('overdracht_id').notNull().references(() => productSetupOverdracht.id, { onDelete: 'cascade' }),
+  fileUrl:      text('file_url').notNull(),
+  fileName:     text('file_name').notNull(),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})

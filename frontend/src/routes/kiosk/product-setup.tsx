@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, Fragment, ChangeEvent } from 'react'
+import { useState, useRef, useEffect, ChangeEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check,
-  FileText, Layers, AlertCircle, Package, Cpu, Paperclip,
-  ChevronDown, ChevronRight, ExternalLink, RefreshCw
+  FileText, Cpu, Paperclip, Info,
+  ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
+  Download, FolderOpen, Lock, Unlock,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -112,19 +113,26 @@ interface ValidationToolCall {
   magazineEntry?: {
     toolNumber: number | null
     name:       string | null
+    doc:        string | null
     l:          string | null
     r:          string | null
     dl:         string | null
     dr:         string | null
     time2:      string | null
     curTime:    string | null
+    locked:     boolean | null
   }
   assembly?: {
     id:             string
     ncName:         string
     toolLength:     number | null
     presetDiameter: number | null
-    components:     { type: string; name: string; orderingCode: string | null; manufacturer: string | null; photoUrl: string | null }[]
+    components:     {
+      itemId: string | null
+      type: string; name: string; comment: string | null; category: string | null; reach: number | null
+      orderingCode: string | null; manufacturer: string | null; photoUrl: string | null
+      wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null
+    }[]
   } | null
   inOtherMachines?:   { machineId: string; machineName: string; toolNumber: number; count: number }[]
   componentsInStock?: { itemId: string; itemName: string; itemType: string; locations: { locId: string; locationCode: string; quantity: number }[] }[]
@@ -137,6 +145,8 @@ interface ValidationResult {
   machineName: string | null
   summary:     { total: number; present: number; missing: number }
   toolCalls:   ValidationToolCall[]
+  lastSyncAt:  string | null
+  validatedAt: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -259,11 +269,75 @@ function InlineEdit({
   )
 }
 
+// ── Assembly helpers (zelfde logica als CNC machining) ────────────────────────
+
+function parseWisselplaat(comment: string | null): { body: string; wisselplaat: string } | null {
+  if (!comment) return null
+  const idx = comment.indexOf('WP:')
+  if (idx === -1) return null
+  const body = comment.slice(0, idx).trim()
+  const wisselplaat = comment.slice(idx + 3).trim()
+  return body && wisselplaat ? { body, wisselplaat } : null
+}
+
+function componentLabel(type: string, category: string | null): string {
+  if (type === 'holder') return 'Houder'
+  if (type === 'extension') return 'Adapter'
+  if (!category) return 'Onderdeel'
+  if (['Endmill', 'Radiusmill', 'Ballmill', 'Lollipop', 'TSlotCutter', 'Woodruff', 'IndexableHighFeedCutter', 'IndexableRoundInsertCutter'].includes(category)) return 'Frees'
+  if (['Drilltool', 'GunDrill'].includes(category)) return 'Boor'
+  if (category === 'Tap') return 'Tap'
+  if (category === 'Reamer') return 'Ruimer'
+  if (category === 'ThreadMill') return 'Draadsnijder'
+  if (category === 'BoringBar') return 'Uitboorder'
+  return 'Gereedschap'
+}
+
+function componentBadgeColor(type: string, category: string | null): string {
+  const label = componentLabel(type, category)
+  return type === 'holder'    ? 'bg-blue-100 text-blue-700'   :
+         type === 'extension' ? 'bg-gray-100 text-gray-600'   :
+         label === 'Frees'    ? 'bg-green-100 text-green-700' :
+         label === 'Boor'     ? 'bg-orange-100 text-orange-700' :
+         label === 'Tap'      ? 'bg-purple-100 text-purple-700' :
+         'bg-gray-100 text-gray-600'
+}
+
+interface DisplayRow {
+  itemId: string | null
+  label: string; labelColor: string; name: string
+  photoUrl: string | null; orderingCode: string | null; manufacturer: string | null; reach: number | null
+}
+
+type AssemblyComponent = {
+  itemId: string | null
+  type: string; name: string; comment: string | null; category: string | null; reach: number | null
+  orderingCode: string | null; manufacturer: string | null; photoUrl: string | null
+  wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null
+}
+
+function expandComponents(components: AssemblyComponent[]): DisplayRow[] {
+  const rows: DisplayRow[] = []
+  for (const c of components) {
+    const wp = parseWisselplaat(c.comment)
+    if (wp) {
+      rows.push({ itemId: c.itemId, label: componentLabel(c.type, c.category), labelColor: componentBadgeColor(c.type, c.category), name: wp.body, photoUrl: c.photoUrl, orderingCode: c.orderingCode, manufacturer: c.manufacturer, reach: c.reach })
+      rows.push({ itemId: null, label: 'Wisselplaat', labelColor: 'bg-yellow-100 text-yellow-700', name: wp.wisselplaat, photoUrl: c.wisselplaatPhotoUrl, orderingCode: null, manufacturer: null, reach: null })
+      if (c.schroefOrderingCode || c.schroefPhotoUrl) {
+        rows.push({ itemId: null, label: 'Schroef', labelColor: 'bg-gray-100 text-gray-500', name: c.schroefOrderingCode ?? '—', photoUrl: c.schroefPhotoUrl, orderingCode: null, manufacturer: null, reach: null })
+      }
+    } else {
+      rows.push({ itemId: c.itemId, label: componentLabel(c.type, c.category), labelColor: componentBadgeColor(c.type, c.category), name: c.name, photoUrl: c.photoUrl, orderingCode: c.orderingCode, manufacturer: c.manufacturer, reach: c.reach })
+    }
+  }
+  return rows
+}
+
 // ── StatusBadge ───────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: 'aanwezig' | 'ontbreekt' | 'onbekend' }) {
   if (status === 'aanwezig')  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><Check size={10} />in machine</span>
-  if (status === 'ontbreekt') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><AlertCircle size={10} />ontbreekt</span>
+  if (status === 'ontbreekt') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700"><Wrench size={10} />opbouwen</span>
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">onbekend</span>
 }
 
@@ -337,7 +411,6 @@ function SetupList({
   const [newName, setNewName] = useState('')
   const [newOrder, setNewOrder] = useState('')
   const [newArticle, setNewArticle] = useState('')
-  const [newStepName, setNewStepName] = useState('')
   const [showBcMsg, setShowBcMsg] = useState(false)
 
   const { data: setups = [], isLoading } = useQuery<SetupSummary[]>({
@@ -347,13 +420,9 @@ function SetupList({
 
   const createMutation = useMutation({
     mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/product-setups', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: async (res) => {
-      await apiFetch(`/kiosk/product-setups/${res.setupId}/steps`, {
-        method: 'POST',
-        body: JSON.stringify({ stepName: newStepName.trim() || 'Stap 1', machineId: machine.id }),
-      })
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
-      setShowNew(false); setNewName(''); setNewOrder(''); setNewArticle(''); setNewStepName('')
+      setShowNew(false); setNewName(''); setNewOrder(''); setNewArticle('')
     },
   })
 
@@ -362,15 +431,10 @@ function SetupList({
     createMutation.mutate({ articleName: newName.trim(), productionOrderNo: newOrder.trim() || undefined, articleNo: newArticle.trim() || undefined, origin: 'manual' })
   }
 
-  function handleShowNew() {
-    setShowBcMsg(false)
-    setShowNew(true)
-  }
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-white shrink-0">
         <button onClick={onBack} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><ChevronLeft size={18} /></button>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded overflow-hidden bg-gray-100 flex items-center justify-center">
@@ -388,7 +452,7 @@ function SetupList({
       </div>
 
       {/* Zoekbalk */}
-      <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
+      <div className="px-6 py-3 border-b border-gray-100 bg-white shrink-0">
         <div className="relative max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -400,38 +464,38 @@ function SetupList({
         </div>
       </div>
 
-      {/* Lijst */}
-      <div className="flex-1 overflow-auto p-5">
+      {/* Tegel-grid */}
+      <div className="flex-1 overflow-auto p-6">
         {isLoading && <p className="text-gray-400 text-sm">Laden…</p>}
         {!isLoading && setups.length === 0 && (
           <p className="text-gray-400 text-sm">Geen setups gevonden{search ? ' voor deze zoekopdracht' : ''}.</p>
         )}
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {setups.map(s => (
             <button
               key={s.id}
               onClick={() => onSelect(s)}
-              className="w-full flex items-center gap-4 px-4 py-3 bg-white border border-gray-200 rounded-xl hover:border-teal-400 hover:bg-teal-50 transition-all text-left"
+              className="flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
             >
-              <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                <Layers size={18} className="text-gray-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-gray-800 truncate">{s.articleName}</p>
-                <p className="text-xs text-gray-500 truncate">
-                  {s.productionOrderNo && <span className="mr-2">PO: {s.productionOrderNo}</span>}
-                  {s.articleNo && <span>Art: {s.articleNo}</span>}
-                </p>
-              </div>
-              <div className="text-right shrink-0">
+              <p className="text-xs font-mono text-gray-400 truncate">
+                {s.productionOrderNo ?? '—'}
+              </p>
+              <p className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug">
+                {s.articleName}
+              </p>
+              {s.articleNo && (
+                <p className="text-xs text-gray-500 truncate">{s.articleNo}</p>
+              )}
+              <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
                 <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
                   {s.totalSteps} {s.totalSteps === 1 ? 'stap' : 'stappen'}
                 </span>
                 {s.stepsOnMachine > 0 && (
-                  <p className="text-xs text-gray-400 mt-0.5">{s.stepsOnMachine} op deze machine</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                    {s.stepsOnMachine} hier
+                  </span>
                 )}
               </div>
-              <ChevronRight size={16} className="text-gray-400 shrink-0" />
             </button>
           ))}
         </div>
@@ -502,19 +566,8 @@ function SetupList({
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">Eerste bewerkingsstap <span className="text-red-500">*</span></label>
-                  <input
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                    placeholder="bijv. Vlak frezen, Boren, Contour frezen…"
-                    value={newStepName}
-                    onChange={e => setNewStepName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Gekoppeld aan: <span className="font-medium text-gray-600">{machine.name}</span></p>
-                </div>
                 <button
-                  disabled={!newName.trim() || !newStepName.trim() || createMutation.isPending}
+                  disabled={!newName.trim() || createMutation.isPending}
                   onClick={handleCreate}
                   className="w-full py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
                 >
@@ -541,45 +594,227 @@ function SetupDetail({
   onBack: () => void
 }) {
   const qc = useQueryClient()
-  const [activeStepId, setActiveStepId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'product' | 'cnc' | 'bijlagen'>('product')
-  const [showAddStep, setShowAddStep] = useState(false)
-  const [newStepName, setNewStepName] = useState('')
+  const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
+  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht'>('cnc')
+  const [showAddStep, setShowAddStep]           = useState(false)
+  const [newStepName, setNewStepName]           = useState('')
+  const [showMachinePicker, setShowMachinePicker] = useState(false)
+  const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | null>(null)
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
     queryKey: ['product-setup', setupId],
     queryFn:  () => apiFetch(`/kiosk/product-setups/${setupId}`),
   })
 
-  useEffect(() => {
-    if (setup && !activeStepId && setup.steps.length > 0) {
-      const machineStep = setup.steps.find(s => s.machineId === machineId)
-      setActiveStepId(machineStep?.id ?? setup.steps[0].id)
-    }
-  }, [setup, activeStepId, machineId])
-
   const patchSetup = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
   })
 
-  const addStepMutation = useMutation({
+  const patchStep = useMutation({
+    mutationFn: ({ stepId, ...body }: { stepId: string } & Record<string, unknown>) =>
+      apiFetch(`/kiosk/product-setups/steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  const addStep = useMutation({
     mutationFn: (body: object) => apiFetch<{ stepId: string }>(`/kiosk/product-setups/${setupId}/steps`, { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      setActiveStepId(res.stepId)
+      setSelectedStepId(res.stepId)
+      setActiveTab('cnc')
       setShowAddStep(false); setNewStepName('')
     },
   })
 
+  const deleteStep = useMutation({
+    mutationFn: (stepId: string) => apiFetch(`/kiosk/product-setups/steps/${stepId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      if (selectedStepId) setSelectedStepId(null)
+    },
+  })
+
+  const { data: machines = [] } = useQuery<FresMachine[]>({
+    queryKey: ['product-setup-machines'],
+    queryFn:  () => apiFetch('/kiosk/product-setups/machines'),
+    enabled:  showMachinePicker,
+  })
+
   if (isLoading || !setup) return <div className="flex-1 flex items-center justify-center text-gray-400">Laden…</div>
 
-  const activeStep = setup.steps.find(s => s.id === activeStepId) ?? setup.steps[0] ?? null
+  const selectedStep = setup.steps.find(s => s.id === selectedStepId) ?? null
 
+  // ── Stap detail view ──────────────────────────────────────────────────────
+  if (selectedStep) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-white shrink-0">
+          <button onClick={() => setSelectedStepId(null)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+            <ChevronLeft size={18} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-gray-400">#{selectedStep.stepNumber}</span>
+              <InlineEdit
+                value={selectedStep.stepName}
+                onSave={v => patchStep.mutate({ stepId: selectedStep.id, stepName: v })}
+                className="font-semibold text-gray-800"
+                placeholder="Stapnaam"
+              />
+            </div>
+            {selectedStep.machineName ? (
+              <button onClick={() => setShowMachinePicker(true)} className="text-xs text-teal-600 hover:underline mt-0.5">
+                {selectedStep.machineName} · wijzigen
+              </button>
+            ) : (
+              <button onClick={() => setShowMachinePicker(true)} className="text-xs text-gray-400 hover:text-teal-600 mt-0.5">
+                + Machine koppelen
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
+          {(['info', 'cnc', 'bijlagen', 'overdracht'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab inhoud */}
+        <div className="flex-1 overflow-auto">
+          {activeTab === 'info' && (
+            <div className="p-6">
+              <div className="max-w-lg space-y-5">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikelnaam</label>
+                  <p className="text-sm text-gray-800">{setup.articleName}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Productieorder</label>
+                    <p className="text-sm text-gray-800">{setup.productionOrderNo ?? '—'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikelnummer</label>
+                    <p className="text-sm text-gray-800">{setup.articleNo ?? '—'}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Omschrijving</label>
+                  <InlineEdit
+                    value={setup.description ?? ''}
+                    onSave={v => patchSetup.mutate({ description: v || null })}
+                    className="text-sm text-gray-800"
+                    placeholder="Voeg een omschrijving toe…"
+                    textarea
+                  />
+                </div>
+
+                {/* Tekeningen & CAD portaal kaarten */}
+                <div className="grid grid-cols-2 gap-3">
+                  {(['tekening', 'cad'] as const).map(type => {
+                    const docs  = setup.documents.filter(d => d.documentType === type)
+                    const label = type === 'tekening' ? 'Tekeningen' : 'CAD bestanden'
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => setOpenPortal(type)}
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <FolderOpen size={16} className="text-gray-400" />
+                          <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                            {docs.length}
+                          </span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">{label}</p>
+                        <p className="text-[10px] text-gray-400">
+                          {docs.length === 0
+                            ? 'Nog niets toegevoegd'
+                            : `Laatste: ${new Date(docs[0].uploadedAt).toLocaleDateString('nl-NL')}`}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+          {activeTab === 'cnc'        && <CncInfoTab step={selectedStep} setupId={setupId} />}
+          {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
+          {activeTab === 'overdracht' && (
+            <OverdrachtTab stepId={selectedStep.id} />
+          )}
+        </div>
+
+        {/* Document portaal modal */}
+        {openPortal && (
+          <DocumentPortalModal
+            type={openPortal}
+            docs={setup.documents.filter(d => d.documentType === openPortal)}
+            setupId={setupId}
+            onClose={() => setOpenPortal(null)}
+          />
+        )}
+
+        {/* Machine picker modal */}
+        {showMachinePicker && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowMachinePicker(false)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold text-lg text-gray-800">Machine selecteren</h2>
+                <button onClick={() => setShowMachinePicker(false)} className="p-1 rounded hover:bg-gray-100"><X size={18} /></button>
+              </div>
+              <div className="overflow-auto grid grid-cols-2 gap-3">
+                {selectedStep.machineId && (
+                  <button
+                    onClick={() => { patchStep.mutate({ stepId: selectedStep.id, machineId: null }); setShowMachinePicker(false) }}
+                    className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-red-300 hover:bg-red-50 transition-colors text-left col-span-2"
+                  >
+                    <X size={16} className="text-gray-400" />
+                    <span className="text-sm text-gray-500">Machine ontkoppelen</span>
+                  </button>
+                )}
+                {machines.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => { patchStep.mutate({ stepId: selectedStep.id, machineId: m.id }); setShowMachinePicker(false) }}
+                    className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-teal-400 hover:bg-teal-50 transition-colors text-left"
+                  >
+                    <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
+                      {m.photoUrl ? <img src={m.photoUrl} alt="" className="w-full h-full object-cover" /> : <Cpu size={18} className="text-gray-400" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
+                      {m.machineId && <p className="text-xs text-gray-400 truncate">{m.machineId}</p>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Setup overzicht view ──────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-white shrink-0">
         <button onClick={onBack} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><ChevronLeft size={18} /></button>
         <div className="flex-1 min-w-0">
           <InlineEdit
@@ -595,333 +830,87 @@ function SetupDetail({
         </div>
       </div>
 
-      {/* Stap navigator */}
-      <div className="flex items-center gap-1 px-5 py-2 border-b border-gray-200 bg-gray-50 overflow-x-auto shrink-0">
-        {setup.steps.map(step => (
-          <button
-            key={step.id}
-            onClick={() => setActiveStepId(step.id)}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0',
-              activeStepId === step.id
-                ? 'bg-teal-600 text-white'
-                : 'bg-white border border-gray-200 text-gray-600 hover:border-teal-400 hover:text-teal-700',
-            )}
-          >
-            <span className="text-xs opacity-70">#{step.stepNumber}</span>
-            {step.stepName}
-            {step.machineId === machineId && (
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" title="Deze machine" />
-            )}
-          </button>
-        ))}
-        {/* Nieuwe stap */}
-        {!showAddStep ? (
-          <button
-            onClick={() => setShowAddStep(true)}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors shrink-0"
-          >
-            <Plus size={13} /> Nieuwe stap
-          </button>
-        ) : (
-          <div className="flex items-center gap-1 shrink-0">
-            <input
-              autoFocus
-              className="w-36 border border-teal-400 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-              placeholder="Stapnaam"
-              value={newStepName}
-              onChange={e => setNewStepName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && newStepName.trim()) addStepMutation.mutate({ stepName: newStepName.trim(), machineId })
-                if (e.key === 'Escape') { setShowAddStep(false); setNewStepName('') }
-              }}
-            />
-            <button
-              onClick={() => newStepName.trim() && addStepMutation.mutate({ stepName: newStepName.trim(), machineId })}
-              className="p-1.5 rounded bg-teal-600 text-white hover:bg-teal-700"
-            ><Check size={13} /></button>
-            <button onClick={() => { setShowAddStep(false); setNewStepName('') }} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><X size={13} /></button>
-          </div>
-        )}
-      </div>
-
-      {/* Sub-tabs */}
-      <div className="flex gap-1 px-5 pt-3 pb-0 border-b border-gray-200 bg-white shrink-0">
-        {(['product', 'cnc', 'bijlagen'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
-              activeTab === tab
-                ? 'border-teal-500 text-teal-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700',
-            )}
-          >
-            {tab === 'product' ? 'Product informatie' : tab === 'cnc' ? 'CNC informatie' : 'Bijlagen'}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab inhoud */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === 'product' && activeStep && (
-          <ProductInfoTab setup={setup} step={activeStep} onPatchSetup={b => patchSetup.mutate(b)} />
-        )}
-        {activeTab === 'cnc' && activeStep && (
-          <CncInfoTab step={activeStep} setupId={setupId} />
-        )}
-        {activeTab === 'bijlagen' && activeStep && (
-          <BijlagenTab step={activeStep} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB: Product informatie
-// ══════════════════════════════════════════════════════════════════════════════
-
-function ProductInfoTab({
-  setup, step, onPatchSetup,
-}: {
-  setup: SetupDetail
-  step: Step
-  onPatchSetup: (b: object) => void
-}) {
-  const qc = useQueryClient()
-  const [showMachinePicker, setShowMachinePicker] = useState(false)
-  const [uploading, setUploading] = useState(false)
-
-  const patchStep = useMutation({
-    mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/steps/${step.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setup.id] }),
-  })
-
-  const deleteMachine = () => patchStep.mutate({ machineId: null })
-
-  const { data: machines = [] } = useQuery<FresMachine[]>({
-    queryKey: ['product-setup-machines'],
-    queryFn:  () => apiFetch('/kiosk/product-setups/machines'),
-    enabled:  showMachinePicker,
-  })
-
-  async function handleDocUpload(e: ChangeEvent<HTMLInputElement>, documentType: string) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('documentType', documentType)
-      await apiFetch(`/kiosk/product-setups/${setup.id}/documents`, { method: 'POST', body: fd })
-      qc.invalidateQueries({ queryKey: ['product-setup', setup.id] })
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  const deleteDoc = useMutation({
-    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setup.id] }),
-  })
-
-  const tekeningen = setup.documents.filter(d => d.documentType === 'tekening')
-  const cadFiles   = setup.documents.filter(d => d.documentType === 'cad')
-
-  return (
-    <div className="p-5 space-y-6 max-w-3xl">
-      {/* Machine */}
-      <section>
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Machine</h3>
-        {step.machineId ? (
-          <div className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
-            <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
-              {step.machinePhotoUrl ? <img src={step.machinePhotoUrl} alt="" className="w-full h-full object-cover" /> : <Cpu size={22} className="text-gray-400" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm text-gray-800">{step.machineName}</p>
-            </div>
-            <button onClick={() => setShowMachinePicker(true)} className="text-xs text-teal-600 hover:underline">Wijzigen</button>
-            <button onClick={deleteMachine} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><X size={14} /></button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowMachinePicker(true)}
-            className="flex items-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-teal-400 hover:text-teal-600 transition-colors"
-          >
-            <Plus size={16} /> Machine koppelen
-          </button>
-        )}
-      </section>
-
-      {/* Order informatie */}
-      <section>
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Order informatie</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Productieorder</label>
-            <InlineEdit
-              value={setup.productionOrderNo ?? ''}
-              onSave={v => onPatchSetup({ productionOrderNo: v })}
-              placeholder="Niet ingevuld"
-              className="text-sm text-gray-800 w-full"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Artikelnummer</label>
-            <InlineEdit
-              value={setup.articleNo ?? ''}
-              onSave={v => onPatchSetup({ articleNo: v })}
-              placeholder="Niet ingevuld"
-              className="text-sm text-gray-800 w-full"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-gray-500 block mb-1">Artikelnaam</label>
-            <InlineEdit
-              value={setup.articleName}
-              onSave={v => onPatchSetup({ articleName: v })}
-              className="text-sm text-gray-800 w-full"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-gray-500 block mb-1">Algemene informatie</label>
-            <InlineEdit
-              value={setup.description ?? ''}
-              onSave={v => onPatchSetup({ description: v })}
-              placeholder="Voeg een beschrijving toe…"
-              className="text-sm text-gray-800 w-full"
-              textarea
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Tekeningen */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tekeningen</h3>
-          <label className={cn('flex items-center gap-1.5 text-xs text-teal-600 cursor-pointer hover:text-teal-700', uploading && 'opacity-50 pointer-events-none')}>
-            <Upload size={13} /> Uploaden
-            <input type="file" className="hidden" accept=".pdf,image/*" onChange={e => handleDocUpload(e, 'tekening')} />
-          </label>
-        </div>
-        {tekeningen.length === 0 ? (
-          <p className="text-sm text-gray-400 italic">Nog geen tekeningen toegevoegd</p>
-        ) : (
-          <div className="space-y-2">
-            {tekeningen.map(doc => (
-              <DocumentRow key={doc.id} doc={doc} setupId={setup.id} onDelete={() => deleteDoc.mutate(doc.id)} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* CAD bestanden */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">CAD-bestanden</h3>
-          <label className={cn('flex items-center gap-1.5 text-xs text-teal-600 cursor-pointer hover:text-teal-700', uploading && 'opacity-50 pointer-events-none')}>
-            <Upload size={13} /> Uploaden
-            <input type="file" className="hidden" accept=".step,.stp,.iges,.igs,.dxf,.dwg,.stl" onChange={e => handleDocUpload(e, 'cad')} />
-          </label>
-        </div>
-        {cadFiles.length === 0 ? (
-          <p className="text-sm text-gray-400 italic">Nog geen CAD-bestanden toegevoegd</p>
-        ) : (
-          <div className="space-y-2">
-            {cadFiles.map(doc => (
-              <DocumentRow key={doc.id} doc={doc} setupId={setup.id} onDelete={() => deleteDoc.mutate(doc.id)} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Machine picker modal */}
-      {showMachinePicker && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowMachinePicker(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg text-gray-800">Machine selecteren</h2>
-              <button onClick={() => setShowMachinePicker(false)} className="p-1 rounded hover:bg-gray-100"><X size={18} /></button>
-            </div>
-            <div className="overflow-auto grid grid-cols-2 gap-3">
-              {machines.map(m => (
+      {/* Content: Bewerkingstappen */}
+      <div className="flex-1 overflow-auto p-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {setup.steps.map(step => (
+              <div key={step.id} className="group relative">
                 <button
-                  key={m.id}
-                  onClick={() => { patchStep.mutate({ machineId: m.id }); setShowMachinePicker(false) }}
-                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-teal-400 hover:bg-teal-50 transition-colors text-left"
+                  onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
+                  className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
                 >
-                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
-                    {m.photoUrl ? <img src={m.photoUrl} alt="" className="w-full h-full object-cover" /> : <Cpu size={18} className="text-gray-400" />}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
-                    {m.machineId && <p className="text-xs text-gray-400 truncate">{m.machineId}</p>}
+                  <span className="text-xs font-mono text-gray-400">#{step.stepNumber}</span>
+                  <p className="text-sm font-semibold text-gray-800 leading-snug">{step.stepName}</p>
+                  {step.machineName && <p className="text-xs text-gray-500 truncate">{step.machineName}</p>}
+                  <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
+                    {step.ncFiles.length > 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
+                        {step.ncFiles.length} NC
+                      </span>
+                    )}
+                    {step.attachments.length > 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+                        {step.attachments.length} bijlagen
+                      </span>
+                    )}
+                    {step.machineId === machineId && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Hier</span>
+                    )}
                   </div>
                 </button>
-              ))}
-            </div>
+                {/* Verwijder-knop */}
+                <button
+                  onClick={() => { if (confirm(`Bewerkingsstap "${step.stepName}" verwijderen?`)) deleteStep.mutate(step.id) }}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-white/90 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                  title="Stap verwijderen"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+
+            {/* + Nieuwe stap tegel */}
+            {!showAddStep ? (
+              <button
+                onClick={() => setShowAddStep(true)}
+                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-teal-400 hover:text-teal-600 text-gray-400 transition-all min-h-[110px]"
+              >
+                <Plus size={20} />
+                <span className="text-sm font-medium">Nieuwe stap</span>
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2 p-4 rounded-xl border-2 border-teal-400 bg-teal-50 min-h-[110px]">
+                <input
+                  autoFocus
+                  className="border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
+                  placeholder="Stapnaam"
+                  value={newStepName}
+                  onChange={e => setNewStepName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), machineId })
+                    if (e.key === 'Escape') { setShowAddStep(false); setNewStepName('') }
+                  }}
+                />
+                <div className="flex gap-1">
+                  <button
+                    disabled={!newStepName.trim() || addStep.isPending}
+                    onClick={() => newStepName.trim() && addStep.mutate({ stepName: newStepName.trim(), machineId })}
+                    className="flex-1 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {addStep.isPending ? 'Aanmaken…' : 'Aanmaken'}
+                  </button>
+                  <button onClick={() => { setShowAddStep(false); setNewStepName('') }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-function DocumentRow({ doc, setupId, onDelete }: { doc: Document; setupId: string; onDelete: () => void }) {
-  const qc = useQueryClient()
-  const [editNote, setEditNote] = useState(false)
-  const [note, setNote] = useState(doc.versionNote ?? '')
-
-  function saveNote() {
-    setEditNote(false)
-    if (note !== (doc.versionNote ?? '')) {
-      // We use a direct patch via the documents endpoint — caption update reused as versionNote
-      apiFetch(`/kiosk/product-setups/documents/${doc.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ versionNote: note.trim() || null }),
-      }).then(() => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }))
-    }
-  }
-
-  return (
-    <div className="flex items-start gap-3 p-3 bg-white border border-gray-200 rounded-lg group">
-      <FileText size={18} className="text-gray-400 shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-teal-600 hover:underline truncate block">
-          {doc.fileName}
-        </a>
-        {editNote ? (
-          <input
-            autoFocus
-            className="mt-1 w-full border border-teal-400 rounded px-2 py-0.5 text-xs focus:outline-none"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onBlur={saveNote}
-            onKeyDown={e => { if (e.key === 'Enter') saveNote(); if (e.key === 'Escape') setEditNote(false) }}
-            placeholder="Revisienota bijv. Rev B – flens aangepast"
-          />
-        ) : (
-          <p
-            className="text-xs text-gray-500 cursor-text hover:text-teal-600 mt-0.5"
-            onClick={() => setEditNote(true)}
-          >
-            {doc.versionNote || <span className="italic text-gray-300">Revisienota toevoegen…</span>}
-          </p>
-        )}
-        <p className="text-xs text-gray-400 mt-0.5">{fmtDate(doc.uploadedAt)}{doc.uploadedByName ? ` · ${doc.uploadedByName}` : ''}</p>
       </div>
-      <button
-        onClick={() => { if (confirm('Document verwijderen?')) onDelete() }}
-        className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-      ><Trash2 size={14} /></button>
-    </div>
   )
 }
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: CNC informatie
@@ -929,62 +918,37 @@ function DocumentRow({ doc, setupId, onDelete }: { doc: Document; setupId: strin
 
 function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const qc = useQueryClient()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedNcFileId, setSelectedNcFileId] = useState<string | null>(
     step.ncFiles.length > 0 ? step.ncFiles[step.ncFiles.length - 1].id : null
   )
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
+  const [openTcSeq, setOpenTcSeq]     = useState<number | null>(null)
+  const [showNcPortal, setShowNcPortal] = useState(false)
+  const [syncStatus, setSyncStatus]   = useState<'idle' | 'syncing' | 'error'>('idle')
+  const [syncError, setSyncError]     = useState<string | null>(null)
+
+  async function handleSyncAndValidate() {
+    setSyncStatus('syncing')
+    setSyncError(null)
+    try {
+      await apiFetch('/kiosk/cnc/trigger-sync', { method: 'POST' })
+      await new Promise(r => setTimeout(r, 8000))
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Agent niet bereikbaar — alleen hervalideerd')
+    }
+    await validate()
+    setSyncStatus('idle')
+  }
 
   const patchStep = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/steps/${step.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
   })
 
-  const deleteNcFile = useMutation({
-    mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      setSelectedNcFileId(null)
-    },
-  })
-
-  const { data: validation, isLoading: validating, refetch: validate } = useQuery<ValidationResult>({
+  const { data: validation, isFetching: validating, refetch: validate } = useQuery<ValidationResult>({
     queryKey: ['nc-validate', selectedNcFileId],
     queryFn:  () => apiFetch(`/kiosk/product-setups/nc-files/${selectedNcFileId}/validate`),
     enabled:  false,
   })
-
-  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true); setUploadError(null)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await apiFetch<{ ok: boolean; ncFileId: string; toolCallCount: number }>(`/kiosk/product-setups/steps/${step.id}/nc-files`, {
-        method: 'POST', body: fd,
-      })
-      await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      setSelectedNcFileId(res.ncFileId)
-    } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  function toggleRow(seq: number) {
-    setExpandedRows(prev => {
-      const next = new Set(prev)
-      next.has(seq) ? next.delete(seq) : next.add(seq)
-      return next
-    })
-  }
-
-  const selectedFile = step.ncFiles.find(f => f.id === selectedNcFileId)
 
   return (
     <div className="p-5 space-y-6 max-w-4xl">
@@ -996,11 +960,10 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             <div key={axis}>
               <label className="text-xs text-gray-500 block mb-1">{axis.replace('zero', '')}</label>
               <input
-                type="number"
-                step="0.0001"
+                type="text"
                 className="w-28 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                defaultValue={step[axis] ? parseFloat(step[axis]!) : ''}
-                onBlur={e => patchStep.mutate({ [axis]: e.target.value ? parseFloat(e.target.value) : null })}
+                defaultValue={step[axis] ?? ''}
+                onBlur={e => patchStep.mutate({ [axis]: e.target.value.trim() || null })}
               />
             </div>
           ))}
@@ -1009,62 +972,95 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
 
       {/* NC bestanden */}
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">NC-programmabestanden (.h)</h3>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
-          >
-            <Upload size={13} /> {uploading ? 'Uploaden…' : 'Bestand uploaden'}
-          </button>
-          <input ref={fileInputRef} type="file" accept=".h" className="hidden" onChange={handleUpload} />
-        </div>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">NC-programmabestanden (.h)</h3>
 
-        {uploadError && (
-          <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">{uploadError}</div>
+        {/* Portaal kaart */}
+        {(() => {
+          const activeFile = step.ncFiles.find(f => f.id === selectedNcFileId)
+          return (
+            <button
+              onClick={() => setShowNcPortal(true)}
+              className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left mb-4"
+            >
+              <FolderOpen size={18} className="text-gray-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                {activeFile ? (
+                  <>
+                    <p className="text-sm font-medium text-gray-800 truncate">{activeFile.fileName}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {activeFile.programName && <span className="mr-2">{activeFile.programName}</span>}
+                      {activeFile.toolCallCount} tool calls · {fmtDate(activeFile.uploadedAt)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-400">Geen bestand geselecteerd</p>
+                )}
+              </div>
+              <span className="text-xs text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5 shrink-0">
+                {step.ncFiles.length}
+              </span>
+            </button>
+          )
+        })()}
+
+        {/* Importeer / Sync knop voor actief bestand */}
+        {selectedNcFileId && (
+          <div className="flex items-center gap-2 mb-4">
+            {!validation ? (
+              <button
+                onClick={() => validate()}
+                disabled={validating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
+                Importeer samenstellingen
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSyncAndValidate()}
+                disabled={syncStatus === 'syncing' || validating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
+                {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
+              </button>
+            )}
+            {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
+          </div>
         )}
 
-        {step.ncFiles.length === 0 ? (
-          <p className="text-sm text-gray-400 italic">Nog geen .h bestanden geüpload</p>
-        ) : (
-          <div className="space-y-1.5 mb-4">
-            {[...step.ncFiles].reverse().map(f => (
-              <div
-                key={f.id}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
-                  selectedNcFileId === f.id
-                    ? 'border-teal-400 bg-teal-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300',
-                )}
-                onClick={() => setSelectedNcFileId(f.id)}
-              >
-                <FileText size={16} className={selectedNcFileId === f.id ? 'text-teal-600' : 'text-gray-400'} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{f.fileName}</p>
-                  <p className="text-xs text-gray-400">
-                    {f.programName && <span className="mr-2">{f.programName}</span>}
-                    {f.toolCallCount} tool calls · {fmtDate(f.uploadedAt)}
-                  </p>
-                </div>
-                {selectedNcFileId === f.id && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); validate() }}
-                    disabled={validating}
-                    className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-600 text-white rounded text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-                  >
-                    <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
-                    {validation ? 'Hervalideren' : 'Importeer samenstellingen'}
-                  </button>
-                )}
-                <button
-                  onClick={e => { e.stopPropagation(); if (confirm('NC bestand verwijderen?')) deleteNcFile.mutate(f.id) }}
-                  className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
-                ><Trash2 size={14} /></button>
-              </div>
-            ))}
+        {/* Tijdstempels */}
+        {validation && (
+          <div className="flex gap-4 mb-2 text-[11px] text-gray-400">
+            {validation.validatedAt && (
+              <span>
+                Gevalideerd: <span className="font-medium text-gray-500">
+                  {new Date(validation.validatedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              </span>
+            )}
+            {validation.lastSyncAt ? (
+              <span>
+                Laatste sync: <span className="font-medium text-gray-500">
+                  {new Date(validation.lastSyncAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              </span>
+            ) : (
+              <span className="text-gray-300">Nog niet gesynchroniseerd</span>
+            )}
           </div>
+        )}
+
+        {/* NC portal modal */}
+        {showNcPortal && (
+          <NcFilePortalModal
+            files={step.ncFiles}
+            stepId={step.id}
+            setupId={setupId}
+            activeId={selectedNcFileId}
+            onSelect={id => { setSelectedNcFileId(id) }}
+            onClose={() => setShowNcPortal(false)}
+          />
         )}
 
         {/* Validatietabel */}
@@ -1074,8 +1070,8 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             <div className="flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
               <div className="text-sm font-medium text-gray-700">
                 {validation.programName && <span className="mr-2 text-gray-500">{validation.programName}</span>}
-                Validatie: <span className="text-green-600">{validation.summary.present} aanwezig</span>
-                {validation.summary.missing > 0 && <span className="text-red-600"> · {validation.summary.missing} ontbreken</span>}
+                Validatie: <span className="text-green-600">{validation.summary.present} in machine</span>
+                {validation.summary.missing > 0 && <span className="text-orange-600"> · {validation.summary.missing} opbouwen</span>}
                 <span className="text-gray-400"> van {validation.summary.total}</span>
               </div>
             </div>
@@ -1088,63 +1084,58 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                     <th className="w-4 px-2 py-2" />
                     <th className="px-3 py-2 text-left font-semibold text-gray-600">TOOL</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-600">NAME</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">DOC</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">L</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">R</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">DL</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">DR</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">TIME2</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">CUR.TIME</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-600 w-24">LIFE %</th>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600">STATUS</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">LOCK</th>
                     <th className="px-2 py-2 w-6" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {validation.toolCalls.map(tc => {
                     const me = tc.magazineEntry
-                    const expanded = expandedRows.has(tc.sequence)
                     return (
-                      <Fragment key={tc.sequence}>
-                        <tr className={cn('group', tc.status === 'ontbreekt' && 'bg-red-50/40')}>
-                          {/* Health dot */}
-                          <td className="px-2 py-2">
-                            <div className={cn('w-2 h-2 rounded-full', me
-                              ? lifeDotColor(me.time2, me.curTime)
-                              : tc.status === 'ontbreekt' ? 'bg-red-300' : 'bg-gray-200'
-                            )} />
-                          </td>
-                          <td className="px-3 py-2 font-mono font-medium text-gray-800">
-                            {tc.toolNumber != null ? `T${tc.toolNumber}` : tc.toolName ?? '—'}
-                          </td>
-                          <td className="px-3 py-2 text-gray-700 max-w-[120px] truncate">{me?.name ?? '—'}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.l ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.r ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.curTime ?? null)}</td>
-                          <td className="px-3 py-2">
-                            <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
-                          </td>
-                          <td className="px-3 py-2">
-                            <StatusBadge status={tc.status} />
-                          </td>
-                          <td className="px-2 py-2">
-                            {tc.status === 'ontbreekt' && (
-                              <button onClick={() => toggleRow(tc.sequence)} className="p-0.5 rounded hover:bg-gray-200 text-gray-400">
-                                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        {expanded && tc.status === 'ontbreekt' && (
-                          <tr>
-                            <td colSpan={12} className="px-4 pb-3 pt-1">
-                              <OntbreektDetail tc={tc} />
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                      <tr key={tc.sequence} className={cn('group', tc.status === 'ontbreekt' && 'bg-red-50/40')}>
+                        <td className="px-2 py-2">
+                          <div className={cn('w-2 h-2 rounded-full', me
+                            ? lifeDotColor(me.time2, me.curTime)
+                            : tc.status === 'ontbreekt' ? 'bg-red-300' : 'bg-gray-200'
+                          )} />
+                        </td>
+                        <td className="px-3 py-2 font-mono font-medium text-gray-800">
+                          {me ? `T${me.toolNumber}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {me?.name ?? tc.toolName ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500">{me?.doc ?? '—'}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.l ?? null)}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.curTime ?? null)}</td>
+                        <td className="px-3 py-2">
+                          <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
+                        </td>
+                        <td className="px-3 py-2">
+                          {me ? (me.locked
+                            ? <Lock size={13} className="text-gray-500" />
+                            : <Unlock size={13} className="text-gray-300" />
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-2">
+                          <button
+                            onClick={() => setOpenTcSeq(tc.sequence)}
+                            className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 transition-colors"
+                          >
+                            <Info size={13} />
+                          </button>
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -1153,15 +1144,584 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
           </div>
         )}
       </section>
+
+      {/* Tool detail modal */}
+      {openTcSeq !== null && validation && (() => {
+        const tc = validation.toolCalls.find(t => t.sequence === openTcSeq)
+        return tc ? <ToolDetailModal tc={tc} onClose={() => setOpenTcSeq(null)} /> : null
+      })()}
     </div>
   )
 }
 
-// ── Ontbreekt detail (in andere machines + op voorraad) ───────────────────────
+// ── Overdracht portaal modal ──────────────────────────────────────────────────
 
-function OntbreektDetail({ tc }: { tc: ValidationToolCall }) {
-  const [subTab, setSubTab] = useState<'machines' | 'voorraad'>('machines')
+interface OverdrachtPhoto {
+  id:       string
+  fileUrl:  string
+  fileName: string
+}
+
+interface OverdrachtEntry {
+  id:            string
+  tekst:         string
+  createdByName: string | null
+  createdAt:     string
+  photos:        OverdrachtPhoto[]
+}
+
+function OverdrachtTab({ stepId }: { stepId: string }) {
   const qc = useQueryClient()
+  const [tekst, setTekst]           = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [lightbox, setLightbox]         = useState<{ photos: OverdrachtPhoto[]; index: number } | null>(null)
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null)
+  const [editingId, setEditingId]       = useState<string | null>(null)
+  const [editTekst, setEditTekst]       = useState('')
+  const [savingEdit, setSavingEdit]     = useState(false)
+  const photoRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  const { data: entries = [], isLoading } = useQuery<OverdrachtEntry[]>({
+    queryKey: ['overdracht', stepId],
+    queryFn:  () => apiFetch(`/kiosk/product-setups/steps/${stepId}/overdracht`),
+  })
+
+  async function handleSave() {
+    if (!tekst.trim()) return
+    setSaving(true)
+    try {
+      await apiFetch(`/kiosk/product-setups/steps/${stepId}/overdracht`, {
+        method: 'POST',
+        body:   JSON.stringify({ tekst }),
+      })
+      setTekst('')
+      qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSaveEdit(id: string) {
+    if (!editTekst.trim()) return
+    setSavingEdit(true)
+    try {
+      await apiFetch(`/kiosk/product-setups/overdracht/${id}`, {
+        method: 'PATCH',
+        body:   JSON.stringify({ tekst: editTekst }),
+      })
+      setEditingId(null)
+      qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Overdracht verwijderen?')) return
+    await apiFetch(`/kiosk/product-setups/overdracht/${id}`, { method: 'DELETE' })
+    qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
+  }
+
+  async function handlePhotoUpload(e: ChangeEvent<HTMLInputElement>, overdrachtId: string) {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    setUploadingFor(overdrachtId)
+    try {
+      for (const file of files) {
+        const fd = new FormData()
+        fd.append('file', file)
+        await apiFetch(`/kiosk/product-setups/overdracht/${overdrachtId}/photos`, { method: 'POST', body: fd })
+      }
+      qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
+    } finally {
+      setUploadingFor(null)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Log entries */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12 text-gray-400 text-sm">Laden…</div>
+        ) : entries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+            <Info size={36} className="mb-2" />
+            <p className="text-sm">Nog geen overdrachten gelogd</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {entries.map(e => (
+              <li key={e.id} className="px-6 py-4 group">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xs font-semibold text-gray-700">{e.createdByName ?? 'Onbekend'}</span>
+                  <span className="text-[10px] text-gray-400">
+                    {new Date(e.createdAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => { setEditingId(e.id); setEditTekst(e.tekst) }}
+                      className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                      title="Bewerken"
+                    ><ExternalLink size={13} /></button>
+                    <button
+                      onClick={() => handleDelete(e.id)}
+                      className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                      title="Verwijderen"
+                    ><Trash2 size={13} /></button>
+                  </div>
+                </div>
+
+                {editingId === e.id ? (
+                  <div className="mb-3">
+                    <textarea
+                      autoFocus
+                      value={editTekst}
+                      onChange={ev => setEditTekst(ev.target.value)}
+                      rows={3}
+                      className="w-full text-sm border border-teal-300 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-teal-200"
+                    />
+                    <div className="flex gap-2 mt-1.5">
+                      <button
+                        onClick={() => handleSaveEdit(e.id)}
+                        disabled={savingEdit || !editTekst.trim()}
+                        className="px-3 py-1 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50"
+                      >{savingEdit ? 'Opslaan…' : 'Opslaan'}</button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700"
+                      >Annuleren</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap mb-3">{e.tekst}</p>
+                )}
+
+                {/* Thumbnails */}
+                {e.photos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {e.photos.map((p, idx) => (
+                      <button
+                        key={p.id}
+                        onClick={() => setLightbox({ photos: e.photos, index: idx })}
+                        className="rounded-lg overflow-hidden border border-gray-200 hover:border-teal-400 transition-colors shrink-0"
+                        style={{ width: 72, height: 72 }}
+                      >
+                        <img src={p.fileUrl} alt={p.fileName} style={{ width: 72, height: 72, objectFit: 'cover', display: 'block' }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Foto toevoegen */}
+                <button
+                  onClick={() => photoRefs.current[e.id]?.click()}
+                  disabled={uploadingFor === e.id}
+                  className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-teal-600 disabled:opacity-50 transition-colors"
+                >
+                  <Plus size={12} />
+                  {uploadingFor === e.id ? 'Uploaden…' : 'Foto toevoegen'}
+                </button>
+                <input
+                  ref={el => { photoRefs.current[e.id] = el }}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={ev => handlePhotoUpload(ev, e.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Nieuw bericht */}
+      <div className="border-t border-gray-100 px-6 py-4 shrink-0">
+        <textarea
+          value={tekst}
+          onChange={e => setTekst(e.target.value)}
+          placeholder="Schrijf een overdracht…"
+          rows={3}
+          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-teal-300"
+        />
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving || !tekst.trim()}
+            className="px-4 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Opslaan…' : 'Opslaan'}
+          </button>
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            onClick={() => setLightbox(null)}
+          ><X size={20} /></button>
+
+          {lightbox.index > 0 && (
+            <button
+              className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && ({ ...l, index: l.index - 1 })) }}
+            >‹</button>
+          )}
+
+          <img
+            src={lightbox.photos[lightbox.index].fileUrl}
+            alt={lightbox.photos[lightbox.index].fileName}
+            className="max-w-[90vw] max-h-[85vh] rounded-lg object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+
+          {lightbox.index < lightbox.photos.length - 1 && (
+            <button
+              className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && ({ ...l, index: l.index + 1 })) }}
+            >›</button>
+          )}
+
+          <div className="absolute bottom-4 text-white/60 text-xs">
+            {lightbox.index + 1} / {lightbox.photos.length}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── NC bestand portaal modal ─────────────────────────────────────────────────
+
+interface NcFile {
+  id: string
+  fileName: string
+  programName: string | null
+  toolCallCount: number
+  uploadedAt: string
+}
+
+function NcFilePortalModal({
+  files, stepId, setupId, activeId, onSelect, onClose,
+}: {
+  files: NcFile[]
+  stepId: string
+  setupId: string
+  activeId: string | null
+  onSelect: (id: string) => void
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
+  const deleteNcFile = useMutation({
+    mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  const renameNcFile = useMutation({
+    mutationFn: ({ id, fileName }: { id: string; fileName: string }) =>
+      apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'PATCH', body: JSON.stringify({ fileName }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      setRenamingId(null)
+    },
+  })
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setUploadError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await apiFetch<{ ncFileId: string }>(`/kiosk/product-setups/steps/${stepId}/nc-files`, {
+        method: 'POST', body: fd,
+      })
+      await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      onSelect(res.ncFileId)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const sorted = [...files].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <FileText size={16} className="text-gray-400" />
+            <p className="font-bold text-gray-800">NC-programmabestanden</p>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{files.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+            >
+              <Upload size={13} />
+              {uploading ? 'Bezig…' : 'Uploaden'}
+            </button>
+            <input ref={fileRef} type="file" accept=".h" className="hidden" onChange={handleUpload} />
+            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
+          </div>
+        </div>
+
+        {uploadError && (
+          <div className="mx-5 mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600 shrink-0">{uploadError}</div>
+        )}
+
+        {/* Bestandslijst */}
+        <div className="flex-1 overflow-auto">
+          {sorted.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+              <FileText size={36} className="mb-2" />
+              <p className="text-sm">Nog geen NC-bestanden geüpload</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {sorted.map(f => {
+                const isActive = f.id === activeId
+                const isRenaming = renamingId === f.id
+                return (
+                  <li
+                    key={f.id}
+                    className={cn(
+                      'flex items-center gap-3 px-5 py-3 group cursor-pointer',
+                      isActive ? 'bg-teal-50' : 'hover:bg-gray-50',
+                    )}
+                    onClick={() => { if (!isRenaming) { onSelect(f.id); onClose() } }}
+                  >
+                    <FileText size={15} className={isActive ? 'text-teal-500 shrink-0' : 'text-gray-300 shrink-0'} />
+                    <div className="flex-1 min-w-0">
+                      {isRenaming ? (
+                        <input
+                          autoFocus
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') renameNcFile.mutate({ id: f.id, fileName: renameValue })
+                            if (e.key === 'Escape') setRenamingId(null)
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          className="text-sm border border-teal-300 rounded px-2 py-0.5 w-full focus:outline-none focus:ring-2 focus:ring-teal-200"
+                        />
+                      ) : (
+                        <p className={cn('text-sm font-medium truncate', isActive ? 'text-teal-700' : 'text-gray-800')}>
+                          {f.fileName}
+                          {isActive && <span className="ml-2 text-[10px] font-semibold text-teal-500 uppercase tracking-wide">actief</span>}
+                        </p>
+                      )}
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {f.programName && <span className="mr-2">{f.programName}</span>}
+                        {f.toolCallCount} tool calls ·{' '}
+                        {new Date(f.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      {isRenaming ? (
+                        <>
+                          <button
+                            onClick={() => renameNcFile.mutate({ id: f.id, fileName: renameValue })}
+                            className="px-2 py-1 text-xs bg-teal-600 text-white rounded hover:bg-teal-700"
+                          >Opslaan</button>
+                          <button
+                            onClick={() => setRenamingId(null)}
+                            className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                          >Annuleren</button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => { setRenamingId(f.id); setRenameValue(f.fileName) }}
+                          className="p-1.5 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Hernoemen"
+                        >
+                          <ExternalLink size={13} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { if (confirm('NC bestand verwijderen?')) deleteNcFile.mutate(f.id) }}
+                        className="p-1.5 rounded text-gray-200 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                      ><Trash2 size={13} /></button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Document portaal modal ────────────────────────────────────────────────────
+
+function DocumentPortalModal({
+  type, docs, setupId, onClose,
+}: {
+  type: 'tekening' | 'cad'
+  docs: Document[]
+  setupId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const deleteDoc = useMutation({
+    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('documentType', type)
+      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const title = type === 'tekening' ? 'Tekeningen' : 'CAD bestanden'
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <FolderOpen size={16} className="text-gray-400" />
+            <p className="font-bold text-gray-800">{title}</p>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{docs.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+            >
+              <Upload size={13} />
+              {uploading ? 'Bezig…' : 'Uploaden'}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              accept={type === 'tekening' ? 'application/pdf,image/*' : undefined}
+              onChange={handleUpload}
+            />
+            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Bestandslijst */}
+        <div className="flex-1 overflow-auto">
+          {docs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+              <FolderOpen size={36} className="mb-2" />
+              <p className="text-sm">Nog geen {title.toLowerCase()} toegevoegd</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {docs.map(doc => (
+                <li key={doc.id} className="flex items-center gap-3 px-5 py-3 group hover:bg-gray-50">
+                  <FileText size={16} className="text-gray-300 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
+                    </p>
+                  </div>
+                  <a
+                    href={doc.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 shrink-0"
+                  >
+                    <Download size={14} />
+                  </a>
+                  <button
+                    onClick={() => deleteDoc.mutate(doc.id)}
+                    className="p-1.5 rounded hover:bg-red-50 text-gray-200 hover:text-red-500 shrink-0 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tool detail modal (Samenstelling · In machines · Voorraad) ────────────────
+
+function ToolDetailModal({ tc, onClose }: { tc: ValidationToolCall; onClose: () => void }) {
+  const [tab, setTab] = useState<'samenstelling' | 'machines' | 'voorraad'>('samenstelling')
+  const qc = useQueryClient()
+
+  // Machine-gebruik per component ophalen zodra de samenstelling-tab actief is
+  const [componentMachines, setComponentMachines] = useState<Map<string, { machineName: string; toolNumber: number }[]>>(new Map())
+  const [openMachinePopover, setOpenMachinePopover] = useState<string | null>(null)
+  useEffect(() => {
+    if (tab !== 'samenstelling' || !tc.assembly) return
+    const itemIds = [...new Set(tc.assembly.components.map(c => c.itemId).filter((id): id is string => !!id))]
+    if (itemIds.length === 0) return
+    Promise.all(
+      itemIds.map(id =>
+        apiFetch(`/kiosk/cnc/components/${id}`)
+          .then((d: unknown) => {
+            const data = d as { assemblies: { instances: { machineName: string; toolNumber: number }[] }[] }
+            return { id, instances: data.assemblies.flatMap(a => a.instances) }
+          })
+          .catch(() => ({ id, instances: [] }))
+      )
+    ).then(results => {
+      const map = new Map<string, { machineName: string; toolNumber: number }[]>()
+      for (const { id, instances } of results) {
+        // Dedupliceer op machineName + toolNumber
+        const seen = new Set<string>()
+        map.set(id, instances.filter(inst => {
+          const key = `${inst.machineName}:${inst.toolNumber}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        }))
+      }
+      setComponentMachines(map)
+    })
+  }, [tab, tc.assembly])
 
   const uitnemen = useMutation({
     mutationFn: (locId: string) => apiFetch(`/kiosk/tooling/stock-locations/${locId}/mutate`, {
@@ -1171,79 +1731,207 @@ function OntbreektDetail({ tc }: { tc: ValidationToolCall }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['nc-validate'] }),
   })
 
+  const toolLabel = tc.assembly?.ncName ?? tc.toolName ?? (tc.toolNumber != null ? `T${tc.toolNumber}` : '—')
+  const needsAssembly = tc.status === 'ontbreekt'
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <div className="flex gap-1 mb-3">
-        <button
-          onClick={() => setSubTab('machines')}
-          className={cn('px-3 py-1 rounded text-xs font-medium', subTab === 'machines' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}
-        >
-          In andere machines ({tc.inOtherMachines?.length ?? 0})
-        </button>
-        <button
-          onClick={() => setSubTab('voorraad')}
-          className={cn('px-3 py-1 rounded text-xs font-medium', subTab === 'voorraad' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}
-        >
-          Op voorraad ({tc.componentsInStock?.reduce((a, c) => a + c.locations.length, 0) ?? 0})
-        </button>
-      </div>
-
-      {subTab === 'machines' && (
-        <div>
-          {!tc.inOtherMachines?.length ? (
-            <p className="text-xs text-gray-400 italic">Niet aangetroffen in andere machines</p>
-          ) : (
-            <table className="w-full text-xs">
-              <thead><tr className="text-gray-500"><th className="text-left pb-1">Machine</th><th className="text-left pb-1">Positie</th><th className="text-right pb-1">Aantal</th></tr></thead>
-              <tbody className="divide-y divide-gray-100">
-                {tc.inOtherMachines?.map((m, i) => (
-                  <tr key={i}>
-                    <td className="py-1.5 font-medium text-gray-700">{m.machineName}</td>
-                    <td className="py-1.5 text-gray-500 font-mono">T{m.toolNumber}</td>
-                    <td className="py-1.5 text-right text-gray-500">{m.count}×</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={e => { e.stopPropagation(); setOpenMachinePopover(null) }}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="min-w-0">
+            <p className="font-bold text-gray-800 truncate">{toolLabel}</p>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {tc.assembly && (
+                <span className="text-xs text-gray-400">
+                  {tc.assembly.toolLength != null && `L ${tc.assembly.toolLength} mm`}
+                  {tc.assembly.presetDiameter != null && ` · Ø ${tc.assembly.presetDiameter} mm`}
+                </span>
+              )}
+              {needsAssembly && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                  <Wrench size={10} /> Opbouwen vereist
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400 shrink-0 ml-3">
+            <X size={18} />
+          </button>
         </div>
-      )}
 
-      {subTab === 'voorraad' && (
-        <div>
-          {!tc.componentsInStock?.length ? (
-            <p className="text-xs text-gray-400 italic">Geen componenten op voorraad gevonden</p>
-          ) : (
-            <div className="space-y-3">
-              {tc.componentsInStock?.map(item => (
-                <div key={item.itemId}>
-                  <p className="text-xs font-semibold text-gray-700 mb-1">{item.itemName} <span className="text-gray-400 font-normal">({item.itemType})</span></p>
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-gray-500"><th className="text-left pb-1">Locatie</th><th className="text-right pb-1">Aantal</th><th className="pb-1" /></tr></thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {item.locations.map(loc => (
-                        <tr key={loc.locId}>
-                          <td className="py-1.5 font-mono text-gray-700">{loc.locationCode}</td>
-                          <td className="py-1.5 text-right text-gray-600">{loc.quantity} st.</td>
-                          <td className="py-1.5 pl-2">
-                            <button
-                              disabled={uitnemen.isPending}
-                              onClick={() => uitnemen.mutate(loc.locId)}
-                              className="px-2 py-0.5 bg-teal-600 text-white rounded text-xs hover:bg-teal-700 disabled:opacity-50"
-                            >
-                              Uitnemen
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {/* Tabs */}
+        <div className="flex gap-1 px-5 pt-3 pb-0 border-b border-gray-100 shrink-0">
+          {([
+            { key: 'samenstelling', label: 'Samenstelling', icon: <Layers size={13} /> },
+            { key: 'machines',      label: `In machines (${tc.inOtherMachines?.length ?? 0})`, icon: <Cpu size={13} /> },
+            { key: 'voorraad',      label: 'Voorraad', icon: <PackageSearch size={13} /> },
+          ] as const).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors',
+                tab === t.key ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-5">
+
+          {/* ── Samenstelling ── */}
+          {tab === 'samenstelling' && (
+            <div>
+              {!tc.assembly || tc.assembly.components.length === 0 ? (
+                <p className="text-sm text-gray-400 italic">Geen samenstelling gevonden in de bibliotheek.</p>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {expandComponents(tc.assembly.components).map((row, i) => (
+                    <div key={i} className="flex items-start gap-3 py-3">
+                      <span className="text-xs text-gray-300 w-5 text-right shrink-0 mt-1">{i + 1}</span>
+                      <div className="shrink-0">
+                        {row.photoUrl ? (
+                          <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 80, height: 80 }}>
+                            <img src={row.photoUrl} alt="" style={{ width: 80, height: 80, objectFit: 'contain', display: 'block' }} />
+                          </div>
+                        ) : (
+                          <div className="rounded bg-gray-50 border border-gray-100" style={{ width: 80, height: 80 }} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn('inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide', row.labelColor)}>
+                            {row.label}
+                          </span>
+                          <span className="text-sm font-medium text-gray-800 truncate">{row.name}</span>
+                        </div>
+                        <div className="flex gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
+                          {row.manufacturer && <span>{row.manufacturer}</span>}
+                          {row.orderingCode && <span className="font-mono">{row.orderingCode}</span>}
+                          {row.reach != null && <span>Bereik: {row.reach.toFixed(1)} mm</span>}
+                        </div>
+                        {row.itemId && (() => {
+                          const instances = componentMachines.get(row.itemId)
+                          if (!instances) return null
+                          const popoverId = `${row.itemId}-${i}`
+                          const isOpen = openMachinePopover === popoverId
+                          return (
+                            <div className="relative mt-1">
+                              <button
+                                onClick={e => { e.stopPropagation(); setOpenMachinePopover(isOpen ? null : popoverId) }}
+                                className={cn(
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors',
+                                  instances.length > 0
+                                    ? 'bg-green-50 text-green-700 border-green-100 hover:bg-green-100'
+                                    : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100',
+                                )}
+                              >
+                                <Cpu size={9} />
+                                {instances.length === 0 ? 'Niet in machine' : `${instances.length} machine${instances.length !== 1 ? 's' : ''}`}
+                              </button>
+                              {isOpen && instances.length > 0 && (
+                                <div className="absolute left-0 top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+                                  onClick={e => e.stopPropagation()}>
+                                  {instances.map((inst, j) => (
+                                    <div key={j} className="flex items-center justify-between gap-4 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                                      <span className="font-medium truncate">{inst.machineName}</span>
+                                      <span className="font-mono text-gray-400 shrink-0">T{inst.toolNumber}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+            </div>
+          )}
+
+          {/* ── In machines ── */}
+          {tab === 'machines' && (
+            <div>
+              {!tc.inOtherMachines?.length ? (
+                <p className="text-sm text-gray-400 italic">Niet aangetroffen in andere machines.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                      <th className="text-left pb-2 font-semibold">Machine</th>
+                      <th className="text-left pb-2 font-semibold">Positie</th>
+                      <th className="text-right pb-2 font-semibold">Aantal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {tc.inOtherMachines.map((m, i) => (
+                      <tr key={i}>
+                        <td className="py-2 font-medium text-gray-700">{m.machineName}</td>
+                        <td className="py-2 text-gray-500 font-mono">T{m.toolNumber}</td>
+                        <td className="py-2 text-right text-gray-500">{m.count}×</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* ── Voorraad ── */}
+          {tab === 'voorraad' && (
+            <div>
+              {!tc.componentsInStock?.length ? (
+                <p className="text-sm text-gray-400 italic">Geen componenten op voorraad gevonden.</p>
+              ) : (
+                <div className="space-y-4">
+                  {tc.componentsInStock.map(item => (
+                    <div key={item.itemId}>
+                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                        {item.itemName} <span className="font-normal text-gray-400">({item.itemType})</span>
+                      </p>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-500 border-b border-gray-100">
+                            <th className="text-left pb-1.5 font-semibold">Locatie</th>
+                            <th className="text-right pb-1.5 font-semibold">Aantal</th>
+                            <th className="pb-1.5" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {item.locations.map(loc => (
+                            <tr key={loc.locId}>
+                              <td className="py-2 font-mono text-gray-700">{loc.locationCode}</td>
+                              <td className="py-2 text-right text-gray-600">{loc.quantity} st.</td>
+                              <td className="py-2 pl-3">
+                                <button
+                                  disabled={uitnemen.isPending || loc.quantity === 0}
+                                  onClick={() => uitnemen.mutate(loc.locId)}
+                                  className="px-2.5 py-1 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-40 transition-colors"
+                                >
+                                  Uitnemen
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -1256,6 +1944,7 @@ function BijlagenTab({ step }: { step: Step }) {
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [lightbox, setLightbox] = useState<{ images: { url: string; name: string }[]; index: number } | null>(null)
 
   const deleteAttachment = useMutation({
     mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/attachments/${id}`, { method: 'DELETE' }),
@@ -1303,34 +1992,82 @@ function BijlagenTab({ step }: { step: Step }) {
         <p className="text-sm text-gray-400 italic">Nog geen bijlagen voor deze stap</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {step.attachments.map(att => (
-            <div key={att.id} className="group relative flex flex-col gap-1.5">
-              {/* Thumbnail / icoon */}
-              <div className="aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center relative">
-                {isImage(att.mimeType, att.fileName) ? (
-                  <img src={att.fileUrl} alt={att.fileName} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="flex flex-col items-center gap-1 p-2">
-                    <FileText size={28} className="text-gray-400" />
-                    <p className="text-xs text-gray-500 text-center break-all leading-tight">{att.fileName}</p>
-                    <a href={att.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-600 hover:underline">Download</a>
-                  </div>
-                )}
-                {/* Delete overlay */}
-                <button
-                  onClick={() => { if (confirm('Bijlage verwijderen?')) deleteAttachment.mutate(att.id) }}
-                  className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shadow"
-                ><X size={12} /></button>
+          {step.attachments.map(att => {
+            const isImg = isImage(att.mimeType, att.fileName)
+            const imageAttachments = step.attachments.filter(a => isImage(a.mimeType, a.fileName))
+            const imgIndex = imageAttachments.findIndex(a => a.id === att.id)
+            return (
+              <div key={att.id} className="group relative flex flex-col gap-1.5">
+                {/* Thumbnail / icoon */}
+                <div className="aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center relative">
+                  {isImg ? (
+                    <button
+                      className="w-full h-full"
+                      onClick={() => setLightbox({ images: imageAttachments.map(a => ({ url: a.fileUrl, name: a.fileName })), index: imgIndex })}
+                    >
+                      <img src={att.fileUrl} alt={att.fileName} className="w-full h-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 p-2">
+                      <FileText size={28} className="text-gray-400" />
+                      <p className="text-xs text-gray-500 text-center break-all leading-tight">{att.fileName}</p>
+                      <a href={att.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-600 hover:underline">Download</a>
+                    </div>
+                  )}
+                  {/* Delete overlay */}
+                  <button
+                    onClick={() => { if (confirm('Bijlage verwijderen?')) deleteAttachment.mutate(att.id) }}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shadow"
+                  ><X size={12} /></button>
+                </div>
+                {/* Caption */}
+                <InlineEdit
+                  value={att.caption ?? ''}
+                  onSave={caption => updateCaption.mutate({ id: att.id, caption })}
+                  placeholder="Bijschrift toevoegen…"
+                  className="text-xs text-gray-600 w-full"
+                />
               </div>
-              {/* Caption */}
-              <InlineEdit
-                value={att.caption ?? ''}
-                onSave={caption => updateCaption.mutate({ id: att.id, caption })}
-                placeholder="Bijschrift toevoegen…"
-                className="text-xs text-gray-600 w-full"
-              />
-            </div>
-          ))}
+            )
+          })}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            onClick={() => setLightbox(null)}
+          ><X size={20} /></button>
+
+          {lightbox.index > 0 && (
+            <button
+              className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl"
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && ({ ...l, index: l.index - 1 })) }}
+            >‹</button>
+          )}
+
+          <img
+            src={lightbox.images[lightbox.index].url}
+            alt={lightbox.images[lightbox.index].name}
+            className="max-w-[90vw] max-h-[85vh] rounded-lg object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+
+          {lightbox.index < lightbox.images.length - 1 && (
+            <button
+              className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl"
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && ({ ...l, index: l.index + 1 })) }}
+            >›</button>
+          )}
+
+          <div className="absolute bottom-4 text-white/60 text-xs">
+            {lightbox.index + 1} / {lightbox.images.length}
+          </div>
         </div>
       )}
     </div>
