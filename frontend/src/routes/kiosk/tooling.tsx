@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Star, X, Minus, Plus, Trash2, ArrowRightLeft, Package } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type ToolingTab = 'artikelen' | 'demonteren'
 
 interface ToolingArticle {
   id: string
@@ -46,6 +48,44 @@ interface ArticleDetail {
   assemblies: AssemblyRelation[]
 }
 
+interface AssemblySearchResult {
+  id: string
+  ncNumber: number
+  ncName: string
+  comment: string | null
+}
+
+interface DemonterenStockLocation {
+  id: string
+  locationCode: string
+  quantity: number
+}
+
+interface DemonterenComponent {
+  type: 'holder' | 'extension' | 'tool'
+  position: number
+  name: string
+  manufacturer: string | null
+  orderingCode: string | null
+  photoUrl: string | null
+  reach: number | null
+  articleId: string | null
+  articleType: string | null
+  locations: DemonterenStockLocation[]
+}
+
+interface AssemblyDetail {
+  assembly: {
+    id: string
+    ncNumber: number
+    ncName: string
+    comment: string | null
+    toolLength: number | null
+    presetDiameter: number | null
+  }
+  components: DemonterenComponent[]
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS: Record<string, string> = {
@@ -76,6 +116,11 @@ const TYPE_COLORS: Record<string, string> = {
 
 const FILTER_TYPES = ['all', 'holder', 'extension', 'frees', 'boor', 'tap', 'uitboorder', 'ruimer', 'wisselplaat', 'schroef', 'overig'] as const
 type FilterType = (typeof FILTER_TYPES)[number]
+
+const TABS: { key: ToolingTab; label: string }[] = [
+  { key: 'artikelen',  label: 'Artikelen'  },
+  { key: 'demonteren', label: 'Demonteren' },
+]
 
 function TypeBadge({ type }: { type: string }) {
   return (
@@ -152,6 +197,9 @@ function ArticleCard({
         <div className="w-full text-center space-y-1">
           <TypeBadge type={article.articleType} />
           <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-2">{article.name}</p>
+          {article.manufacturer && (
+            <p className="text-[11px] text-gray-500 truncate">{article.manufacturer}</p>
+          )}
           {article.orderingCode && (
             <p className="text-[11px] text-gray-400 font-mono truncate">{article.orderingCode}</p>
           )}
@@ -627,10 +675,271 @@ function FavoritesPanel({
   )
 }
 
+// ── Demonteren: component rij ─────────────────────────────────────────────────
+
+function ComponentRow({
+  component,
+  ncNumber,
+  onMutated,
+}: {
+  component: DemonterenComponent
+  ncNumber: number
+  onMutated: () => void
+}) {
+  const qc = useQueryClient()
+  const [amounts, setAmounts] = useState<Record<string, number>>({})
+
+  const mutateStock = useMutation({
+    mutationFn: ({ locId, delta }: { locId: string; delta: number }) =>
+      apiFetch(`/kiosk/tooling/stock-locations/${locId}/mutate`, {
+        method: 'POST',
+        body: JSON.stringify({ delta }),
+      }),
+    onSuccess: () => {
+      if (component.articleId) {
+        qc.invalidateQueries({ queryKey: ['tooling-article', component.articleId] })
+      }
+      qc.invalidateQueries({ queryKey: ['tooling-assembly-detail', ncNumber] })
+      qc.invalidateQueries({ queryKey: ['tooling-articles'] })
+      onMutated()
+    },
+  })
+
+  const getAmount = (locId: string) => amounts[locId] ?? 1
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+      {/* Component header */}
+      <div className="flex items-start gap-3">
+        <PhotoBox src={component.photoUrl} size={44} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <TypeBadge type={component.type} />
+            {component.manufacturer && (
+              <span className="text-xs text-gray-400">{component.manufacturer}</span>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-gray-800 leading-tight mt-0.5">{component.name}</p>
+          {component.orderingCode && (
+            <p className="text-xs font-mono text-gray-400 mt-0.5">{component.orderingCode}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Voorraad sectie */}
+      <div className="mt-3 space-y-2">
+        {!component.articleId && (
+          <p className="text-xs text-gray-400 italic">Niet in voorraad beheer</p>
+        )}
+        {component.articleId && component.locations.length === 0 && (
+          <p className="text-xs text-gray-400 italic">Geen locaties gevonden</p>
+        )}
+        {component.locations.map((loc) => {
+          const amt = getAmount(loc.id)
+          return (
+            <div key={loc.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+              <span className="text-xs font-mono font-semibold text-gray-700 w-28 shrink-0 truncate">
+                {loc.locationCode}
+              </span>
+              <span className={cn('text-sm font-bold min-w-[24px] text-center shrink-0', loc.quantity === 0 ? 'text-red-600' : 'text-gray-800')}>
+                {loc.quantity}
+              </span>
+              <span className="text-xs text-gray-400 shrink-0">st.</span>
+
+              <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  className="w-10 text-center text-sm border border-gray-200 rounded py-0.5"
+                  value={amt}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(999, parseInt(e.target.value) || 1))
+                    setAmounts((prev) => ({ ...prev, [loc.id]: v }))
+                  }}
+                />
+                <button
+                  className={cn(
+                    'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[36px] transition-colors',
+                    'bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                  disabled={mutateStock.isPending}
+                  onClick={() => mutateStock.mutate({ locId: loc.id, delta: amt })}
+                >
+                  <Plus size={13} />
+                  Bij boeken
+                </button>
+              </div>
+            </div>
+          )
+        })}
+        {mutateStock.isError && (
+          <p className="text-xs text-red-600">{(mutateStock.error as Error).message}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Demonteren: assembly detail view ──────────────────────────────────────────
+
+function AssemblyDetailView({
+  detail,
+  onMutated,
+}: {
+  detail: AssemblyDetail
+  onMutated: () => void
+}) {
+  const { assembly, components } = detail
+
+  return (
+    <div className="space-y-4">
+      {/* Header kaart */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Samenstelling</p>
+            <h2 className="text-xl font-bold text-gray-900 mt-0.5">{assembly.ncName}</h2>
+            {assembly.comment && <p className="text-sm text-gray-500 mt-1">{assembly.comment}</p>}
+          </div>
+          <div className="text-right shrink-0 space-y-0.5">
+            {assembly.toolLength != null && (
+              <p className="text-xs text-gray-400">
+                Lengte: <span className="font-mono text-gray-600">{assembly.toolLength} mm</span>
+              </p>
+            )}
+            {assembly.presetDiameter != null && (
+              <p className="text-xs text-gray-400">
+                Ø preset: <span className="font-mono text-gray-600">{assembly.presetDiameter} mm</span>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Componentenlijst */}
+      {components.length === 0 ? (
+        <p className="text-sm text-gray-400 italic">Geen componenten gevonden voor deze samenstelling</p>
+      ) : (
+        <div className="space-y-3">
+          {components.map((comp, idx) => (
+            <ComponentRow
+              key={`${comp.type}-${idx}`}
+              component={comp}
+              ncNumber={assembly.ncNumber}
+              onMutated={onMutated}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Demonteren tab inhoud ─────────────────────────────────────────────────────
+
+function DemonterenContent() {
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedAssembly, setSelectedAssembly] = useState<AssemblySearchResult | null>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data: searchResults = [], isLoading: searchLoading } = useQuery<AssemblySearchResult[]>({
+    queryKey: ['tooling-assemblies-search', debouncedSearch],
+    queryFn: () => apiFetch(`/kiosk/tooling/assemblies?q=${encodeURIComponent(debouncedSearch)}`),
+    staleTime: 30_000,
+  })
+
+  const { data: detail, isLoading: detailLoading } = useQuery<AssemblyDetail>({
+    queryKey: ['tooling-assembly-detail', selectedAssembly?.ncNumber],
+    queryFn: () => apiFetch(`/kiosk/tooling/assemblies/${selectedAssembly!.ncNumber}`),
+    enabled: !!selectedAssembly,
+    staleTime: 30_000,
+  })
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      {/* Linker paneel — zoekresultaten */}
+      <div className="w-72 shrink-0 border-r border-gray-200 flex flex-col bg-white">
+        <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              placeholder="Zoek samenstelling…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={() => { setSearch(''); setDebouncedSearch(''); setSelectedAssembly(null) }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          {searchLoading && (
+            <p className="text-sm text-gray-400 p-4">Laden...</p>
+          )}
+          {!searchLoading && !debouncedSearch && (
+            <p className="text-xs text-gray-400 p-4">Typ een naam om te zoeken</p>
+          )}
+          {!searchLoading && debouncedSearch && searchResults.length === 0 && (
+            <p className="text-sm text-gray-400 p-4">Geen samenstellingen gevonden</p>
+          )}
+          {searchResults.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setSelectedAssembly(a)}
+              className={cn(
+                'w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors',
+                selectedAssembly?.id === a.id && 'bg-teal-50 border-l-2 border-teal-500',
+              )}
+            >
+              <p className="text-sm font-semibold text-gray-800">{a.ncName}</p>
+              {a.comment && (
+                <p className="text-xs text-gray-400 truncate mt-0.5">{a.comment}</p>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Rechter paneel — detail */}
+      <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
+        {!selectedAssembly && (
+          <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+            <Package size={40} className="mb-2 opacity-30" />
+            <p className="text-sm">Selecteer een samenstelling om te demonteren</p>
+          </div>
+        )}
+        {selectedAssembly && detailLoading && (
+          <p className="text-sm text-gray-400">Laden...</p>
+        )}
+        {selectedAssembly && detail && (
+          <AssemblyDetailView
+            detail={detail}
+            onMutated={() => {/* invalidaties worden al in ComponentRow gedaan */}}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Hoofd component ───────────────────────────────────────────────────────────
 
 export function ToolingContent() {
   const qc = useQueryClient()
+  const [tab, setTab] = useState<ToolingTab>('artikelen')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<FilterType>('all')
   const [openArticleId, setOpenArticleId] = useState<string | null>(null)
@@ -655,88 +964,114 @@ export function ToolingContent() {
   })
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      {/* Grid area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Toolbar */}
-        <div className="px-5 pt-4 pb-3 border-b border-gray-200 space-y-3 bg-white">
-          {/* Zoekbalk */}
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              placeholder="Zoek op naam, artikelnummer of fabrikant…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                onClick={() => setSearch('')}
-              >
-                <X size={14} />
-              </button>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Tabbalk */}
+      <div className="flex border-b border-gray-200 px-5 shrink-0 bg-white">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px',
+              tab === t.key
+                ? 'border-teal-500 text-teal-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700',
             )}
-          </div>
-
-          {/* Type-filter */}
-          <div className="flex gap-1.5 flex-wrap">
-            {FILTER_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTypeFilter(t)}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                  typeFilter === t
-                    ? 'bg-teal-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                )}
-              >
-                {t === 'all' ? 'Alle' : TYPE_LABELS[t] ?? t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Grid */}
-        <div className="flex-1 overflow-y-auto p-5">
-          {articles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-              <Package size={40} className="mb-2 opacity-30" />
-              <p className="text-sm">Geen artikelen gevonden</p>
-            </div>
-          ) : (
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))' }}>
-              {articles.map((a) => (
-                <ArticleCard
-                  key={a.id}
-                  article={a}
-                  isFavorite={favoriteIds.includes(a.id)}
-                  onToggleFavorite={() => toggleFavorite.mutate(a.id)}
-                  onClick={() => setOpenArticleId(a.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Favorieten paneel */}
-      <FavoritesPanel
-        articles={articles}
-        favoriteIds={favoriteIds}
-        onOpenArticle={(id) => setOpenArticleId(id)}
-      />
+      {/* Artikelen tab */}
+      {tab === 'artikelen' && (
+        <div className="flex-1 flex overflow-hidden">
+          {/* Grid area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Toolbar */}
+            <div className="px-5 pt-4 pb-3 border-b border-gray-200 space-y-3 bg-white">
+              {/* Zoekbalk */}
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  placeholder="Zoek op naam, artikelnummer of fabrikant…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    onClick={() => setSearch('')}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
 
-      {/* Detail modal */}
-      {openArticleId && (
-        <ArticleDetailModal
-          articleId={openArticleId}
-          favoriteIds={favoriteIds}
-          onToggleFavorite={(id) => toggleFavorite.mutate(id)}
-          onClose={() => setOpenArticleId(null)}
-        />
+              {/* Type-filter */}
+              <div className="flex gap-1.5 flex-wrap">
+                {FILTER_TYPES.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTypeFilter(t)}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                      typeFilter === t
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                    )}
+                  >
+                    {t === 'all' ? 'Alle' : TYPE_LABELS[t] ?? t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Grid */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {articles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                  <Package size={40} className="mb-2 opacity-30" />
+                  <p className="text-sm">Geen artikelen gevonden</p>
+                </div>
+              ) : (
+                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))' }}>
+                  {articles.map((a) => (
+                    <ArticleCard
+                      key={a.id}
+                      article={a}
+                      isFavorite={favoriteIds.includes(a.id)}
+                      onToggleFavorite={() => toggleFavorite.mutate(a.id)}
+                      onClick={() => setOpenArticleId(a.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Favorieten paneel */}
+          <FavoritesPanel
+            articles={articles}
+            favoriteIds={favoriteIds}
+            onOpenArticle={(id) => setOpenArticleId(id)}
+          />
+
+          {/* Detail modal */}
+          {openArticleId && (
+            <ArticleDetailModal
+              articleId={openArticleId}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={(id) => toggleFavorite.mutate(id)}
+              onClose={() => setOpenArticleId(null)}
+            />
+          )}
+        </div>
       )}
+
+      {/* Demonteren tab */}
+      {tab === 'demonteren' && <DemonterenContent />}
     </div>
   )
 }

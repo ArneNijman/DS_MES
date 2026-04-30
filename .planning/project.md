@@ -24,10 +24,11 @@ Een event-driven Manufacturing Execution System (MES) dat als **operationele int
 | CNC Machining — Tool tabel | 2026-04-16 t/m 04-21 | 3–4 sessies | ~12 uur |
 | CNC — Wisselplaat, schroef, tooling kiosk | 2026-04-22 t/m 04-23 | 2 sessies | ~6 uur |
 | Product Setup (volledig) | 2026-04-23 t/m 04-29 | 4–5 sessies | ~16 uur |
-| **Totaal** | | **~30–35 sessies** | **~115 uur** |
+| Product Setup uitbr. + Demonteren + multi-format parser | 2026-04-30 | 1–2 sessies | ~5 uur |
+| **Totaal** | | **~32–37 sessies** | **~120 uur** |
 
 *v1.0 (12.661 regels TypeScript/TSX, 186 bestanden) in ~11 werkdagen — gemiddeld ~5 uur/dag.*  
-*v2.0 t/m Product Setup: ~60 uur aanvullende ontwikkeling.*
+*v2.0 t/m Product Setup uitbreidingen: ~65 uur aanvullende ontwikkeling.*
 
 ## Bredere visie
 
@@ -87,7 +88,13 @@ Factory Assistant is het volledige bedrijfsbesturingssysteem voor de werkvloer:
 ### Product Setup (`routes/kiosk/product-setup.tsx`)
 Koppelt productieorders aan machines via opgedeelde stappen.
 
+Lijst-niveau:
+- Zoek op productieorder, artikel of omschrijving
+- Aanmaken met optioneel omschrijvingsveld; productieorder is de enige verplichte invoer
+- Setup verwijderen (met bevestigingsdialoog)
+
 Per stap:
+- **Bewerkingsnummer** — optioneel bewerkingsnr. naast de stapnaam (bewerkingNr in DB)
 - **Algemene informatie** — nulpunt X/Y/Z (tekst), beschrijving; portaal voor tekeningen en CAD-bestanden
 - **CNC informatie** — NC-bestanden (portaal, hernoemen, actief selecteren), importeer samenstellingen, SYNC + validatietimestamp, toolvalidatietabel
 - **Bijlagen** — foto's en documenten per stap met bijschrift, lightbox
@@ -96,17 +103,19 @@ Per stap:
 Toolvalidatietabel kolommen: dot · TOOL (T-slot of —) · NAME · DOC · L · DL · DR · TIME2 · CUR.TIME · LIFE% · LOCK
 
 ### CNC Machining (`routes/admin/cnc-machining.tsx` + `routes/kiosk/`)
-- Upload TOOL.T bestand → parser vult `cnc_tool_entries`
-- Toolmagazijn per machine met LIFE%, LOCK-status, sync-log
+- Upload TOOL.T bestand → parser vult `cnc_tool_entries`; formaat per machine instelbaar
+- Toolmagazijn per machine met LIFE%, LOCK-status, sync-log, TIME2 / CUR.TIME kolommen
 - Samenstellingen (toolbibliotheek) inclusief wisselplaat/schroef-opsplitsing
 - Zoeken over alle machines (MACHINE · TOOL · NAME · DOC · TIME · LIFE% · LOCK)
 - Component-instanties: toont in welke machine en op welk slot een component zit
 
 ### Tooling Library (`routes/kiosk/tooling.tsx`)
-- Toolbeheer: componenten, samenstellingen
-- WP-componenten: splits naar houder / freeslichaam / wisselplaat / schroef
-- Schroef-artikelnummer en foto direct invoerbaar
-- WinTool-import via XML upload
+Twee tabs: **Artikelen** en **Demonteren**.
+
+- **Artikelen** — toolbeheer: componenten, samenstellingen, WinTool XML import
+  - WP-componenten: splits naar houder / freeslichaam / wisselplaat / schroef
+  - Schroef-artikelnummer en foto direct invoerbaar
+- **Demonteren** — zoek een assemblage op naam/ncName, zie alle componenten (houder / frees / wisselplaat) met voorraadlocaties; pas voorraad direct aan per locatie-knop (+/−)
 
 ### Kwaliteitsmodule
 - **NCR** — kanban (open → gesloten), detail met tabs (Afwijking / Oplossing / Bijlages), PDF rapport, "Start preventieve maatregel" knop

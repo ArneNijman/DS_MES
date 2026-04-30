@@ -40,6 +40,7 @@ interface MachineDetail extends Machine {
   cncSpindleInterface: string | null
   cncNcVersion: string | null
   cncPlcVersion: string | null
+  toolTableFormat: string | null
 }
 
 interface MaintenanceTask {
@@ -278,6 +279,7 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     cncSpindleInterface: initial.cncSpindleInterface ?? '',
     cncNcVersion: initial.cncNcVersion ?? '',
     cncPlcVersion: initial.cncPlcVersion ?? '',
+    toolTableFormat: initial.toolTableFormat ?? '',
   })
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
@@ -425,6 +427,20 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
               {field('Spindel interface', 'cncSpindleInterface')}
               {field('NC versie', 'cncNcVersion')}
               {field('PLC versie', 'cncPlcVersion')}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">TOOL.T formaat</label>
+                <select
+                  value={form.toolTableFormat}
+                  onChange={(e) => set('toolTableFormat', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Standaard Heidenhain</option>
+                  <option value="fooke">Fooke</option>
+                  <option value="ronin">Ronin</option>
+                  <option value="3200">3200</option>
+                  <option value="portaal">Portaal</option>
+                </select>
+              </div>
             </div>
           </div>
 

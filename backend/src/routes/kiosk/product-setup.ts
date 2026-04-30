@@ -123,22 +123,20 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
   fastify.post('/kiosk/product-setups', auth, async (req, reply) => {
     const body = req.body as {
-      articleName:       string
-      productionOrderNo?: string
-      articleNo?:         string
-      description?:       string
-      origin?:            string
+      productionOrderNo: string
+      articleNo?:        string
+      description?:      string
+      origin?:           string
     }
 
-    if (!body.articleName?.trim()) {
-      return reply.status(400).send({ error: 'Artikelnaam is verplicht' })
+    if (!body.productionOrderNo?.trim()) {
+      return reply.status(400).send({ error: 'Productieorder is verplicht' })
     }
 
     const [setup] = await fastify.db
       .insert(productSetups)
       .values({
-        articleName:       body.articleName.trim(),
-        productionOrderNo: body.productionOrderNo?.trim() || null,
+        productionOrderNo: body.productionOrderNo.trim(),
         articleNo:         body.articleNo?.trim() || null,
         description:       body.description?.trim() || null,
         origin:            body.origin ?? 'manual',
@@ -248,7 +246,6 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.patch('/kiosk/product-setups/:id', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
     const body = req.body as {
-      articleName?:       string
       productionOrderNo?: string
       articleNo?:         string
       description?:       string
@@ -257,7 +254,6 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const [updated] = await fastify.db
       .update(productSetups)
       .set({
-        ...(body.articleName       !== undefined && { articleName:       body.articleName.trim() }),
         ...(body.productionOrderNo !== undefined && { productionOrderNo: body.productionOrderNo.trim() || null }),
         ...(body.articleNo         !== undefined && { articleNo:         body.articleNo.trim() || null }),
         ...(body.description       !== undefined && { description:       body.description.trim() || null }),
@@ -283,8 +279,9 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.post('/kiosk/product-setups/:id/steps', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
     const body = req.body as {
-      stepName:    string
-      machineId?:  string
+      stepName:     string
+      bewerkingNr?: number | null
+      machineId?:   string
     }
 
     if (!body.stepName?.trim()) {
@@ -301,10 +298,11 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const [step] = await fastify.db
       .insert(productSetupSteps)
       .values({
-        setupId:    id,
-        stepNumber: nextNumber,
-        stepName:   body.stepName.trim(),
-        machineId:  body.machineId || null,
+        setupId:     id,
+        stepNumber:  nextNumber,
+        bewerkingNr: body.bewerkingNr ?? null,
+        stepName:    body.stepName.trim(),
+        machineId:   body.machineId || null,
       })
       .returning()
 
@@ -317,6 +315,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const { stepId } = req.params as { stepId: string }
     const body = req.body as {
       stepName?:        string
+      bewerkingNr?:     number | null
       machineId?:       string | null
       zeroX?:           number | null
       zeroY?:           number | null
@@ -328,6 +327,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       .update(productSetupSteps)
       .set({
         ...(body.stepName        !== undefined && { stepName:        body.stepName.trim() }),
+        ...(body.bewerkingNr     !== undefined && { bewerkingNr:     body.bewerkingNr ?? null }),
         ...(body.machineId       !== undefined && { machineId:       body.machineId || null }),
         ...(body.zeroX           !== undefined && { zeroX:           body.zeroX?.toString() ?? null }),
         ...(body.zeroY           !== undefined && { zeroY:           body.zeroY?.toString() ?? null }),
@@ -663,7 +663,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         LEFT JOIN tool_library_items ti ON ti.id = a.tool_item_id
         WHERE a.nc_name IN (${sql.join(names.map(n => sql`${n}`), sql`, `)})
         ORDER BY a.nc_name, c.position
-      `) as AssemblyRow[]
+      `) as unknown as AssemblyRow[]
     }
 
     let assemblyMap = new Map<string, AssemblyEntry>()

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { eq, desc, ilike, or, sql, and } from 'drizzle-orm'
+import { eq, desc, ilike, or, sql, and, asc, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   toolingArticles,
@@ -9,6 +9,7 @@ import {
   employees,
   toolLibraryAssemblies,
   toolLibraryItems,
+  toolLibraryAssemblyComponents,
 } from '../../db/schema.js'
 
 // Types die afgeleid worden van een tool_library_item (niet WP-gerelateerd)
@@ -329,6 +330,198 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
         .insert(toolingFavorites)
         .values({ employeeId: employee.employeeId, articleId: id })
       return { favorited: true }
+    }
+  })
+
+  // ── Assemblages zoeken (voor Demonteren-tab) ──────────────────────────────
+
+  fastify.get('/kiosk/tooling/assemblies', auth, async (req) => {
+    const { q } = req.query as { q?: string }
+    const term = q?.trim() ?? ''
+
+    // Zoek op ncName, toolnaam én houdernaam (zelfde breedte als CNC-admin zoekopdracht)
+    const rows = await fastify.db.execute<{
+      id: string; nc_number: number; nc_name: string; comment: string | null
+    }>(sql`
+      SELECT DISTINCT a.id, a.nc_number, a.nc_name, a.comment
+      FROM tool_library_assemblies a
+      LEFT JOIN tool_library_items t ON a.tool_item_id   = t.id
+      LEFT JOIN tool_library_items h ON a.holder_item_id = h.id
+      WHERE (
+        ${term
+          ? sql`(
+              a.nc_name ILIKE ${'%' + term + '%'}
+              OR t.name ILIKE ${'%' + term + '%'}
+              OR h.name ILIKE ${'%' + term + '%'}
+            )`
+          : sql`TRUE`
+        }
+      )
+      ORDER BY a.nc_name ASC
+      LIMIT 20
+    `)
+
+    return rows.map((r) => ({
+      id:       r.id,
+      ncNumber: r.nc_number,
+      ncName:   r.nc_name,
+      comment:  r.comment,
+    }))
+  })
+
+  // ── Assemblage detail met voorraadlocaties per component ──────────────────
+
+  fastify.get('/kiosk/tooling/assemblies/:ncNumber', auth, async (req, reply) => {
+    const { ncNumber: ncNumberStr } = req.params as { ncNumber: string }
+    const ncNumber = parseInt(ncNumberStr, 10)
+    if (isNaN(ncNumber)) return reply.status(400).send({ error: 'Ongeldig ncNumber' })
+
+    // 1. Assemblage ophalen
+    const [assembly] = await fastify.db
+      .select({
+        id:             toolLibraryAssemblies.id,
+        ncNumber:       toolLibraryAssemblies.ncNumber,
+        ncName:         toolLibraryAssemblies.ncName,
+        comment:        toolLibraryAssemblies.comment,
+        toolLength:     toolLibraryAssemblies.toolLength,
+        presetDiameter: toolLibraryAssemblies.presetDiameter,
+        holderItemId:   toolLibraryAssemblies.holderItemId,
+        toolItemId:     toolLibraryAssemblies.toolItemId,
+      })
+      .from(toolLibraryAssemblies)
+      .where(eq(toolLibraryAssemblies.ncNumber, ncNumber))
+      .limit(1)
+
+    if (!assembly) return reply.status(404).send({ error: 'Samenstelling niet gevonden' })
+
+    // 2. Tussencomponenten (adapters/extensions)
+    const compRows = await fastify.db
+      .select({
+        itemId:       toolLibraryAssemblyComponents.itemId,
+        position:     toolLibraryAssemblyComponents.position,
+        reach:        toolLibraryAssemblyComponents.reach,
+        name:         toolLibraryItems.name,
+        manufacturer: toolLibraryItems.manufacturer,
+        orderingCode: toolLibraryItems.orderingCode,
+        photoUrl:     toolLibraryItems.photoUrl,
+        itemType:     toolLibraryItems.itemType,
+      })
+      .from(toolLibraryAssemblyComponents)
+      .innerJoin(toolLibraryItems, eq(toolLibraryAssemblyComponents.itemId, toolLibraryItems.id))
+      .where(eq(toolLibraryAssemblyComponents.assemblyId, assembly.id))
+      .orderBy(asc(toolLibraryAssemblyComponents.position))
+
+    // 3. Houder- en tool-item ophalen
+    const itemFields = {
+      id:           toolLibraryItems.id,
+      name:         toolLibraryItems.name,
+      manufacturer: toolLibraryItems.manufacturer,
+      orderingCode: toolLibraryItems.orderingCode,
+      photoUrl:     toolLibraryItems.photoUrl,
+      itemType:     toolLibraryItems.itemType,
+    }
+
+    const [holderItem] = assembly.holderItemId
+      ? await fastify.db.select(itemFields).from(toolLibraryItems).where(eq(toolLibraryItems.id, assembly.holderItemId)).limit(1)
+      : []
+    const [toolItem] = assembly.toolItemId
+      ? await fastify.db.select(itemFields).from(toolLibraryItems).where(eq(toolLibraryItems.id, assembly.toolItemId)).limit(1)
+      : []
+
+    // 4. Voorraad ophalen voor alle betrokken items
+    const allItemIds = [
+      ...(holderItem ? [holderItem.id] : []),
+      ...compRows.map((c) => c.itemId),
+      ...(toolItem ? [toolItem.id] : []),
+    ]
+
+    type StockEntry = {
+      sourceItemId: string | null
+      articleId: string
+      articleType: string
+      locId: string | null
+      locationCode: string | null
+      quantity: number | null
+    }
+
+    const stockRows: StockEntry[] = allItemIds.length > 0
+      ? await fastify.db
+          .select({
+            sourceItemId: toolingArticles.sourceItemId,
+            articleId:    toolingArticles.id,
+            articleType:  toolingArticles.articleType,
+            locId:        toolingStockLocations.id,
+            locationCode: toolingStockLocations.locationCode,
+            quantity:     toolingStockLocations.quantity,
+          })
+          .from(toolingArticles)
+          .leftJoin(toolingStockLocations, eq(toolingStockLocations.articleId, toolingArticles.id))
+          .where(inArray(toolingArticles.sourceItemId, allItemIds))
+      : []
+
+    // 5. Groepeer op sourceItemId
+    const stockMap = new Map<string, { articleId: string; articleType: string; locations: { id: string; locationCode: string; quantity: number }[] }>()
+    for (const row of stockRows) {
+      if (!row.sourceItemId) continue
+      if (!stockMap.has(row.sourceItemId)) {
+        stockMap.set(row.sourceItemId, { articleId: row.articleId, articleType: row.articleType, locations: [] })
+      }
+      if (row.locId && row.locationCode !== null && row.quantity !== null) {
+        stockMap.get(row.sourceItemId)!.locations.push({ id: row.locId, locationCode: row.locationCode, quantity: row.quantity })
+      }
+    }
+
+    function buildStock(itemId: string | null) {
+      if (!itemId) return { articleId: null, articleType: null, locations: [] }
+      const s = stockMap.get(itemId)
+      if (!s) return { articleId: null, articleType: null, locations: [] }
+      return { articleId: s.articleId, articleType: s.articleType, locations: s.locations }
+    }
+
+    // 6. Componentenlijst opbouwen (houder → tussencomponenten → tool)
+    const components = [
+      ...(holderItem ? [{
+        type:         'holder' as const,
+        position:     -1,
+        name:         holderItem.name,
+        manufacturer: holderItem.manufacturer,
+        orderingCode: holderItem.orderingCode,
+        photoUrl:     holderItem.photoUrl,
+        reach:        null,
+        ...buildStock(holderItem.id),
+      }] : []),
+      ...compRows.map((c) => ({
+        type:         'extension' as const,
+        position:     c.position,
+        name:         c.name,
+        manufacturer: c.manufacturer,
+        orderingCode: c.orderingCode,
+        photoUrl:     c.photoUrl,
+        reach:        c.reach,
+        ...buildStock(c.itemId),
+      })),
+      ...(toolItem ? [{
+        type:         'tool' as const,
+        position:     999,
+        name:         toolItem.name,
+        manufacturer: toolItem.manufacturer,
+        orderingCode: toolItem.orderingCode,
+        photoUrl:     toolItem.photoUrl,
+        reach:        null,
+        ...buildStock(toolItem.id),
+      }] : []),
+    ]
+
+    return {
+      assembly: {
+        id:             assembly.id,
+        ncNumber:       assembly.ncNumber,
+        ncName:         assembly.ncName,
+        comment:        assembly.comment,
+        toolLength:     assembly.toolLength,
+        presetDiameter: assembly.presetDiameter,
+      },
+      components,
     }
   })
 }

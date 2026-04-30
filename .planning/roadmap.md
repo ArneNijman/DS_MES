@@ -108,6 +108,37 @@
 
 ---
 
+## ✅ Product Setup uitbreidingen + Demonteren + multi-format TOOL.T
+
+**Afgerond:** 2026-04-30
+
+### Product Setup verbeteringen
+- Zoekfunctie op productieorder, artikel én omschrijving
+- Aanmaken setup: omschrijvingsveld toegevoegd; `article_name` is niet langer verplicht
+- Setup verwijderen (met bevestigingsdialoog)
+- Bewerkingsnummer (`bewerking_nr`) per stap: optioneel veld naast de stapnaam
+- InlineEdit voor productieorder en artikelnummer in setup-detailpaneel
+
+### Tooling Kiosk — Demonteren tab
+- Nieuwe tab "Demonteren" naast "Artikelen" in de kiosk Tooling module
+- Zoek een assemblage op ncName, toolnaam of houdernaam
+- Toon alle componenten (houder / frees / wisselplaat) met voorraadlocaties per component
+- Pas voorraad direct aan per locatierij (+/− knoppen) zonder terug te hoeven naar het artikeloverzicht
+
+### CNC Machining — multi-format TOOL.T parser
+- `toolTableParser.ts` herschreven: ondersteunt nu zowel klassiek Heidenhain als Fooke/modern format (header-gebaseerde kolomdetectie)
+- Komma als decimaalscheider wordt automatisch omgezet
+- Per machine instelbaar via `tool_table_format` veld (null = Heidenhain, `fooke`, `ronin`, `3200`, `portaal`)
+- Admin Machines-scherm: dropdown "TOOL.T formaat" per machine
+- CNC-admin tabel: TIME2 en CUR.TIME kolommen zichtbaar; CUR.TIME rood als ≥ TIME2
+
+### Migraties
+- `0039_product_setup_order_required.sql` — `article_name` nullable gemaakt
+- `0040_step_bewerking_nr.sql` — `bewerking_nr` kolom op `product_setup_steps`
+- `0041_machine_tool_table_format.sql` — `tool_table_format` kolom op `machines`
+
+---
+
 ## 🚧 Fase 10: Meetmiddelen & Kalibratie
 
 **Status:** Not started
@@ -163,6 +194,7 @@
 | — | Klantmeldingen | ✅ Complete | 2026-04-16 |
 | — | CNC Machining — Tool tabel | ✅ Complete | 2026-04-21 |
 | — | Product Setup | ✅ Complete | 2026-04-29 |
+| — | Product Setup uitbr. + Demonteren + multi-format parser | ✅ Complete | 2026-04-30 |
 | 10 | Meetmiddelen & Kalibratie | ⬜ Not started | — |
 | 11 | CoC-Generatie | ⬜ Not started | — |
 | 12 | Stilstandregistratie | ⬜ Not started | — |

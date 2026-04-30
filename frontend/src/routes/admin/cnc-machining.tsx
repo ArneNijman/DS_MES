@@ -108,10 +108,10 @@ function lifeDotColor(tool: CncToolEntry): string {
   return 'bg-green-500'
 }
 
-function formatTime(val: string | null): string {
-  if (!val) return '-'
+function formatTime(val: string | null | undefined): string {
+  if (val === null || val === undefined) return '0'
   const n = parseFloat(val)
-  return isNaN(n) ? '-' : n.toFixed(0)
+  return isNaN(n) ? '0' : n.toFixed(0)
 }
 
 function formatDate(iso: string): string {
@@ -1451,7 +1451,8 @@ export function CncMachiningContent() {
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TOOL ▲</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">NAME</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">DOC</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TIME</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TIME2</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">CUR.TIME</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[160px]">LIFE %</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">LOCK</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">LAST SYNC</th>
@@ -1495,15 +1496,18 @@ export function CncMachiningContent() {
                           }
                         </td>
                         <td className="px-4 py-2.5 text-gray-500">{isEmpty ? '—' : (tool.doc ?? '-')}</td>
-                        <td className="px-4 py-2.5 text-gray-500 font-mono text-xs whitespace-nowrap">
-                          {!isEmpty && tool.time2 && parseFloat(tool.time2) > 0 ? (
-                            <>
-                              <span className="text-gray-700">{formatTime(tool.curTime)}</span>
-                              <span className="text-gray-400"> / {formatTime(tool.time2)} min</span>
-                            </>
-                          ) : !isEmpty && tool.curTime && parseFloat(tool.curTime) > 0 ? (
-                            <span className="text-gray-700">{formatTime(tool.curTime)} min</span>
-                          ) : '—'}
+                        <td className="px-4 py-2.5 text-right text-gray-600 font-mono text-xs whitespace-nowrap">
+                          {isEmpty ? '—' : (tool.time2 && parseFloat(tool.time2) > 0 ? formatTime(tool.time2) : '—')}
+                        </td>
+                        <td className={cn(
+                          'px-4 py-2.5 text-right font-mono text-xs whitespace-nowrap',
+                          !isEmpty && (() => {
+                            const t2 = tool.time2 ? parseFloat(tool.time2) : 0
+                            const ct = tool.curTime ? parseFloat(tool.curTime) : 0
+                            return t2 > 0 && ct >= t2
+                          })() ? 'text-red-600 font-semibold' : 'text-gray-600',
+                        )}>
+                          {isEmpty ? '—' : (tool.curTime && parseFloat(tool.curTime) > 0 ? formatTime(tool.curTime) : '—')}
                         </td>
                         <td className="px-4 py-2.5">{isEmpty ? null : <LifeBar tool={tool} />}</td>
                         <td className="px-4 py-2.5">

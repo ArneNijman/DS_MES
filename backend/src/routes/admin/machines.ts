@@ -51,6 +51,7 @@ const machineSchema = z.object({
   cncSpindleInterface: z.string().optional().nullable(),
   cncNcVersion: z.string().optional().nullable(),
   cncPlcVersion: z.string().optional().nullable(),
+  toolTableFormat: z.string().optional().nullable(),
 })
 
 const maintenanceSchema = z.object({

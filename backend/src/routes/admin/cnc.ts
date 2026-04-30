@@ -11,7 +11,7 @@ import {
   toolLibraryAssemblies, toolLibraryItems, toolLibraryAssemblyComponents,
   appSettings,
 } from '../../db/schema.js'
-import { parseToolTable } from '../../cnc/toolTableParser.js'
+import { parseToolTable, type ToolTableFormat } from '../../cnc/toolTableParser.js'
 import { importToolLibraryFromFile } from '../../cnc/importToolLibrary.js'
 import { syncToolingArticles } from '../../cnc/syncToolingArticles.js'
 
@@ -811,7 +811,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
     // Controleer machine bestaat
     const machineRows = await fastify.db
-      .select({ id: machines.id, name: machines.name })
+      .select({ id: machines.id, name: machines.name, toolTableFormat: machines.toolTableFormat })
       .from(machines)
       .where(eq(machines.id, id))
       .limit(1)
@@ -842,7 +842,9 @@ export async function cncRoutes(fastify: FastifyInstance) {
       }
 
       // Parsen
-      const { tools, summary } = parseToolTable(content)
+      const rawFmt = machineRows[0].toolTableFormat
+      const fmt: ToolTableFormat = rawFmt === 'fooke' ? 'fooke' : rawFmt === 'ronin' ? 'ronin' : rawFmt === '3200' ? '3200' : rawFmt === 'portaal' ? 'portaal' : 'heidenhain'
+      const { tools, summary } = parseToolTable(content, fmt)
 
       if (tools.length === 0) {
         throw new Error(

@@ -25,7 +25,7 @@ interface SetupSummary {
   id:                string
   productionOrderNo: string | null
   articleNo:         string | null
-  articleName:       string
+  articleName:       string | null
   description:       string | null
   origin:            string
   createdAt:         string
@@ -37,6 +37,7 @@ interface Step {
   id:              string
   setupId:         string
   stepNumber:      number
+  bewerkingNr:     number | null
   stepName:        string
   machineId:       string | null
   machineName:     string | null
@@ -94,7 +95,7 @@ interface SetupDetail {
   id:                string
   productionOrderNo: string | null
   articleNo:         string | null
-  articleName:       string
+  articleName:       string | null
   description:       string | null
   origin:            string
   createdAt:         string
@@ -408,9 +409,9 @@ function SetupList({
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
-  const [newName, setNewName] = useState('')
   const [newOrder, setNewOrder] = useState('')
   const [newArticle, setNewArticle] = useState('')
+  const [newDescription, setNewDescription] = useState('')
   const [showBcMsg, setShowBcMsg] = useState(false)
 
   const { data: setups = [], isLoading } = useQuery<SetupSummary[]>({
@@ -422,13 +423,13 @@ function SetupList({
     mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/product-setups', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
-      setShowNew(false); setNewName(''); setNewOrder(''); setNewArticle('')
+      setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription('')
     },
   })
 
   function handleCreate() {
-    if (!newName.trim()) return
-    createMutation.mutate({ articleName: newName.trim(), productionOrderNo: newOrder.trim() || undefined, articleNo: newArticle.trim() || undefined, origin: 'manual' })
+    if (!newOrder.trim()) return
+    createMutation.mutate({ productionOrderNo: newOrder.trim(), articleNo: newArticle.trim() || undefined, description: newDescription.trim() || undefined, origin: 'manual' })
   }
 
   return (
@@ -457,7 +458,7 @@ function SetupList({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
-            placeholder="Zoek op ordernummer, artikelnaam of stapnaam…"
+            placeholder="Zoek op productieorder, artikel of omschrijving…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -477,14 +478,14 @@ function SetupList({
               onClick={() => onSelect(s)}
               className="flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
             >
-              <p className="text-xs font-mono text-gray-400 truncate">
-                {s.productionOrderNo ?? '—'}
-              </p>
               <p className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug">
-                {s.articleName}
+                {s.productionOrderNo ?? '—'}
               </p>
               {s.articleNo && (
                 <p className="text-xs text-gray-500 truncate">{s.articleNo}</p>
+              )}
+              {s.description && (
+                <p className="text-xs text-gray-400 truncate">{s.description}</p>
               )}
               <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
                 <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
@@ -537,37 +538,35 @@ function SetupList({
             {!showBcMsg && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">Artikelnaam <span className="text-red-500">*</span></label>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Productieorder <span className="text-red-500">*</span></label>
                   <input
                     autoFocus
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                    placeholder="bijv. Deksel 12345"
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
+                    placeholder="bijv. PO-2024-001"
+                    value={newOrder}
+                    onChange={e => setNewOrder(e.target.value)}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 block mb-1">Productieorder</label>
-                    <input
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                      placeholder="PO-2024-001"
-                      value={newOrder}
-                      onChange={e => setNewOrder(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 block mb-1">Artikelnummer</label>
-                    <input
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                      placeholder="ART-0042"
-                      value={newArticle}
-                      onChange={e => setNewArticle(e.target.value)}
-                    />
-                  </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Artikel</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                    placeholder="bijv. ART-0042"
+                    value={newArticle}
+                    onChange={e => setNewArticle(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Omschrijving</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                    placeholder="bijv. Deksel 12345"
+                    value={newDescription}
+                    onChange={e => setNewDescription(e.target.value)}
+                  />
                 </div>
                 <button
-                  disabled={!newName.trim() || createMutation.isPending}
+                  disabled={!newOrder.trim() || createMutation.isPending}
                   onClick={handleCreate}
                   className="w-full py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
                 >
@@ -598,8 +597,10 @@ function SetupDetail({
   const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht'>('cnc')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
+  const [newBewerkingNr, setNewBewerkingNr]     = useState('')
   const [showMachinePicker, setShowMachinePicker] = useState(false)
   const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
     queryKey: ['product-setup', setupId],
@@ -609,6 +610,11 @@ function SetupDetail({
   const patchSetup = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  const deleteSetup = useMutation({
+    mutationFn: () => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['product-setups'] }); onBack() },
   })
 
   const patchStep = useMutation({
@@ -623,7 +629,7 @@ function SetupDetail({
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
       setSelectedStepId(res.stepId)
       setActiveTab('cnc')
-      setShowAddStep(false); setNewStepName('')
+      setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('')
     },
   })
 
@@ -657,6 +663,14 @@ function SetupDetail({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-gray-400">#{selectedStep.stepNumber}</span>
+              <input
+                type="number"
+                min="1"
+                className="w-14 border border-gray-200 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-teal-400"
+                placeholder="Bew."
+                value={selectedStep.bewerkingNr ?? ''}
+                onChange={e => patchStep.mutate({ stepId: selectedStep.id, bewerkingNr: e.target.value ? parseInt(e.target.value) : null })}
+              />
               <InlineEdit
                 value={selectedStep.stepName}
                 onSave={v => patchStep.mutate({ stepId: selectedStep.id, stepName: v })}
@@ -698,26 +712,30 @@ function SetupDetail({
             <div className="p-6">
               <div className="max-w-lg space-y-5">
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikelnaam</label>
-                  <p className="text-sm text-gray-800">{setup.articleName}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Productieorder</label>
-                    <p className="text-sm text-gray-800">{setup.productionOrderNo ?? '—'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikelnummer</label>
-                    <p className="text-sm text-gray-800">{setup.articleNo ?? '—'}</p>
-                  </div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Productieorder</label>
+                  <InlineEdit
+                    value={setup.productionOrderNo ?? ''}
+                    onSave={v => patchSetup.mutate({ productionOrderNo: v || null })}
+                    className="text-sm text-gray-800"
+                    placeholder="Voer productieorder in…"
+                  />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Omschrijving</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikel</label>
+                  <InlineEdit
+                    value={setup.articleNo ?? ''}
+                    onSave={v => patchSetup.mutate({ articleNo: v || null })}
+                    className="text-sm text-gray-800"
+                    placeholder="Voer artikelnummer in…"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Opmerkingen</label>
                   <InlineEdit
                     value={setup.description ?? ''}
                     onSave={v => patchSetup.mutate({ description: v || null })}
                     className="text-sm text-gray-800"
-                    placeholder="Voeg een omschrijving toe…"
+                    placeholder="Voeg opmerkingen toe…"
                     textarea
                   />
                 </div>
@@ -818,17 +836,50 @@ function SetupDetail({
         <button onClick={onBack} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><ChevronLeft size={18} /></button>
         <div className="flex-1 min-w-0">
           <InlineEdit
-            value={setup.articleName}
-            onSave={v => patchSetup.mutate({ articleName: v })}
+            value={setup.productionOrderNo ?? ''}
+            onSave={v => patchSetup.mutate({ productionOrderNo: v || null })}
             className="font-bold text-base text-gray-900"
-            placeholder="Artikelnaam"
+            placeholder="Productieorder"
           />
           <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-            {setup.productionOrderNo && <span>PO: {setup.productionOrderNo}</span>}
             {setup.articleNo && <span>Art: {setup.articleNo}</span>}
+            {setup.description && <span className="truncate max-w-xs">{setup.description}</span>}
           </div>
         </div>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+          title="Setup verwijderen"
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-bold text-lg text-gray-800 mb-2">Setup verwijderen?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Alle stappen, NC-bestanden en bijlagen worden permanent verwijderd. Dit kan niet ongedaan worden gemaakt.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={() => deleteSetup.mutate()}
+                disabled={deleteSetup.isPending}
+                className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                {deleteSetup.isPending ? 'Verwijderen…' : 'Verwijderen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content: Bewerkingstappen */}
       <div className="flex-1 overflow-auto p-6">
@@ -839,7 +890,9 @@ function SetupDetail({
                   onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
                   className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
                 >
-                  <span className="text-xs font-mono text-gray-400">#{step.stepNumber}</span>
+                  <span className="text-xs font-mono text-gray-400">
+                    #{step.stepNumber}{step.bewerkingNr != null ? ` · Bew. ${step.bewerkingNr}` : ''}
+                  </span>
                   <p className="text-sm font-semibold text-gray-800 leading-snug">{step.stepName}</p>
                   {step.machineName && <p className="text-xs text-gray-500 truncate">{step.machineName}</p>}
                   <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
@@ -880,26 +933,37 @@ function SetupDetail({
               </button>
             ) : (
               <div className="flex flex-col gap-2 p-4 rounded-xl border-2 border-teal-400 bg-teal-50 min-h-[110px]">
-                <input
-                  autoFocus
-                  className="border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
-                  placeholder="Stapnaam"
-                  value={newStepName}
-                  onChange={e => setNewStepName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), machineId })
-                    if (e.key === 'Escape') { setShowAddStep(false); setNewStepName('') }
-                  }}
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="w-16 border border-teal-400 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white text-center"
+                    placeholder="Bew."
+                    type="number"
+                    min="1"
+                    value={newBewerkingNr}
+                    onChange={e => setNewBewerkingNr(e.target.value)}
+                    onKeyDown={e => e.key === 'Escape' && (setShowAddStep(false), setNewStepName(''), setNewBewerkingNr(''))}
+                  />
+                  <input
+                    autoFocus
+                    className="flex-1 border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
+                    placeholder="Stapnaam"
+                    value={newStepName}
+                    onChange={e => setNewStepName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId })
+                      if (e.key === 'Escape') { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('') }
+                    }}
+                  />
+                </div>
                 <div className="flex gap-1">
                   <button
                     disabled={!newStepName.trim() || addStep.isPending}
-                    onClick={() => newStepName.trim() && addStep.mutate({ stepName: newStepName.trim(), machineId })}
+                    onClick={() => newStepName.trim() && addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId })}
                     className="flex-1 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
                   >
                     {addStep.isPending ? 'Aanmaken…' : 'Aanmaken'}
                   </button>
-                  <button onClick={() => { setShowAddStep(false); setNewStepName('') }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
+                  <button onClick={() => { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('') }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
                     <X size={14} />
                   </button>
                 </div>
@@ -1117,7 +1181,11 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                         <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
                         <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
                         <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.curTime ?? null)}</td>
+                        <td className={cn('px-3 py-2 text-right font-mono', (() => {
+                          const t2 = me?.time2 ? parseFloat(me.time2) : 0
+                          const ct = me?.curTime ? parseFloat(me.curTime) : 0
+                          return t2 > 0 && ct >= t2 ? 'text-red-600 font-semibold' : 'text-gray-600'
+                        })())}>{fmtTime(me?.curTime ?? null)}</td>
                         <td className="px-3 py-2">
                           <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
                         </td>

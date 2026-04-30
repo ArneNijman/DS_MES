@@ -152,14 +152,14 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 
 | Tabel | Omschrijving |
 |-------|-------------|
-| `machines` | Alle machines incl. freesmachines en meetmachines |
+| `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal) |
 | `employees` | Medewerkers (PIN, rol, inklokstatus) |
 | `cnc_tool_entries` | Toolmagazijn per machine (gesynchroniseerd via TOOL.T upload) |
 | `cnc_sync_logs` | Log van TOOL.T syncs per machine |
 | `tool_library_assemblies` | Samenstellingen in toolbibliotheek |
 | `tool_library_items` | Individuele toolcomponenten |
 | `product_setups` | Product setup (koppeling order ↔ machine ↔ stap) |
-| `product_setup_steps` | Stappen per setup (machineId, nulpunt X/Y/Z als text) |
+| `product_setup_steps` | Stappen per setup (machineId, nulpunt X/Y/Z als text, optioneel bewerkingNr) |
 | `product_setup_nc_files` | NC-bestanden per stap |
 | `product_setup_tool_calls` | Geparseerde TOOL CALL regels uit NC-bestand |
 | `product_setup_documents` | Tekeningen & CAD-bestanden per setup |
@@ -171,9 +171,12 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 ## CNC-specifieke kennis
 
 ### TOOL.T parser
-`backend/src/cnc/toolTableParser.ts` — kolom-index mapping voor Heidenhain formaat:
-- Kolom 14: DOC
-- Kolom 16: LOCKED
+`backend/src/cnc/toolTableParser.ts` — ondersteunt twee kolomindelingen:
+
+1. **Fooke/modern formaat** (`tool_table_format = 'fooke'` e.d.) — header aanwezig (`T NAME L R DL DR ...`), kolomposities worden uit de header afgeleid.
+2. **Klassiek Heidenhain formaat** (default) — geen bruikbare header; named vs. unnamed tool via `looksNumeric(cols[1])`, PLC-patroon (`%hex`) voor DOC/LOCKED-detectie.
+
+Komma als decimaalscheider wordt automatisch omgezet (`parseNum` vervangt `,` → `.`).
 
 ### NC-programma parser
 `backend/src/cnc/ncProgramParser.ts` — extraheert `TOOL CALL` regels:

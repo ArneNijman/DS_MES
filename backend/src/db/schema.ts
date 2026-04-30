@@ -99,6 +99,7 @@ export const machines = pgTable('machines', {
   cncSpindleInterface: text('cnc_spindle_interface'),
   cncNcVersion: text('cnc_nc_version'),
   cncPlcVersion: text('cnc_plc_version'),
+  toolTableFormat: text('tool_table_format'),  // null = 'heidenhain', 'fooke'
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -503,7 +504,7 @@ export const productSetups = pgTable('product_setups', {
   id:                uuid('id').primaryKey().defaultRandom(),
   productionOrderNo: text('production_order_no'),
   articleNo:         text('article_no'),
-  articleName:       text('article_name').notNull(),
+  articleName:       text('article_name'),
   description:       text('description'),
   origin:            text('origin').notNull().default('manual'),
   createdBy:         uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
@@ -515,6 +516,7 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   id:              uuid('id').primaryKey().defaultRandom(),
   setupId:         uuid('setup_id').notNull().references(() => productSetups.id, { onDelete: 'cascade' }),
   stepNumber:      integer('step_number').notNull(),
+  bewerkingNr:     integer('bewerking_nr'),
   stepName:        text('step_name').notNull(),
   machineId:       uuid('machine_id').references(() => machines.id, { onDelete: 'set null' }),
   zeroX:           text('zero_x'),
