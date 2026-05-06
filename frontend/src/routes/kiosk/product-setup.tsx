@@ -1,13 +1,15 @@
-import { useState, useRef, useEffect, ChangeEvent } from 'react'
+import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check,
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
-  Download, FolderOpen, Lock, Unlock,
+  Download, FolderOpen, Lock, Unlock, GitCompare,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+const CadViewer = lazy(() => import('@/components/viewer/CadViewer'))
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -601,11 +603,23 @@ function SetupDetail({
   const [showMachinePicker, setShowMachinePicker] = useState(false)
   const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [selectedCadUrl, setSelectedCadUrl] = useState<string | null>(null)
+  const [compareCadUrl, setCompareCadUrl]   = useState<string | null>(null)
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
     queryKey: ['product-setup', setupId],
     queryFn:  () => apiFetch(`/kiosk/product-setups/${setupId}`),
   })
+
+  useEffect(() => {
+    if (!setup) return
+    const viewable = setup.documents.filter(d =>
+      d.documentType === 'cad' && /\.(stp|step|stl)$/i.test(d.fileName)
+    )
+    if (viewable.length > 0 && !selectedCadUrl) {
+      setSelectedCadUrl(viewable[0].fileUrl)
+    }
+  }, [setup])
 
   const patchSetup = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -708,68 +722,107 @@ function SetupDetail({
 
         {/* Tab inhoud */}
         <div className="flex-1 overflow-auto">
-          {activeTab === 'info' && (
-            <div className="p-6">
-              <div className="max-w-lg space-y-5">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Productieorder</label>
-                  <InlineEdit
-                    value={setup.productionOrderNo ?? ''}
-                    onSave={v => patchSetup.mutate({ productionOrderNo: v || null })}
-                    className="text-sm text-gray-800"
-                    placeholder="Voer productieorder in…"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikel</label>
-                  <InlineEdit
-                    value={setup.articleNo ?? ''}
-                    onSave={v => patchSetup.mutate({ articleNo: v || null })}
-                    className="text-sm text-gray-800"
-                    placeholder="Voer artikelnummer in…"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Opmerkingen</label>
-                  <InlineEdit
-                    value={setup.description ?? ''}
-                    onSave={v => patchSetup.mutate({ description: v || null })}
-                    className="text-sm text-gray-800"
-                    placeholder="Voeg opmerkingen toe…"
-                    textarea
-                  />
+          {activeTab === 'info' && (() => {
+            const cadFiles = setup.documents.filter(d => d.documentType === 'cad')
+            const viewableCad = cadFiles.filter(d => /\.(stp|step|stl)$/i.test(d.fileName))
+            return (
+              <div className="p-6 h-full flex gap-6 min-h-0">
+                {/* Linker kolom: velden + document mappen */}
+                <div className="w-72 shrink-0 space-y-5 overflow-auto">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Productieorder</label>
+                    <InlineEdit
+                      value={setup.productionOrderNo ?? ''}
+                      onSave={v => patchSetup.mutate({ productionOrderNo: v || null })}
+                      className="text-sm text-gray-800"
+                      placeholder="Voer productieorder in…"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Artikel</label>
+                    <InlineEdit
+                      value={setup.articleNo ?? ''}
+                      onSave={v => patchSetup.mutate({ articleNo: v || null })}
+                      className="text-sm text-gray-800"
+                      placeholder="Voer artikelnummer in…"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Opmerkingen</label>
+                    <InlineEdit
+                      value={setup.description ?? ''}
+                      onSave={v => patchSetup.mutate({ description: v || null })}
+                      className="text-sm text-gray-800"
+                      placeholder="Voeg opmerkingen toe…"
+                      textarea
+                    />
+                  </div>
+
+                  {/* Document portaal kaarten */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {(['tekening', 'cad'] as const).map(type => {
+                      const docs  = setup.documents.filter(d => d.documentType === type)
+                      const label = type === 'tekening' ? 'Tekeningen' : 'CAD bestanden'
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => setOpenPortal(type)}
+                          className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <FolderOpen size={16} className="text-gray-400" />
+                            <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                              {docs.length}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-gray-700">{label}</p>
+                          <p className="text-[10px] text-gray-400">
+                            {docs.length === 0
+                              ? 'Nog niets toegevoegd'
+                              : `Laatste: ${new Date(docs[0].uploadedAt).toLocaleDateString('nl-NL')}`}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Actief CAD bestand indicator */}
+                  {selectedCadUrl && viewableCad.length > 0 && (
+                    <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                      <Layers size={10} className="text-teal-500" />
+                      <span className="truncate">{viewableCad.find(f => f.fileUrl === selectedCadUrl)?.fileName ?? 'Model actief'}</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Tekeningen & CAD portaal kaarten */}
-                <div className="grid grid-cols-2 gap-3">
-                  {(['tekening', 'cad'] as const).map(type => {
-                    const docs  = setup.documents.filter(d => d.documentType === type)
-                    const label = type === 'tekening' ? 'Tekeningen' : 'CAD bestanden'
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => setOpenPortal(type)}
-                        className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <FolderOpen size={16} className="text-gray-400" />
-                          <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                            {docs.length}
-                          </span>
-                        </div>
-                        <p className="text-sm font-medium text-gray-700">{label}</p>
-                        <p className="text-[10px] text-gray-400">
-                          {docs.length === 0
-                            ? 'Nog niets toegevoegd'
-                            : `Laatste: ${new Date(docs[0].uploadedAt).toLocaleDateString('nl-NL')}`}
-                        </p>
-                      </button>
-                    )
-                  })}
+                {/* Rechter kolom: 3D viewer */}
+                <div className="flex-1 min-w-0 min-h-0 rounded-xl border border-gray-200 overflow-hidden bg-gray-50 flex flex-col" style={{ minHeight: 400 }}>
+                  {viewableCad.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-300 gap-2">
+                      <Layers size={32} />
+                      <p className="text-sm">Geen CAD bestand beschikbaar</p>
+                      <p className="text-xs text-gray-400">Upload een .stp of .stl bestand via CAD bestanden</p>
+                    </div>
+                  ) : selectedCadUrl ? (
+                    <Suspense fallback={
+                      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
+                        <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-sm">Viewer laden…</p>
+                      </div>
+                    }>
+                      <CadViewer
+                        url={selectedCadUrl}
+                        fileName={cadFiles.find(f => f.fileUrl === selectedCadUrl)?.fileName}
+                        compareUrl={compareCadUrl ?? undefined}
+                        compareFileName={cadFiles.find(f => f.fileUrl === compareCadUrl)?.fileName}
+                        allCadFiles={viewableCad.map(f => ({ fileUrl: f.fileUrl, fileName: f.fileName }))}
+                      />
+                    </Suspense>
+                  ) : null}
                 </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
           {activeTab === 'cnc'        && <CncInfoTab step={selectedStep} setupId={setupId} />}
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
@@ -784,6 +837,8 @@ function SetupDetail({
             docs={setup.documents.filter(d => d.documentType === openPortal)}
             setupId={setupId}
             onClose={() => setOpenPortal(null)}
+            onSelectForViewer={openPortal === 'cad' ? (url) => { setSelectedCadUrl(url); setCompareCadUrl(null) } : undefined}
+            onSelectForCompare={openPortal === 'cad' ? (url) => setCompareCadUrl(url) : undefined}
           />
         )}
 
@@ -1644,16 +1699,19 @@ function NcFilePortalModal({
 // ── Document portaal modal ────────────────────────────────────────────────────
 
 function DocumentPortalModal({
-  type, docs, setupId, onClose,
+  type, docs, setupId, onClose, onSelectForViewer, onSelectForCompare,
 }: {
   type: 'tekening' | 'cad'
   docs: Document[]
   setupId: string
   onClose: () => void
+  onSelectForViewer?: (url: string) => void
+  onSelectForCompare?: (url: string) => void
 }) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const deleteDoc = useMutation({
     mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
@@ -1662,14 +1720,22 @@ function DocumentPortalModal({
 
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
+    console.log('[upload] bestand geselecteerd:', file?.name, 'setupId:', setupId)
     if (!file) return
     setUploading(true)
+    setUploadError(null)
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('documentType', type)
+      console.log('[upload] POST naar', `/kiosk/product-setups/${setupId}/documents`)
       await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      console.log('[upload] succes')
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[upload] fout:', msg)
+      setUploadError(`Upload mislukt: ${msg}`)
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -1701,7 +1767,7 @@ function DocumentPortalModal({
               ref={fileRef}
               type="file"
               className="hidden"
-              accept={type === 'tekening' ? 'application/pdf,image/*' : undefined}
+              accept={type === 'tekening' ? 'application/pdf,image/*' : '.stp,.step,.stl,.iges,.igs,.dxf,.dwg'}
               onChange={handleUpload}
             />
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400">
@@ -1709,6 +1775,13 @@ function DocumentPortalModal({
             </button>
           </div>
         </div>
+
+        {/* Foutmelding */}
+        {uploadError && (
+          <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">
+            {uploadError}
+          </div>
+        )}
 
         {/* Bestandslijst */}
         <div className="flex-1 overflow-auto">
@@ -1729,6 +1802,28 @@ function DocumentPortalModal({
                       {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
                     </p>
                   </div>
+                  {type === 'cad' && /\.(stp|step|stl)$/i.test(doc.fileName) && (
+                    <>
+                      {onSelectForViewer && (
+                        <button
+                          onClick={() => { onSelectForViewer(doc.fileUrl); onClose() }}
+                          className="p-1.5 rounded hover:bg-teal-50 text-gray-300 hover:text-teal-600 shrink-0 transition-colors"
+                          title="Toon in 3D viewer"
+                        >
+                          <Layers size={14} />
+                        </button>
+                      )}
+                      {onSelectForCompare && (
+                        <button
+                          onClick={() => { onSelectForCompare(doc.fileUrl); onClose() }}
+                          className="p-1.5 rounded hover:bg-purple-50 text-gray-300 hover:text-purple-500 shrink-0 transition-colors"
+                          title="Vergelijk met huidig model"
+                        >
+                          <GitCompare size={14} />
+                        </button>
+                      )}
+                    </>
+                  )}
                   <a
                     href={doc.fileUrl}
                     target="_blank"

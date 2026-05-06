@@ -42,7 +42,7 @@ async function main() {
 
   await fastify.register(cors, { origin: true })
   await fastify.register(jwt, { secret: process.env.JWT_SECRET ?? '' })
-  await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
+  await fastify.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } })
   await fastify.register(dbPlugin)
   await fastify.register(redisPlugin)
   await fastify.register(authPlugin)

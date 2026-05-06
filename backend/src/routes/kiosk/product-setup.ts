@@ -880,34 +880,36 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const parts = req.parts()
     let documentType = 'tekening'
     let versionNote: string | null = null
-    let fileField: import('@fastify/multipart').MultipartFile | null = null
+    let savedFileUrl: string | null = null
+    let savedFileName: string | null = null
+    let savedMimeType: string | null = null
 
     for await (const part of parts) {
       if (part.type === 'field') {
         if (part.fieldname === 'documentType') documentType = part.value as string
         if (part.fieldname === 'versionNote')  versionNote = part.value as string || null
       } else if (part.type === 'file') {
-        fileField = part
+        const ext      = extname(part.filename).toLowerCase()
+        const filename = `product-doc-${randomUUID()}${ext}`
+        const dest     = `/app/uploads/${filename}`
+        await pipeline(part.file, createWriteStream(dest))
+        savedFileUrl  = `/uploads/${filename}`
+        savedFileName = part.filename
+        savedMimeType = part.mimetype || null
       }
     }
 
-    if (!fileField) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
-
-    const ext = extname(fileField.filename).toLowerCase()
-    const filename = `product-doc-${randomUUID()}${ext}`
-    const dest = `/app/uploads/${filename}`
-
-    await pipeline(fileField.file, createWriteStream(dest))
+    if (!savedFileUrl || !savedFileName) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
 
     const [doc] = await fastify.db
       .insert(productSetupDocuments)
       .values({
         setupId:      id,
         documentType,
-        fileUrl:      `/uploads/${filename}`,
-        fileName:     fileField.filename,
+        fileUrl:      savedFileUrl,
+        fileName:     savedFileName,
         versionNote,
-        mimeType:     fileField.mimetype || null,
+        mimeType:     savedMimeType,
         uploadedBy:   (req as any).employee?.employeeId ?? null,
       })
       .returning()
@@ -1101,20 +1103,23 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const { overdrachtId } = req.params as { overdrachtId: string }
 
     const parts = req.parts()
-    let fileField: import('@fastify/multipart').MultipartFile | null = null
+    let savedFileUrl: string | null = null
+    let savedFileName: string | null = null
     for await (const part of parts) {
-      if (part.type === 'file') fileField = part
+      if (part.type === 'file') {
+        const ext      = extname(part.filename) || '.jpg'
+        const filename = `${randomUUID()}${ext}`
+        const dest     = `/app/uploads/${filename}`
+        await pipeline(part.file, createWriteStream(dest))
+        savedFileUrl  = `/uploads/${filename}`
+        savedFileName = part.filename
+      }
     }
-    if (!fileField) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
-
-    const ext      = extname(fileField.filename) || '.jpg'
-    const filename = `${randomUUID()}${ext}`
-    const dest     = `/app/uploads/${filename}`
-    await pipeline(fileField.file, createWriteStream(dest))
+    if (!savedFileUrl || !savedFileName) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
 
     const [photo] = await fastify.db
       .insert(productSetupOverdrachtPhotos)
-      .values({ overdrachtId, fileUrl: `/uploads/${filename}`, fileName: fileField.filename })
+      .values({ overdrachtId, fileUrl: savedFileUrl, fileName: savedFileName })
       .returning()
 
     return { ok: true, photoId: photo.id, fileUrl: photo.fileUrl }
