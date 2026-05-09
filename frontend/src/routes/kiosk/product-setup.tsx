@@ -4,7 +4,7 @@ import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check,
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
-  Download, FolderOpen, Lock, Unlock, GitCompare,
+  Download, FolderOpen, Lock, Unlock, GitCompare, Ruler,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -89,8 +89,36 @@ interface Document {
   fileName:       string
   versionNote:    string | null
   mimeType:       string | null
+  rapportageType: string | null
   uploadedAt:     string
   uploadedByName: string | null
+}
+
+interface InspectionFeature {
+  id: string
+  name: string
+  type: string
+  nominalX: number
+  nominalY: number
+  nominalZ: number
+  measuredX: number
+  measuredY: number
+  measuredZ: number
+  deviation: number
+  tolerancePlus: number
+  toleranceMinus: number
+  status: 'pass' | 'fail'
+}
+
+interface InspectionResult {
+  partName: string | null
+  programName: string | null
+  operator: string | null
+  machine: string | null
+  dateTime: string | null
+  serialNumber: string | null
+  features: InspectionFeature[]
+  summary: { total: number; pass: number; fail: number }
 }
 
 interface SetupDetail {
@@ -601,10 +629,11 @@ function SetupDetail({
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
   const [showMachinePicker, setShowMachinePicker] = useState(false)
-  const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | null>(null)
+  const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [selectedCadUrl, setSelectedCadUrl] = useState<string | null>(null)
   const [compareCadUrl, setCompareCadUrl]   = useState<string | null>(null)
+  const [inspectionPoints, setInspectionPoints] = useState<InspectionFeature[]>([])
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
     queryKey: ['product-setup', setupId],
@@ -785,6 +814,43 @@ function SetupDetail({
                       )
                     })}
                   </div>
+                  {/* Meet bestanden kaart */}
+                  {(() => {
+                    const metingXml = setup.documents.filter(d => d.documentType === 'meting_xml')
+                    const metingRap = setup.documents.filter(d => d.documentType === 'meting_rapport')
+                    const hasPoints = inspectionPoints.length > 0
+                    return (
+                      <button
+                        onClick={() => setOpenPortal('meting')}
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left w-full"
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <Ruler size={16} className={hasPoints ? 'text-teal-500' : 'text-gray-400'} />
+                          <div className="flex items-center gap-1">
+                            {metingXml.length > 0 && (
+                              <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                                {metingXml.length} XML
+                              </span>
+                            )}
+                            {metingRap.length > 0 && (
+                              <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                                {metingRap.length} PDF
+                              </span>
+                            )}
+                            {metingXml.length === 0 && metingRap.length === 0 && (
+                              <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">0</span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">Meet bestanden</p>
+                        <p className="text-[10px] text-gray-400">
+                          {metingXml.length === 0 && metingRap.length === 0
+                            ? 'Nog niets toegevoegd'
+                            : hasPoints ? 'Meetpunten actief in viewer' : `${metingXml.length} XML · ${metingRap.length} rapport`}
+                        </p>
+                      </button>
+                    )
+                  })()}
 
                   {/* Actief CAD bestand indicator */}
                   {selectedCadUrl && viewableCad.length > 0 && (
@@ -816,6 +882,7 @@ function SetupDetail({
                         compareUrl={compareCadUrl ?? undefined}
                         compareFileName={cadFiles.find(f => f.fileUrl === compareCadUrl)?.fileName}
                         allCadFiles={viewableCad.map(f => ({ fileUrl: f.fileUrl, fileName: f.fileName }))}
+                        inspectionPoints={inspectionPoints.length > 0 ? inspectionPoints : undefined}
                       />
                     </Suspense>
                   ) : null}
@@ -831,7 +898,7 @@ function SetupDetail({
         </div>
 
         {/* Document portaal modal */}
-        {openPortal && (
+        {(openPortal === 'tekening' || openPortal === 'cad') && (
           <DocumentPortalModal
             type={openPortal}
             docs={setup.documents.filter(d => d.documentType === openPortal)}
@@ -839,6 +906,14 @@ function SetupDetail({
             onClose={() => setOpenPortal(null)}
             onSelectForViewer={openPortal === 'cad' ? (url) => { setSelectedCadUrl(url); setCompareCadUrl(null) } : undefined}
             onSelectForCompare={openPortal === 'cad' ? (url) => setCompareCadUrl(url) : undefined}
+          />
+        )}
+        {openPortal === 'meting' && (
+          <MeetPortalModal
+            docs={setup.documents.filter(d => d.documentType === 'meting_xml' || d.documentType === 'meting_rapport')}
+            setupId={setupId}
+            onClose={() => setOpenPortal(null)}
+            onShowOnModel={(features) => { setInspectionPoints(features); setOpenPortal(null) }}
           />
         )}
 
@@ -1698,6 +1773,324 @@ function NcFilePortalModal({
 
 // ── Document portaal modal ────────────────────────────────────────────────────
 
+// ── MeetPortalModal ───────────────────────────────────────────────────────────
+
+const RAPPORTAGE_LABELS: Record<string, string> = {
+  frezen:      'Frezen',
+  controle:    'Controle',
+  eindmeting:  'Eindmeting',
+}
+
+function MeetPortalModal({
+  docs, setupId, onClose, onShowOnModel,
+}: {
+  docs: Document[]
+  setupId: string
+  onClose: () => void
+  onShowOnModel: (features: InspectionFeature[]) => void
+}) {
+  const qc = useQueryClient()
+  const xmlFileRef = useRef<HTMLInputElement>(null)
+  const rapFileRef = useRef<HTMLInputElement>(null)
+  const [innerTab, setInnerTab] = useState<'xml' | 'rapport'>('xml')
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [selectedRapportageType, setSelectedRapportageType] = useState<string>('frezen')
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
+
+  const xmlDocs = docs.filter(d => d.documentType === 'meting_xml')
+  const rapDocs = docs.filter(d => d.documentType === 'meting_rapport')
+
+  const { data: inspectionData, isLoading: inspLoading } = useQuery<InspectionResult>({
+    queryKey: ['inspection-data', selectedDocId],
+    queryFn: () => apiFetch(`/kiosk/product-setups/documents/${selectedDocId}/inspection-data`) as Promise<InspectionResult>,
+    enabled: !!selectedDocId,
+  })
+
+  const deleteDoc = useMutation({
+    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      setSelectedDocId(null)
+    },
+  })
+
+  async function handleUpload(file: File, documentType: string, rapportageType?: string) {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('documentType', documentType)
+      if (rapportageType) fd.append('rapportageType', rapportageType)
+      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setUploadError(`Upload mislukt: ${msg}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <Ruler size={16} className="text-teal-500" />
+            <p className="font-bold text-gray-800">Meet bestanden</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
+        </div>
+
+        {/* Inner tabs */}
+        <div className="flex border-b border-gray-100 shrink-0">
+          {(['xml', 'rapport'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setInnerTab(t)}
+              className={cn(
+                'px-5 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                innerTab === t
+                  ? 'border-teal-500 text-teal-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {t === 'xml' ? `XML bestanden (${xmlDocs.length})` : `Rapporten (${rapDocs.length})`}
+            </button>
+          ))}
+        </div>
+
+        {uploadError && (
+          <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">{uploadError}</div>
+        )}
+
+        {/* XML tab */}
+        {innerTab === 'xml' && (
+          <div className="flex-1 overflow-auto flex flex-col">
+            {/* Upload strip */}
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 shrink-0">
+              <select
+                value={selectedRapportageType}
+                onChange={e => setSelectedRapportageType(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-teal-400"
+              >
+                <option value="frezen">Frezen</option>
+                <option value="controle">Controle</option>
+                <option value="eindmeting">Eindmeting</option>
+              </select>
+              <button
+                onClick={() => xmlFileRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                <Upload size={13} />
+                {uploading ? 'Bezig…' : 'XML uploaden'}
+              </button>
+              <input
+                ref={xmlFileRef}
+                type="file"
+                className="hidden"
+                accept=".xml,.dmis"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleUpload(f, 'meting_xml', selectedRapportageType)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+
+            {/* XML lijst */}
+            {xmlDocs.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-12 text-gray-300">
+                <Ruler size={32} className="mb-2" />
+                <p className="text-sm">Nog geen XML meetbestanden toegevoegd</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {xmlDocs.map(doc => (
+                  <li key={doc.id} className={cn('flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors', selectedDocId === doc.id && 'bg-teal-50')}>
+                    <FileText size={16} className="text-gray-300 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
+                      </p>
+                    </div>
+                    {doc.rapportageType && (
+                      <span className="shrink-0 text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5">
+                        {RAPPORTAGE_LABELS[doc.rapportageType] ?? doc.rapportageType}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setSelectedDocId(selectedDocId === doc.id ? null : doc.id)}
+                      className="p-1.5 rounded hover:bg-teal-50 text-gray-300 hover:text-teal-600 shrink-0 transition-colors"
+                      title="Bekijk rapport"
+                    >
+                      <Info size={14} />
+                    </button>
+                    <button
+                      onClick={() => deleteDoc.mutate(doc.id)}
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-200 hover:text-red-500 shrink-0 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* Inspectie data tabel */}
+            {selectedDocId && (
+              <div className="border-t border-gray-100 shrink-0">
+                {inspLoading ? (
+                  <div className="flex items-center justify-center py-6 text-gray-400 text-sm gap-2">
+                    <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                    Bezig met parsen…
+                  </div>
+                ) : inspectionData ? (
+                  <div className="p-4 space-y-3">
+                    {/* Samenvatting header */}
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500 space-x-3">
+                        {inspectionData.operator && <span>Operator: <strong>{inspectionData.operator}</strong></span>}
+                        {inspectionData.dateTime && <span>Datum: <strong>{inspectionData.dateTime}</strong></span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-semibold">
+                        <span className="text-green-600 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                          {inspectionData.summary.pass} OK
+                        </span>
+                        {inspectionData.summary.fail > 0 && (
+                          <span className="text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                            {inspectionData.summary.fail} FAIL
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Feature tabel */}
+                    {inspectionData.features.length > 0 && (
+                      <div className="overflow-auto max-h-52 rounded-lg border border-gray-100">
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-semibold text-gray-500">Feature</th>
+                              <th className="text-left px-3 py-2 font-semibold text-gray-500">Type</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Deviatie</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Tol.</th>
+                              <th className="text-center px-3 py-2 font-semibold text-gray-500">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {inspectionData.features.map(f => (
+                              <tr key={f.id} className={f.status === 'fail' ? 'bg-red-50' : ''}>
+                                <td className="px-3 py-1.5 font-medium text-gray-800 truncate max-w-[120px]">{f.name}</td>
+                                <td className="px-3 py-1.5 text-gray-500">{f.type}</td>
+                                <td className={cn('px-3 py-1.5 text-right font-mono', f.deviation > 0 ? 'text-orange-600' : f.deviation < 0 ? 'text-blue-600' : 'text-gray-500')}>
+                                  {f.deviation >= 0 ? '+' : ''}{f.deviation.toFixed(3)}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-gray-400 font-mono">±{f.tolerancePlus.toFixed(3)}</td>
+                                <td className="px-3 py-1.5 text-center">
+                                  {f.status === 'pass'
+                                    ? <Check size={12} className="inline text-green-500" />
+                                    : <X size={12} className="inline text-red-500" />}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {inspectionData.features.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">Geen features gevonden in dit XML bestand.</p>
+                    ) : (
+                      <button
+                        onClick={() => onShowOnModel(inspectionData.features)}
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+                      >
+                        <Layers size={14} />
+                        Toon meetpunten op 3D model
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Rapport tab */}
+        {innerTab === 'rapport' && (
+          <div className="flex-1 overflow-auto flex flex-col">
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 shrink-0">
+              <button
+                onClick={() => rapFileRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                <Upload size={13} />
+                {uploading ? 'Bezig…' : 'Rapport uploaden'}
+              </button>
+              <input
+                ref={rapFileRef}
+                type="file"
+                className="hidden"
+                accept=".pdf,.html"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleUpload(f, 'meting_rapport')
+                  e.target.value = ''
+                }}
+              />
+            </div>
+            {rapDocs.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-12 text-gray-300">
+                <FileText size={32} className="mb-2" />
+                <p className="text-sm">Nog geen rapporten toegevoegd</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {rapDocs.map(doc => (
+                  <li key={doc.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
+                    <FileText size={16} className="text-gray-300 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
+                      </p>
+                    </div>
+                    <a
+                      href={doc.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 shrink-0"
+                    >
+                      <Download size={14} />
+                    </a>
+                    <button
+                      onClick={() => deleteDoc.mutate(doc.id)}
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-200 hover:text-red-500 shrink-0 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── DocumentPortalModal ───────────────────────────────────────────────────────
+
 function DocumentPortalModal({
   type, docs, setupId, onClose, onSelectForViewer, onSelectForCompare,
 }: {
@@ -1720,7 +2113,6 @@ function DocumentPortalModal({
 
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    console.log('[upload] bestand geselecteerd:', file?.name, 'setupId:', setupId)
     if (!file) return
     setUploading(true)
     setUploadError(null)
@@ -1728,13 +2120,10 @@ function DocumentPortalModal({
       const fd = new FormData()
       fd.append('file', file)
       fd.append('documentType', type)
-      console.log('[upload] POST naar', `/kiosk/product-setups/${setupId}/documents`)
       await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
-      console.log('[upload] succes')
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[upload] fout:', msg)
       setUploadError(`Upload mislukt: ${msg}`)
     } finally {
       setUploading(false)

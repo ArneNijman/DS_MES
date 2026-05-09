@@ -24,6 +24,8 @@ import {
   toolingStockLocations,
 } from '../../db/schema.js'
 import { parseNcProgram } from '../../cnc/ncProgramParser.js'
+import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
+import { readFile } from 'node:fs/promises'
 
 export async function productSetupRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: [fastify.requireAuth] }
@@ -880,14 +882,16 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const parts = req.parts()
     let documentType = 'tekening'
     let versionNote: string | null = null
+    let rapportageType: string | null = null
     let savedFileUrl: string | null = null
     let savedFileName: string | null = null
     let savedMimeType: string | null = null
 
     for await (const part of parts) {
       if (part.type === 'field') {
-        if (part.fieldname === 'documentType') documentType = part.value as string
-        if (part.fieldname === 'versionNote')  versionNote = part.value as string || null
+        if (part.fieldname === 'documentType')   documentType = part.value as string
+        if (part.fieldname === 'versionNote')    versionNote = part.value as string || null
+        if (part.fieldname === 'rapportageType') rapportageType = part.value as string || null
       } else if (part.type === 'file') {
         const ext      = extname(part.filename).toLowerCase()
         const filename = `product-doc-${randomUUID()}${ext}`
@@ -904,13 +908,14 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const [doc] = await fastify.db
       .insert(productSetupDocuments)
       .values({
-        setupId:      id,
+        setupId:        id,
         documentType,
-        fileUrl:      savedFileUrl,
-        fileName:     savedFileName,
+        fileUrl:        savedFileUrl,
+        fileName:       savedFileName,
         versionNote,
-        mimeType:     savedMimeType,
-        uploadedBy:   (req as any).employee?.employeeId ?? null,
+        mimeType:       savedMimeType,
+        rapportageType: rapportageType ?? null,
+        uploadedBy:     (req as any).employee?.employeeId ?? null,
       })
       .returning()
 
@@ -930,6 +935,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         fileName:       productSetupDocuments.fileName,
         versionNote:    productSetupDocuments.versionNote,
         mimeType:       productSetupDocuments.mimeType,
+        rapportageType: productSetupDocuments.rapportageType,
         uploadedAt:     productSetupDocuments.uploadedAt,
         uploadedByName: employees.name,
       })
@@ -953,6 +959,31 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     if (!updated) return reply.status(404).send({ error: 'Document niet gevonden' })
     return { ok: true }
+  })
+
+  // ── PC-DMIS XML parsen ────────────────────────────────────────────────────
+
+  fastify.get('/kiosk/product-setups/documents/:docId/inspection-data', auth, async (req, reply) => {
+    const { docId } = req.params as { docId: string }
+    const [doc] = await fastify.db
+      .select({ fileUrl: productSetupDocuments.fileUrl, documentType: productSetupDocuments.documentType })
+      .from(productSetupDocuments)
+      .where(eq(productSetupDocuments.id, docId))
+      .limit(1)
+
+    if (!doc) return reply.status(404).send({ error: 'Document niet gevonden' })
+    if (doc.documentType !== 'meting_xml') return reply.status(400).send({ error: 'Geen XML meetbestand' })
+
+    // fileUrl is "/uploads/product-doc-xxx.xml" → "/app/uploads/product-doc-xxx.xml"
+    const localPath = `/app${doc.fileUrl}`
+    let xml: string
+    try {
+      xml = await readFile(localPath, 'utf8')
+    } catch {
+      return reply.status(404).send({ error: 'Bestand niet gevonden op server' })
+    }
+
+    return parsePcdmisXml(xml)
   })
 
   // ── Document verwijderen ──────────────────────────────────────────────────

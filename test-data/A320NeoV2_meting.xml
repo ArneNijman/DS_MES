@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RESULTS>
+  <HEADER>
+    <PARTNAME>A320NeoV2</PARTNAME>
+    <PROGRAMNAME>A320NEO_INSPECTION_V1</PROGRAMNAME>
+    <OPERATOR>J. Bakker</OPERATOR>
+    <MACHINE>DEA-GLOBAL-Silver</MACHINE>
+    <DATETIME>08/05/2026 14:30:00</DATETIME>
+    <SERIALNUMBER>SN-2026-0042</SERIALNUMBER>
+  </HEADER>
+  <FEATURES>
+
+    <!-- ── Referentie vlakken ─────────────────────────────────────────── -->
+
+    <FEATURE name="DATUM_ONDERZIJDE" type="PLANE" status="pass">
+      <NOMINAL x="0.000" y="1.537" z="2.224"/>
+      <MEASURED x="0.000" y="1.537" z="2.224"/>
+      <DEVIATION value="0.000"/>
+      <TOLERANCE plus="0.010" minus="-0.010"/>
+    </FEATURE>
+
+    <FEATURE name="SYMMETRIE_ROMP" type="PLANE" status="pass">
+      <NOMINAL x="0.000" y="1.537" z="16.362"/>
+      <MEASURED x="0.001" y="1.537" z="16.362"/>
+      <DEVIATION value="0.001"/>
+      <TOLERANCE plus="0.020" minus="-0.020"/>
+    </FEATURE>
+
+    <!-- ── Neus ───────────────────────────────────────────────────────── -->
+
+    <FEATURE name="NEUS_PUNT" type="POINT" status="pass">
+      <NOMINAL x="0.005" y="56.084" z="15.188"/>
+      <MEASURED x="0.006" y="56.081" z="15.190"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="COCKPIT_TOP" type="POINT" status="pass">
+      <NOMINAL x="0.037" y="49.610" z="32.852"/>
+      <MEASURED x="0.040" y="49.607" z="32.849"/>
+      <DEVIATION value="0.005"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="NEUS_PROFIEL_LINKS" type="POINT" status="pass">
+      <NOMINAL x="-8.000" y="50.000" z="15.000"/>
+      <MEASURED x="-8.002" y="50.003" z="14.998"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="NEUS_PROFIEL_RECHTS" type="POINT" status="pass">
+      <NOMINAL x="8.000" y="50.000" z="15.000"/>
+      <MEASURED x="8.003" y="50.001" z="15.001"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <!-- ── Romp ───────────────────────────────────────────────────────── -->
+
+    <FEATURE name="ROMP_VOOR" type="POINT" status="pass">
+      <NOMINAL x="0.003" y="30.000" z="16.500"/>
+      <MEASURED x="0.004" y="30.002" z="16.503"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="ROMP_MIDDEN" type="POINT" status="pass">
+      <NOMINAL x="0.003" y="1.537" z="17.127"/>
+      <MEASURED x="0.002" y="1.538" z="17.130"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="ROMP_ACHTER" type="POINT" status="fail">
+      <NOMINAL x="0.003" y="-25.000" z="15.000"/>
+      <MEASURED x="0.005" y="-25.001" z="14.868"/>
+      <DEVIATION value="-0.132"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <!-- ── Staart ──────────────────────────────────────────────────────── -->
+
+    <FEATURE name="STAART_PUNT" type="POINT" status="pass">
+      <NOMINAL x="0.012" y="-45.208" z="9.870"/>
+      <MEASURED x="0.013" y="-45.210" z="9.873"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="HOOGTEROER_LINKS" type="POINT" status="pass">
+      <NOMINAL x="-10.000" y="-43.000" z="8.500"/>
+      <MEASURED x="-10.002" y="-43.003" z="8.498"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="HOOGTEROER_RECHTS" type="POINT" status="pass">
+      <NOMINAL x="10.000" y="-43.000" z="8.500"/>
+      <MEASURED x="10.003" y="-43.001" z="8.502"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="STAARTVIN_TOP" type="POINT" status="fail">
+      <NOMINAL x="0.000" y="-38.000" z="14.119"/>
+      <MEASURED x="0.002" y="-38.003" z="13.974"/>
+      <DEVIATION value="-0.145"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <!-- ── Vleugel links ──────────────────────────────────────────────── -->
+
+    <FEATURE name="VLEUGEL_L_WORTEL" type="POINT" status="pass">
+      <NOMINAL x="-12.000" y="15.958" z="14.500"/>
+      <MEASURED x="-12.002" y="15.959" z="14.502"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_L_MIDDEN" type="POINT" status="pass">
+      <NOMINAL x="-30.000" y="15.958" z="13.997"/>
+      <MEASURED x="-30.004" y="15.956" z="13.999"/>
+      <DEVIATION value="0.005"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_L_TIP" type="POINT" status="pass">
+      <NOMINAL x="-47.632" y="15.958" z="13.997"/>
+      <MEASURED x="-47.635" y="15.959" z="14.001"/>
+      <DEVIATION value="0.005"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_L_BOVENKANT" type="POINT" status="pass">
+      <NOMINAL x="-35.000" y="15.958" z="19.686"/>
+      <MEASURED x="-35.003" y="15.960" z="19.689"/>
+      <DEVIATION value="0.004"/>
+      <TOLERANCE plus="0.150" minus="-0.150"/>
+    </FEATURE>
+
+    <!-- ── Vleugel rechts ─────────────────────────────────────────────── -->
+
+    <FEATURE name="VLEUGEL_R_WORTEL" type="POINT" status="pass">
+      <NOMINAL x="12.000" y="15.958" z="14.500"/>
+      <MEASURED x="12.003" y="15.957" z="14.501"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_R_MIDDEN" type="POINT" status="pass">
+      <NOMINAL x="30.000" y="15.958" z="13.997"/>
+      <MEASURED x="30.002" y="15.959" z="13.995"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_R_TIP" type="POINT" status="fail">
+      <NOMINAL x="47.631" y="15.958" z="13.997"/>
+      <MEASURED x="47.635" y="15.962" z="13.861"/>
+      <DEVIATION value="-0.136"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="VLEUGEL_R_BOVENKANT" type="POINT" status="pass">
+      <NOMINAL x="35.000" y="15.958" z="19.686"/>
+      <MEASURED x="35.002" y="15.957" z="19.688"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.150" minus="-0.150"/>
+    </FEATURE>
+
+    <!-- ── Motornacellen ─────────────────────────────────────────────── -->
+
+    <FEATURE name="MOTOR_L_MIDDELPUNT" type="CIRCLE" status="pass">
+      <NOMINAL x="-27.620" y="11.318" z="9.830"/>
+      <MEASURED x="-27.622" y="11.319" z="9.831"/>
+      <DEVIATION value="0.002"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="MOTOR_L_VOORKANT" type="POINT" status="pass">
+      <NOMINAL x="-27.620" y="16.000" z="9.830"/>
+      <MEASURED x="-27.621" y="16.002" z="9.832"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="MOTOR_L_ONDERKANT" type="POINT" status="fail">
+      <NOMINAL x="-27.620" y="11.318" z="8.838"/>
+      <MEASURED x="-27.619" y="11.320" z="8.720"/>
+      <DEVIATION value="-0.118"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="MOTOR_R_MIDDELPUNT" type="CIRCLE" status="pass">
+      <NOMINAL x="27.620" y="11.318" z="9.829"/>
+      <MEASURED x="27.621" y="11.317" z="9.828"/>
+      <DEVIATION value="0.002"/>
+      <TOLERANCE plus="0.050" minus="-0.050"/>
+    </FEATURE>
+
+    <FEATURE name="MOTOR_R_VOORKANT" type="POINT" status="pass">
+      <NOMINAL x="27.620" y="16.000" z="9.829"/>
+      <MEASURED x="27.622" y="16.001" z="9.831"/>
+      <DEVIATION value="0.003"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+    <FEATURE name="MOTOR_R_ONDERKANT" type="POINT" status="pass">
+      <NOMINAL x="27.620" y="11.318" z="8.838"/>
+      <MEASURED x="27.621" y="11.319" z="8.840"/>
+      <DEVIATION value="0.002"/>
+      <TOLERANCE plus="0.100" minus="-0.100"/>
+    </FEATURE>
+
+  </FEATURES>
+</RESULTS>

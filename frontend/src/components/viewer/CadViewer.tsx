@@ -8,12 +8,29 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface InspectionFeature {
+  id: string
+  name: string
+  type: string
+  nominalX: number
+  nominalY: number
+  nominalZ: number
+  measuredX: number
+  measuredY: number
+  measuredZ: number
+  deviation: number
+  tolerancePlus: number
+  toleranceMinus: number
+  status: 'pass' | 'fail'
+}
+
 interface CadViewerProps {
   url: string
   fileName?: string
   compareUrl?: string
   compareFileName?: string
   allCadFiles?: { fileUrl: string; fileName: string }[]
+  inspectionPoints?: InspectionFeature[]
 }
 
 interface Annotation {
@@ -159,7 +176,7 @@ async function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function CadViewer({ url, fileName, compareUrl, compareFileName, allCadFiles = [] }: CadViewerProps) {
+export default function CadViewer({ url, fileName, compareUrl, compareFileName, allCadFiles = [], inspectionPoints }: CadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const rendererRef  = useRef<THREE.WebGLRenderer | null>(null)
@@ -174,10 +191,14 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   const annotationMeshesRef = useRef<THREE.Mesh[]>([])
   const measureObjsRef      = useRef<THREE.Object3D[]>([])
   const clipPlaneRef        = useRef<THREE.Plane>(new THREE.Plane(new THREE.Vector3(1,0,0), 0))
+  const inspGroupRef        = useRef<THREE.Group | null>(null)
+  const inspMarkersGroupRef = useRef<THREE.Group | null>(null)
+  const devVectorsGroupRef  = useRef<THREE.Group | null>(null)
 
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState<string | null>(null)
   const [stats, setStats]           = useState<ModelStats | null>(null)
+  const [inspStats, setInspStats]   = useState<{ minDev: number; maxDev: number; tol: number } | null>(null)
 
   const [viewMode, setViewMode]         = useState<ViewMode>('solid')
   const [opacity, setOpacity]           = useState(1)
@@ -204,6 +225,192 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   const [coordReadout, setCoordReadout] = useState<{ x: number; y: number; z: number } | null>(null)
   const [faceInfo, setFaceInfo]         = useState<{ areaMm2: number; edgeMm: number | null } | null>(null)
   const [selectedFaceMesh, setSelectedFaceMesh] = useState<THREE.Mesh | null>(null)
+  const [showInspection, setShowInspection]         = useState(true)
+  const [showFeatureMarkers, setShowFeatureMarkers] = useState(true)
+  const [showHeatmap, setShowHeatmap]               = useState(false)
+  const [showDevVectors, setShowDevVectors]         = useState(false)
+  const [hoveredFeature, setHoveredFeature]         = useState<InspectionFeature | null>(null)
+
+  // ── Inspection point cloud + feature markers ────────────────────────────
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (inspGroupRef.current) { scene.remove(inspGroupRef.current); inspGroupRef.current = null }
+    inspMarkersGroupRef.current = null
+    if (!inspectionPoints || inspectionPoints.length === 0) { setInspStats(null); return }
+
+    const mesh   = bomMeshRef.current
+    const box    = modelBoxRef.current
+    const diag   = box.getSize(new THREE.Vector3()).length()
+    const spread = diag * 0.05
+    const ptSize = Math.max(diag * 0.005, 0.2)
+    const mrkR   = Math.max(diag * 0.007, 0.25)
+    const invMtx = mesh ? new THREE.Matrix4().copy(mesh.matrixWorld).invert() : null
+
+    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+    const minDev    = Math.min(...inspectionPoints.map(p => p.deviation))
+    const maxDev    = Math.max(...inspectionPoints.map(p => p.deviation))
+    setInspStats({ minDev, maxDev, tol: globalTol })
+
+    const rootGroup    = new THREE.Group()
+    const cloudGroup   = new THREE.Group()
+    const markersGroup = new THREE.Group()
+    rootGroup.add(cloudGroup, markersGroup)
+
+    // ── 1) Colormap point cloud ──────────────────────────────────────────
+    const posBuf: number[] = []
+    const colBuf: number[] = []
+    for (const pt of inspectionPoints) {
+      const center = new THREE.Vector3(
+        pt.measuredX || pt.nominalX,
+        pt.measuredY || pt.nominalY,
+        pt.measuredZ || pt.nominalZ,
+      )
+      const col = deviationToJetColor(pt.deviation, globalTol)
+      for (let i = 0; i < 100; i++) {
+        const theta  = Math.random() * Math.PI * 2
+        const phi    = Math.acos(2 * Math.random() - 1)
+        const r      = spread * Math.cbrt(Math.random())
+        const sample = center.clone().add(new THREE.Vector3(
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.sin(phi) * Math.sin(theta),
+          r * Math.cos(phi),
+        ))
+        let finalPos = sample
+        if (mesh && invMtx) {
+          const local  = sample.clone().applyMatrix4(invMtx)
+          const target = { point: new THREE.Vector3(), distance: Infinity }
+          ;(mesh.geometry as any).boundsTree?.closestPointToPoint(local, target)
+          if (isFinite(target.distance) && target.distance < spread * 3)
+            finalPos = target.point.clone().applyMatrix4(mesh.matrixWorld)
+        }
+        posBuf.push(finalPos.x, finalPos.y, finalPos.z)
+        colBuf.push(col.r, col.g, col.b)
+      }
+    }
+    const cloudGeo = new THREE.BufferGeometry()
+    cloudGeo.setAttribute('position', new THREE.Float32BufferAttribute(posBuf, 3))
+    cloudGeo.setAttribute('color',    new THREE.Float32BufferAttribute(colBuf, 3))
+    cloudGroup.add(new THREE.Points(cloudGeo, new THREE.PointsMaterial({ size: ptSize, vertexColors: true, sizeAttenuation: true })))
+    cloudGroup.visible = showInspection
+
+    // ── 2) Feature markers (zichtbaar, togglebaar, hover-detectie) ───────
+    for (const pt of inspectionPoints) {
+      const col    = deviationToJetColor(pt.deviation, globalTol)
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(mrkR, 8, 8),
+        new THREE.MeshStandardMaterial({ color: col, metalness: 0.1, roughness: 0.5 }),
+      )
+      sphere.position.set(pt.nominalX, pt.nominalY, pt.nominalZ)
+      sphere.userData = { feature: pt }
+      markersGroup.add(sphere)
+    }
+    markersGroup.visible = showFeatureMarkers
+
+    scene.add(rootGroup)
+    inspGroupRef.current        = cloudGroup
+    inspMarkersGroupRef.current = markersGroup
+
+    return () => {
+      scene.remove(rootGroup)
+      inspGroupRef.current        = null
+      inspMarkersGroupRef.current = null
+    }
+  }, [inspectionPoints])
+
+  useEffect(() => { if (inspGroupRef.current)        inspGroupRef.current.visible        = showInspection    }, [showInspection])
+  useEffect(() => { if (inspMarkersGroupRef.current) inspMarkersGroupRef.current.visible = showFeatureMarkers }, [showFeatureMarkers])
+
+  // ── Vertex-colormap heatmap (IDW interpolatie op meshoppervlak) ──────────
+  useEffect(() => {
+    if (!mainGroupRef.current) return
+    const meshes: THREE.Mesh[] = []
+    mainGroupRef.current.traverse(o => {
+      if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) meshes.push(o as THREE.Mesh)
+    })
+
+    if (!showHeatmap || !inspectionPoints || inspectionPoints.length === 0) {
+      // herstel standaard materiaal
+      meshes.forEach(m => {
+        m.geometry.deleteAttribute('color')
+        m.material = buildMaterial(viewMode, opacity)
+      })
+      return
+    }
+
+    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+
+    meshes.forEach(m => {
+      const pos    = m.geometry.attributes.position
+      const colors = new Float32Array(pos.count * 3)
+
+      for (let i = 0; i < pos.count; i++) {
+        const vx = pos.getX(i), vy = pos.getY(i), vz = pos.getZ(i)
+        let wSum = 0, devSum = 0
+
+        for (const pt of inspectionPoints) {
+          const dx = vx - pt.nominalX, dy = vy - pt.nominalY, dz = vz - pt.nominalZ
+          const d2 = dx*dx + dy*dy + dz*dz
+          if (d2 < 0.0001) { devSum = pt.deviation; wSum = 1; break }
+          const w = 1 / d2   // IDW macht 2
+          devSum += pt.deviation * w
+          wSum   += w
+        }
+
+        const col = deviationToJetColor(wSum > 0 ? devSum / wSum : 0, globalTol)
+        colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b
+      }
+
+      m.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+      m.material = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        specular: 0x111111,
+        shininess: 30,
+        transparent: opacity < 1,
+        opacity,
+        depthWrite: opacity >= 1,
+        side: THREE.DoubleSide,
+      })
+    })
+  }, [inspectionPoints, showHeatmap, viewMode, opacity])
+
+  // ── Deviatievectoren (nominaal → gemeten, uitvergroot) ───────────────────
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (devVectorsGroupRef.current) { scene.remove(devVectorsGroupRef.current); devVectorsGroupRef.current = null }
+    if (!showDevVectors || !inspectionPoints || inspectionPoints.length === 0) return
+
+    const box    = modelBoxRef.current
+    const diag   = box.getSize(new THREE.Vector3()).length()
+    // Vergrotingsfactor: deviaties zijn typisch 0.001–0.15mm op een 100mm model → ×100 voor zichtbaarheid
+    const amplify = Math.max(diag * 0.5, 20)
+    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+
+    const group = new THREE.Group()
+    for (const pt of inspectionPoints) {
+      const nom  = new THREE.Vector3(pt.nominalX, pt.nominalY, pt.nominalZ)
+      const meas = new THREE.Vector3(pt.measuredX || pt.nominalX, pt.measuredY || pt.nominalY, pt.measuredZ || pt.nominalZ)
+      const diff = meas.clone().sub(nom)
+      if (diff.length() < 0.0001) continue
+
+      const col = deviationToJetColor(pt.deviation, globalTol)
+      const tip  = nom.clone().add(diff.clone().multiplyScalar(amplify))
+
+      // pijllijn
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([nom, tip])
+      group.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: col })))
+      // pijlpunt
+      const head = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.5, 8), new THREE.MeshBasicMaterial({ color: col }))
+      head.position.copy(tip)
+      head.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), diff.clone().normalize())
+      group.add(head)
+    }
+
+    scene.add(group)
+    devVectorsGroupRef.current = group
+    return () => { scene.remove(group); devVectorsGroupRef.current = null }
+  }, [inspectionPoints, showDevVectors])
 
   // ── Init Three.js ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -453,12 +660,13 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
 
   // ── View mode / opacity ──────────────────────────────────────────────────
   useEffect(() => {
+    if (showHeatmap) return  // heatmap effect beheert het materiaal
     mainGroupRef.current?.traverse(o => {
       if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) {
         o.material = buildMaterial(viewMode, opacity)
       }
     })
-  }, [viewMode, opacity])
+  }, [viewMode, opacity, showHeatmap])
 
   // ── Clipping plane ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -576,6 +784,25 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   }, [activeTool, selectedFaceMesh])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // hover over feature markers
+    if (inspMarkersGroupRef.current && showFeatureMarkers) {
+      const canvas = canvasRef.current!
+      const rect   = canvas.getBoundingClientRect()
+      const ndc    = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width)  *  2 - 1,
+        ((e.clientY - rect.top)  / rect.height) * -2 + 1,
+      )
+      const ray = new THREE.Raycaster()
+      ray.setFromCamera(ndc, cameraRef.current!)
+      const hits = ray.intersectObjects(inspMarkersGroupRef.current.children, false)
+      if (hits.length > 0) {
+        setHoveredFeature((hits[0].object as THREE.Mesh).userData.feature as InspectionFeature)
+        setCoordReadout(null)
+        return
+      }
+    }
+    setHoveredFeature(null)
+
     const hit = getRaycastHit(e)
     if (hit) {
       setCoordReadout({
@@ -586,7 +813,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     } else {
       setCoordReadout(null)
     }
-  }, [getRaycastHit])
+  }, [getRaycastHit, showInspection])
 
   function drawMeasureLine(p1: THREE.Vector3, p2: THREE.Vector3) {
     const geo  = new THREE.BufferGeometry().setFromPoints([p1, p2])
@@ -724,6 +951,12 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
             </button>
           </Tip>
         )}
+        {inspectionPoints && inspectionPoints.length > 0 && (<>
+          <ToolBtn active={showInspection}     onClick={() => setShowInspection((v: boolean) => !v)}     label="Kleurmap"  tooltip="Colormap punt-cloud — toon of verberg de gekleurde meetpunten op het model" />
+          <ToolBtn active={showFeatureMarkers} onClick={() => setShowFeatureMarkers((v: boolean) => !v)} label="Punten"    tooltip="Feature markers — toon of verberg de meetpunt-bollen (met hover tooltip)" />
+          <ToolBtn active={showHeatmap}        onClick={() => setShowHeatmap((v: boolean) => !v)}        label="Heatmap"   tooltip="Heatmap — kleurt het modeloppervlak zelf via IDW-interpolatie van de meetpunten" />
+          <ToolBtn active={showDevVectors}     onClick={() => setShowDevVectors((v: boolean) => !v)}     label="Vectoren"  tooltip="Deviatievectoren — pijlen van nominaal naar gemeten positie (uitvergroot)" />
+        </>)}
       </div>
 
       {/* Assembly tree sidebar */}
@@ -746,6 +979,51 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
       />
+
+      {/* Inspection feature hover tooltip */}
+      {hoveredFeature && (
+        <div className="absolute top-12 right-2 z-20 text-[11px] bg-white border border-gray-200 shadow-md rounded-lg px-3 py-2 pointer-events-none min-w-[160px]">
+          <p className="font-semibold text-gray-800 truncate">{hoveredFeature.name}</p>
+          <p className="text-gray-400 text-[10px]">{hoveredFeature.type}</p>
+          <div className="mt-1 space-y-0.5 text-[10px]">
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Deviatie</span>
+              <span className={`font-mono font-semibold ${hoveredFeature.deviation > 0 ? 'text-orange-600' : hoveredFeature.deviation < 0 ? 'text-blue-600' : 'text-gray-600'}`}>
+                {hoveredFeature.deviation >= 0 ? '+' : ''}{hoveredFeature.deviation.toFixed(3)} mm
+              </span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Tolerantie</span>
+              <span className="font-mono text-gray-600">±{hoveredFeature.tolerancePlus.toFixed(3)}</span>
+            </div>
+          </div>
+          <div className={`mt-1.5 text-[10px] font-semibold ${hoveredFeature.status === 'pass' ? 'text-green-600' : 'text-red-600'}`}>
+            {hoveredFeature.status === 'pass' ? '✓ OK' : '✗ FAIL'}
+          </div>
+        </div>
+      )}
+
+      {/* Colormap legenda */}
+      {inspStats && (showInspection || showFeatureMarkers) && (
+        <div className="absolute top-10 right-2 z-20 flex flex-col items-end gap-0.5 pointer-events-none select-none">
+          {/* waarde-labels + balk */}
+          <div className="flex items-stretch gap-1.5">
+            {/* labels */}
+            <div className="flex flex-col justify-between items-end text-[9px] font-mono py-0.5" style={{ height: 100 }}>
+              <span className="text-red-500 font-semibold">{inspStats.maxDev >= 0 ? '+' : ''}{inspStats.maxDev.toFixed(3)}</span>
+              <span className="text-gray-400">0.000</span>
+              <span className="text-blue-500 font-semibold">{inspStats.minDev.toFixed(3)}</span>
+            </div>
+            {/* gradient balk */}
+            <div className="w-3 rounded" style={{
+              height: 100,
+              background: 'linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)',
+            }} />
+          </div>
+          {/* tol-indicator */}
+          <div className="text-[9px] text-gray-400 mt-0.5">tol ±{inspStats.tol.toFixed(3)} mm</div>
+        </div>
+      )}
 
       {/* Coordinate readout */}
       {coordReadout && (
@@ -949,6 +1227,15 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
 }
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
+
+// Jet colormap: blauw (max negatief) → groen (nominaal) → rood (max positief)
+function deviationToJetColor(deviation: number, globalTol: number): THREE.Color {
+  const t = Math.max(0, Math.min(1, (deviation / globalTol + 1) / 2))
+  const r = t < 0.5 ? 0 : Math.min(1, (t - 0.5) * 4)
+  const g = t < 0.25 ? t * 4 : t < 0.75 ? 1 : Math.max(0, (1 - t) * 4)
+  const b = t < 0.25 ? 1 : t < 0.5 ? Math.max(0, (0.5 - t) * 4) : 0
+  return new THREE.Color(r, g, b)
+}
 
 function buildMaterial(mode: ViewMode, opacity: number): THREE.Material {
   if (mode === 'wireframe') {
