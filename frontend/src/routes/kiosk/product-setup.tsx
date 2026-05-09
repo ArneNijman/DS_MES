@@ -1776,9 +1776,17 @@ function NcFilePortalModal({
 // ── MeetPortalModal ───────────────────────────────────────────────────────────
 
 const RAPPORTAGE_LABELS: Record<string, string> = {
-  frezen:      'Frezen',
-  controle:    'Controle',
-  eindmeting:  'Eindmeting',
+  frezen:     'Frezen',
+  inmeten:    'Inmeten',
+  controle:   'Controle',
+  eindmeting: 'Eindmeting',
+}
+
+const RAPPORTAGE_COLORS: Record<string, string> = {
+  frezen:     'text-teal-700 bg-teal-50 border-teal-200',
+  inmeten:    'text-blue-700 bg-blue-50 border-blue-200',
+  controle:   'text-orange-700 bg-orange-50 border-orange-200',
+  eindmeting: 'text-green-700 bg-green-50 border-green-200',
 }
 
 function MeetPortalModal({
@@ -1796,6 +1804,7 @@ function MeetPortalModal({
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedRapportageType, setSelectedRapportageType] = useState<string>('frezen')
+  const [selectedRapType, setSelectedRapType] = useState<string>('controle')
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
 
   const xmlDocs = docs.filter(d => d.documentType === 'meting_xml')
@@ -1921,7 +1930,7 @@ function MeetPortalModal({
                       </p>
                     </div>
                     {doc.rapportageType && (
-                      <span className="shrink-0 text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5">
+                      <span className={cn('shrink-0 text-[10px] font-semibold border rounded-full px-2 py-0.5', RAPPORTAGE_COLORS[doc.rapportageType] ?? 'text-gray-600 bg-gray-50 border-gray-200')}>
                         {RAPPORTAGE_LABELS[doc.rapportageType] ?? doc.rapportageType}
                       </span>
                     )}
@@ -2027,6 +2036,15 @@ function MeetPortalModal({
         {innerTab === 'rapport' && (
           <div className="flex-1 overflow-auto flex flex-col">
             <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 shrink-0">
+              <select
+                value={selectedRapType}
+                onChange={e => setSelectedRapType(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-teal-400"
+              >
+                <option value="inmeten">Inmeten</option>
+                <option value="controle">Controle</option>
+                <option value="eindmeting">Eindmeting</option>
+              </select>
               <button
                 onClick={() => rapFileRef.current?.click()}
                 disabled={uploading}
@@ -2042,7 +2060,7 @@ function MeetPortalModal({
                 accept=".pdf,.html"
                 onChange={e => {
                   const f = e.target.files?.[0]
-                  if (f) handleUpload(f, 'meting_rapport')
+                  if (f) handleUpload(f, 'meting_rapport', selectedRapType)
                   e.target.value = ''
                 }}
               />
@@ -2064,6 +2082,11 @@ function MeetPortalModal({
                         {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
                       </p>
                     </div>
+                    {doc.rapportageType && (
+                      <span className={cn('shrink-0 text-[10px] font-semibold border rounded-full px-2 py-0.5', RAPPORTAGE_COLORS[doc.rapportageType] ?? 'text-gray-600 bg-gray-50 border-gray-200')}>
+                        {RAPPORTAGE_LABELS[doc.rapportageType] ?? doc.rapportageType}
+                      </span>
+                    )}
                     <a
                       href={doc.fileUrl}
                       target="_blank"
