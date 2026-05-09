@@ -13,6 +13,19 @@ const CadViewer = lazy(() => import('@/components/viewer/CadViewer'))
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface BcOrder {
+  no: string
+  description: string
+  articleNo: string
+  status: string
+}
+
+interface BcRouting {
+  operationNo: string
+  description: string
+  workCenterNo: string
+}
+
 interface FresMachine {
   id:          string
   machineId:   string | null
@@ -443,6 +456,15 @@ function SetupList({
   const [newArticle, setNewArticle] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [showBcMsg, setShowBcMsg] = useState(false)
+  const [isFromBc, setIsFromBc] = useState(false)
+  const [bcOrderSearch, setBcOrderSearch] = useState('')
+
+  const { data: bcOrders = [], isLoading: bcOrdersLoading } = useQuery<BcOrder[]>({
+    queryKey: ['bc-production-orders'],
+    queryFn:  () => apiFetch<BcOrder[]>('/kiosk/bc/production-orders'),
+    enabled:  showBcMsg,
+    staleTime: 60_000,
+  })
 
   const { data: setups = [], isLoading } = useQuery<SetupSummary[]>({
     queryKey: ['product-setups', machine.id, search],
@@ -453,13 +475,13 @@ function SetupList({
     mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/product-setups', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
-      setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription('')
+      setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription(''); setShowBcMsg(false); setIsFromBc(false); setBcOrderSearch('')
     },
   })
 
   function handleCreate() {
     if (!newOrder.trim()) return
-    createMutation.mutate({ productionOrderNo: newOrder.trim(), articleNo: newArticle.trim() || undefined, description: newDescription.trim() || undefined, origin: 'manual' })
+    createMutation.mutate({ productionOrderNo: newOrder.trim(), articleNo: newArticle.trim() || undefined, description: newDescription.trim() || undefined, origin: isFromBc ? 'bc' : 'manual' })
   }
 
   return (
@@ -544,33 +566,82 @@ function SetupList({
             {/* Keuze */}
             <div className="grid grid-cols-2 gap-3 mb-5">
               <button
-                className="flex flex-col items-center gap-2 p-4 border-2 border-teal-500 bg-teal-50 rounded-xl"
-                onClick={() => setShowBcMsg(false)}
+                className={cn('flex flex-col items-center gap-2 p-4 border-2 rounded-xl transition-colors', !showBcMsg ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-gray-300')}
+                onClick={() => { setShowBcMsg(false); setIsFromBc(false) }}
               >
-                <FileText size={22} className="text-teal-600" />
-                <span className="text-sm font-medium text-teal-700">Handmatig</span>
+                <FileText size={22} className={!showBcMsg ? 'text-teal-600' : 'text-gray-400'} />
+                <span className={cn('text-sm font-medium', !showBcMsg ? 'text-teal-700' : 'text-gray-500')}>Handmatig</span>
               </button>
               <button
-                className="flex flex-col items-center gap-2 p-4 border-2 border-gray-200 rounded-xl hover:border-gray-300 transition-colors"
+                className={cn('flex flex-col items-center gap-2 p-4 border-2 rounded-xl transition-colors', showBcMsg ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-gray-300')}
                 onClick={() => setShowBcMsg(true)}
               >
-                <ExternalLink size={22} className="text-gray-400" />
-                <span className="text-sm font-medium text-gray-500">Vanuit Business Central</span>
+                <ExternalLink size={22} className={showBcMsg ? 'text-teal-600' : 'text-gray-400'} />
+                <span className={cn('text-sm font-medium', showBcMsg ? 'text-teal-700' : 'text-gray-500')}>Vanuit Business Central</span>
               </button>
             </div>
 
+            {/* BC productieorder picker */}
             {showBcMsg && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                Koppeling met Business Central voor productieorders is binnenkort beschikbaar.
+              <div className="mb-4 space-y-2">
+                <input
+                  autoFocus
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                  placeholder="Zoek op ordernummer of omschrijving…"
+                  value={bcOrderSearch}
+                  onChange={e => setBcOrderSearch(e.target.value)}
+                />
+                {bcOrdersLoading ? (
+                  <div className="flex items-center justify-center py-6 gap-2 text-gray-400 text-sm">
+                    <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                    Laden uit Business Central…
+                  </div>
+                ) : bcOrders.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-gray-400">Geen productieorders gevonden in Business Central</p>
+                ) : (
+                  <ul className="max-h-56 overflow-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
+                    {bcOrders
+                      .filter(o => {
+                        const q = bcOrderSearch.toLowerCase()
+                        return !q || o.no.toLowerCase().includes(q) || o.description.toLowerCase().includes(q) || o.articleNo.toLowerCase().includes(q)
+                      })
+                      .map(order => (
+                        <li
+                          key={order.no}
+                          onClick={() => {
+                            setNewOrder(order.no)
+                            setNewArticle(order.articleNo)
+                            setNewDescription(order.description)
+                            setIsFromBc(true)
+                            setShowBcMsg(false)
+                          }}
+                          className="flex items-center gap-3 px-3 py-2.5 hover:bg-teal-50 cursor-pointer transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800">{order.no}</p>
+                            <p className="text-xs text-gray-500 truncate">{order.articleNo}{order.description ? ` · ${order.description}` : ''}</p>
+                          </div>
+                          <span className="text-[10px] text-gray-400 shrink-0">{order.status}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
               </div>
             )}
 
+            {/* Handmatig formulier (ook getoond na BC-selectie voor controle/bewerking) */}
             {!showBcMsg && (
               <div className="space-y-3">
+                {isFromBc && (
+                  <p className="text-xs text-teal-600 flex items-center gap-1">
+                    <Check size={12} />
+                    Ingevuld vanuit Business Central — pas indien nodig aan
+                  </p>
+                )}
                 <div>
                   <label className="text-xs font-medium text-gray-600 block mb-1">Productieorder <span className="text-red-500">*</span></label>
                   <input
-                    autoFocus
+                    autoFocus={!isFromBc}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
                     placeholder="bijv. PO-2024-001"
                     value={newOrder}
@@ -628,6 +699,7 @@ function SetupDetail({
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
+  const [showBcStepPicker, setShowBcStepPicker] = useState(false)
   const [showMachinePicker, setShowMachinePicker] = useState(false)
   const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -672,8 +744,16 @@ function SetupDetail({
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
       setSelectedStepId(res.stepId)
       setActiveTab('cnc')
-      setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('')
+      setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false)
     },
+  })
+
+  const orderNo = setup?.productionOrderNo ?? null
+  const { data: bcRoutings = [], isLoading: bcRoutingsLoading } = useQuery<BcRouting[]>({
+    queryKey: ['bc-routings', orderNo],
+    queryFn:  () => apiFetch<BcRouting[]>(`/kiosk/bc/production-orders/${encodeURIComponent(orderNo!)}/routings`),
+    enabled:  showBcStepPicker && !!orderNo,
+    staleTime: 120_000,
   })
 
   const deleteStep = useMutation({
@@ -1063,6 +1143,48 @@ function SetupDetail({
               </button>
             ) : (
               <div className="flex flex-col gap-2 p-4 rounded-xl border-2 border-teal-400 bg-teal-50 min-h-[110px]">
+                {/* BC-picker (alleen als er een productieorder bekend is) */}
+                {orderNo && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowBcStepPicker(v => !v)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 bg-white border border-teal-300 rounded-lg text-xs text-teal-700 hover:bg-teal-50 transition-colors"
+                    >
+                      <span className="flex items-center gap-1.5"><ExternalLink size={11} />Kies bewerking uit Business Central</span>
+                      <span className="text-gray-400">{showBcStepPicker ? '▲' : '▼'}</span>
+                    </button>
+                    {showBcStepPicker && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                        {bcRoutingsLoading ? (
+                          <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-xs">
+                            <div className="w-3 h-3 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                            Laden…
+                          </div>
+                        ) : bcRoutings.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-gray-400">Geen bewerkingen gevonden voor {orderNo}</p>
+                        ) : (
+                          <ul className="max-h-40 overflow-auto divide-y divide-gray-50">
+                            {bcRoutings.map(r => (
+                              <li
+                                key={r.operationNo}
+                                onClick={() => {
+                                  setNewBewerkingNr(r.operationNo)
+                                  setNewStepName(r.description)
+                                  setShowBcStepPicker(false)
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 hover:bg-teal-50 cursor-pointer transition-colors"
+                              >
+                                <span className="text-xs font-mono font-semibold text-teal-700 w-10 shrink-0">{r.operationNo}</span>
+                                <span className="text-xs text-gray-700 flex-1 truncate">{r.description}</span>
+                                {r.workCenterNo && <span className="text-[10px] text-gray-400 shrink-0">{r.workCenterNo}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <input
                     className="w-16 border border-teal-400 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white text-center"
@@ -1071,17 +1193,17 @@ function SetupDetail({
                     min="1"
                     value={newBewerkingNr}
                     onChange={e => setNewBewerkingNr(e.target.value)}
-                    onKeyDown={e => e.key === 'Escape' && (setShowAddStep(false), setNewStepName(''), setNewBewerkingNr(''))}
+                    onKeyDown={e => e.key === 'Escape' && (setShowAddStep(false), setNewStepName(''), setNewBewerkingNr(''), setShowBcStepPicker(false))}
                   />
                   <input
-                    autoFocus
+                    autoFocus={!orderNo}
                     className="flex-1 border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
                     placeholder="Stapnaam"
                     value={newStepName}
                     onChange={e => setNewStepName(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId })
-                      if (e.key === 'Escape') { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('') }
+                      if (e.key === 'Escape') { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false) }
                     }}
                   />
                 </div>
@@ -1093,7 +1215,7 @@ function SetupDetail({
                   >
                     {addStep.isPending ? 'Aanmaken…' : 'Aanmaken'}
                   </button>
-                  <button onClick={() => { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr('') }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
+                  <button onClick={() => { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false) }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
                     <X size={14} />
                   </button>
                 </div>
