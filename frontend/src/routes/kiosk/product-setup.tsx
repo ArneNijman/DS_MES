@@ -858,12 +858,18 @@ function SetupDetail({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Opmerkingen</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Bewerkingstap</label>
+                    <p className="text-sm text-gray-800">
+                      {selectedStep?.bewerkingNr != null ? `${selectedStep.bewerkingNr} – ` : ''}{selectedStep?.stepName ?? '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Omschrijving</label>
                     <InlineEdit
                       value={setup.description ?? ''}
                       onSave={v => patchSetup.mutate({ description: v || null })}
                       className="text-sm text-gray-800"
-                      placeholder="Voeg opmerkingen toe…"
+                      placeholder="Voeg omschrijving toe…"
                       textarea
                     />
                   </div>
