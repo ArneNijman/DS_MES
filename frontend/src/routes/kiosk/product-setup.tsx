@@ -700,6 +700,7 @@ function SetupDetail({
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
   const [showBcStepPicker, setShowBcStepPicker] = useState(false)
+  const [bcStepSearch, setBcStepSearch]         = useState('')
   const [showMachinePicker, setShowMachinePicker] = useState(false)
   const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -1155,6 +1156,15 @@ function SetupDetail({
                     </button>
                     {showBcStepPicker && (
                       <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                        <div className="p-2 border-b border-gray-100">
+                          <input
+                            autoFocus
+                            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400"
+                            placeholder="Zoek op nr. of omschrijving…"
+                            value={bcStepSearch}
+                            onChange={e => setBcStepSearch(e.target.value)}
+                          />
+                        </div>
                         {bcRoutingsLoading ? (
                           <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-xs">
                             <div className="w-3 h-3 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
@@ -1164,21 +1174,27 @@ function SetupDetail({
                           <p className="py-3 text-center text-xs text-gray-400">Geen bewerkingen gevonden voor {orderNo}</p>
                         ) : (
                           <ul className="max-h-40 overflow-auto divide-y divide-gray-50">
-                            {bcRoutings.map(r => (
-                              <li
-                                key={r.operationNo}
-                                onClick={() => {
-                                  setNewBewerkingNr(r.operationNo)
-                                  setNewStepName(r.description)
-                                  setShowBcStepPicker(false)
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 hover:bg-teal-50 cursor-pointer transition-colors"
-                              >
-                                <span className="text-xs font-mono font-semibold text-teal-700 w-10 shrink-0">{r.operationNo}</span>
-                                <span className="text-xs text-gray-700 flex-1 truncate">{r.description}</span>
-                                {r.workCenterNo && <span className="text-[10px] text-gray-400 shrink-0">{r.workCenterNo}</span>}
-                              </li>
-                            ))}
+                            {bcRoutings
+                              .filter(r => {
+                                const q = bcStepSearch.toLowerCase()
+                                return !q || r.operationNo.toLowerCase().includes(q) || r.description.toLowerCase().includes(q)
+                              })
+                              .map(r => (
+                                <li
+                                  key={r.operationNo}
+                                  onClick={() => {
+                                    setNewBewerkingNr(r.operationNo)
+                                    setNewStepName(r.description)
+                                    setShowBcStepPicker(false)
+                                    setBcStepSearch('')
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2 hover:bg-teal-50 cursor-pointer transition-colors"
+                                >
+                                  <span className="text-xs font-mono font-semibold text-teal-700 w-10 shrink-0">{r.operationNo}</span>
+                                  <span className="text-xs text-gray-700 flex-1 truncate">{r.description}</span>
+                                  {r.workCenterNo && <span className="text-[10px] text-gray-400 shrink-0">{r.workCenterNo}</span>}
+                                </li>
+                              ))}
                           </ul>
                         )}
                       </div>
@@ -1215,7 +1231,7 @@ function SetupDetail({
                   >
                     {addStep.isPending ? 'Aanmaken…' : 'Aanmaken'}
                   </button>
-                  <button onClick={() => { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false) }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
+                  <button onClick={() => { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false); setBcStepSearch('') }} className="p-1.5 rounded-lg hover:bg-white text-gray-500">
                     <X size={14} />
                   </button>
                 </div>
