@@ -933,6 +933,41 @@ function SetupDetail({
                     )
                   })()}
 
+                  {/* Bewerkingstappen */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Bewerkingstappen</label>
+                    {setup.steps.length === 0 ? (
+                      <p className="text-xs text-gray-400">Nog geen stappen aangemaakt</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {setup.steps.map(step => (
+                          <li key={step.id}>
+                            <button
+                              onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
+                              className={cn(
+                                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
+                                selectedStepId === step.id
+                                  ? 'bg-teal-50 border border-teal-200 text-teal-800'
+                                  : 'hover:bg-gray-100 text-gray-700 border border-transparent',
+                              )}
+                            >
+                              <span className="text-xs font-mono text-gray-400 shrink-0">#{step.stepNumber}</span>
+                              {step.bewerkingNr != null && (
+                                <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5 shrink-0">
+                                  {step.bewerkingNr}
+                                </span>
+                              )}
+                              <span className="truncate font-medium">{step.stepName}</span>
+                              {step.machineName && (
+                                <span className="text-[10px] text-gray-400 shrink-0 ml-auto">{step.machineName}</span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
                   {/* Actief CAD bestand indicator */}
                   {selectedCadUrl && viewableCad.length > 0 && (
                     <div className="text-[10px] text-gray-400 flex items-center gap-1">
