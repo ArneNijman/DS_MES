@@ -133,6 +133,13 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Productieorder is verplicht' })
     }
 
+    const rawEmployeeId = (req as any).employee?.employeeId ?? null
+    let createdBy: string | null = null
+    if (rawEmployeeId) {
+      const [emp] = await fastify.db.select({ id: employees.id }).from(employees).where(eq(employees.id, rawEmployeeId)).limit(1)
+      createdBy = emp?.id ?? null
+    }
+
     const [setup] = await fastify.db
       .insert(productSetups)
       .values({
@@ -140,7 +147,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         articleNo:         body.articleNo?.trim() || null,
         description:       body.description?.trim() || null,
         origin:            body.origin ?? 'manual',
-        createdBy:         (req as any).employee?.employeeId ?? null,
+        createdBy,
       })
       .returning()
 
@@ -877,6 +884,13 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.post('/kiosk/product-setups/:id/documents', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
 
+    const rawEmployeeId = (req as any).employee?.employeeId ?? null
+    let savedUploadedBy: string | null = null
+    if (rawEmployeeId) {
+      const [emp] = await fastify.db.select({ id: employees.id }).from(employees).where(eq(employees.id, rawEmployeeId)).limit(1)
+      savedUploadedBy = emp?.id ?? null
+    }
+
     const parts = req.parts()
     let documentType = 'tekening'
     let versionNote: string | null = null
@@ -910,7 +924,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         fileName:     savedFileName,
         versionNote,
         mimeType:     savedMimeType,
-        uploadedBy:   (req as any).employee?.employeeId ?? null,
+        uploadedBy:   savedUploadedBy,
       })
       .returning()
 
@@ -1057,14 +1071,16 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     const { tekst }  = req.body as { tekst?: string }
     if (!tekst?.trim()) return reply.status(400).send({ error: 'Tekst is verplicht' })
 
-    const employeeId: string | null = (req as any).employee?.employeeId ?? null
+    const rawId: string | null = (req as any).employee?.employeeId ?? null
+    let employeeId: string | null = null
     let createdByName: string | null = null
-    if (employeeId) {
+    if (rawId) {
       const [emp] = await fastify.db
-        .select({ name: employees.name })
+        .select({ id: employees.id, name: employees.name })
         .from(employees)
-        .where(eq(employees.id, employeeId))
+        .where(eq(employees.id, rawId))
         .limit(1)
+      employeeId    = emp?.id   ?? null
       createdByName = emp?.name ?? null
     }
 

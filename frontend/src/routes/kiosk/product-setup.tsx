@@ -611,15 +611,6 @@ function SetupDetail({
     queryFn:  () => apiFetch(`/kiosk/product-setups/${setupId}`),
   })
 
-  useEffect(() => {
-    if (!setup) return
-    const viewable = setup.documents.filter(d =>
-      d.documentType === 'cad' && /\.(stp|step|stl)$/i.test(d.fileName)
-    )
-    if (viewable.length > 0 && !selectedCadUrl) {
-      setSelectedCadUrl(viewable[0].fileUrl)
-    }
-  }, [setup])
 
   const patchSetup = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -724,7 +715,7 @@ function SetupDetail({
         <div className="flex-1 overflow-auto">
           {activeTab === 'info' && (() => {
             const cadFiles = setup.documents.filter(d => d.documentType === 'cad')
-            const viewableCad = cadFiles.filter(d => /\.(stp|step|stl)$/i.test(d.fileName))
+            const viewableCad = cadFiles.filter(d => /\.(stp|step|stl|cad)$/i.test(d.fileName))
             return (
               <div className="p-6 h-full flex gap-6 min-h-0">
                 {/* Linker kolom: velden + document mappen */}
@@ -803,7 +794,7 @@ function SetupDetail({
                       <p className="text-sm">Geen CAD bestand beschikbaar</p>
                       <p className="text-xs text-gray-400">Upload een .stp of .stl bestand via CAD bestanden</p>
                     </div>
-                  ) : selectedCadUrl ? (
+                  ) : (
                     <Suspense fallback={
                       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
                         <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
@@ -811,14 +802,14 @@ function SetupDetail({
                       </div>
                     }>
                       <CadViewer
-                        url={selectedCadUrl}
-                        fileName={cadFiles.find(f => f.fileUrl === selectedCadUrl)?.fileName}
+                        url={selectedCadUrl ?? viewableCad[0].fileUrl}
+                        fileName={cadFiles.find(f => f.fileUrl === (selectedCadUrl ?? viewableCad[0].fileUrl))?.fileName}
                         compareUrl={compareCadUrl ?? undefined}
                         compareFileName={cadFiles.find(f => f.fileUrl === compareCadUrl)?.fileName}
                         allCadFiles={viewableCad.map(f => ({ fileUrl: f.fileUrl, fileName: f.fileName }))}
                       />
                     </Suspense>
-                  ) : null}
+                  )}
                 </div>
               </div>
             )
@@ -981,16 +972,16 @@ function SetupDetail({
             {!showAddStep ? (
               <button
                 onClick={() => setShowAddStep(true)}
-                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-teal-400 hover:text-teal-600 text-gray-400 transition-all min-h-[110px]"
+                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-teal-400 hover:text-teal-600 text-gray-400 transition-all min-h-[110px] col-span-full"
               >
                 <Plus size={20} />
                 <span className="text-sm font-medium">Nieuwe stap</span>
               </button>
             ) : (
-              <div className="flex flex-col gap-2 p-4 rounded-xl border-2 border-teal-400 bg-teal-50 min-h-[110px]">
+              <div className="col-span-full flex flex-col gap-2 p-3 rounded-xl border-2 border-teal-400 bg-teal-50 w-60">
                 <div className="flex gap-2">
                   <input
-                    className="w-16 border border-teal-400 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white text-center"
+                    className="w-14 border border-teal-400 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white text-center"
                     placeholder="Bew."
                     type="number"
                     min="1"
@@ -1000,7 +991,7 @@ function SetupDetail({
                   />
                   <input
                     autoFocus
-                    className="flex-1 border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
+                    className="flex-1 min-w-0 border border-teal-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
                     placeholder="Stapnaam"
                     value={newStepName}
                     onChange={e => setNewStepName(e.target.value)}
@@ -1720,7 +1711,6 @@ function DocumentPortalModal({
 
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    console.log('[upload] bestand geselecteerd:', file?.name, 'setupId:', setupId)
     if (!file) return
     setUploading(true)
     setUploadError(null)
@@ -1728,13 +1718,13 @@ function DocumentPortalModal({
       const fd = new FormData()
       fd.append('file', file)
       fd.append('documentType', type)
-      console.log('[upload] POST naar', `/kiosk/product-setups/${setupId}/documents`)
-      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
-      console.log('[upload] succes')
+      const result = await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd }) as { fileUrl: string; fileName: string }
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      if (type === 'cad' && onSelectForViewer && /\.(stp|step|stl|cad)$/i.test(result.fileName)) {
+        onSelectForViewer(result.fileUrl)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[upload] fout:', msg)
       setUploadError(`Upload mislukt: ${msg}`)
     } finally {
       setUploading(false)
@@ -1767,7 +1757,7 @@ function DocumentPortalModal({
               ref={fileRef}
               type="file"
               className="hidden"
-              accept={type === 'tekening' ? 'application/pdf,image/*' : '.stp,.step,.stl,.iges,.igs,.dxf,.dwg'}
+              accept={type === 'tekening' ? 'application/pdf,image/*' : '.stp,.step,.stl,.cad,.dwg,.dxf,.iges,.igs'}
               onChange={handleUpload}
             />
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400">

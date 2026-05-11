@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
+import { EMPLOYEE_TOKEN_KEY, ADMIN_TOKEN_KEY } from '@/lib/auth'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
@@ -116,39 +117,66 @@ function fitCameraToBox(
   controls.update()
 }
 
-async function loadStepGeometry(url: string): Promise<{ meshes: { geo: THREE.BufferGeometry; name: string }[] }> {
-  const res = await fetch(url)
-  const buf = await res.arrayBuffer()
-  const u8  = new Uint8Array(buf)
+// ─── Server-side STEP parsing ─────────────────────────────────────────────────
+// Parsing happens in the backend (Node.js + OCCT WASM). Result is cached on disk.
 
-  // dynamically import to keep initial bundle lean
-  const initOcct = (await import('occt-import-js')).default
-  // @ts-ignore – vite ?url import
-  const wasmUrl  = new URL('occt-import-js/dist/occt-import-js.wasm', import.meta.url).href
-  const occt     = await initOcct({ locateFile: () => wasmUrl })
+function getAuthHeader(): string | null {
+  const token = localStorage.getItem(EMPLOYEE_TOKEN_KEY) ?? localStorage.getItem(ADMIN_TOKEN_KEY)
+  return token ? `Bearer ${token}` : null
+}
 
-  const result = occt.ReadStepFile(u8, null)
-  if (!result.success) throw new Error('STEP parse failed')
+function loadStepViaServer(url: string): { promise: Promise<{ geo: THREE.BufferGeometry; name: string }[]>; cancel: () => void } {
+  const controller = new AbortController()
 
-  const meshes: { geo: THREE.BufferGeometry; name: string }[] = []
-  for (let mi = 0; mi < result.meshes.length; mi++) {
-    const m    = result.meshes[mi]
-    const geo  = new THREE.BufferGeometry()
-    const verts: number[] = []
-    const norms: number[] = []
-    for (let fi = 0; fi < m.triangleCount; fi++) {
-      for (let vi = 0; vi < 3; vi++) {
-        const idx = m.triangleIndices[fi * 3 + vi]
-        verts.push(m.vertices[idx * 3], m.vertices[idx * 3 + 1], m.vertices[idx * 3 + 2])
-        if (m.normals) norms.push(m.normals[idx * 3], m.normals[idx * 3 + 1], m.normals[idx * 3 + 2])
-      }
+  const promise = (async () => {
+    const authHeader = getAuthHeader()
+    const headers: Record<string, string> = {}
+    if (authHeader) headers['Authorization'] = authHeader
+
+    const resp = await fetch(`/api/kiosk/cad/mesh?url=${encodeURIComponent(url)}`, {
+      headers,
+      signal: controller.signal,
+    })
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({})) as any
+      throw new Error(body.error ?? `Server fout ${resp.status}`)
     }
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
-    if (norms.length) geo.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3))
-    else geo.computeVertexNormals()
-    meshes.push({ geo, name: m.name ?? `Part ${mi + 1}` })
-  }
-  return { meshes }
+
+    const buf  = await resp.arrayBuffer()
+    const view = new DataView(buf)
+    let offset = 0
+
+    const meshCount = view.getUint32(offset, true); offset += 4
+    const meshes: { geo: THREE.BufferGeometry; name: string }[] = []
+
+    for (let i = 0; i < meshCount; i++) {
+      const nameLen   = view.getUint32(offset, true); offset += 4
+      const name      = new TextDecoder().decode(new Uint8Array(buf, offset, nameLen)); offset += nameLen
+      const vertCount = view.getUint32(offset, true); offset += 4
+      const hasNorms  = view.getUint32(offset, true); offset += 4
+
+      // Copy to avoid unaligned access issues
+      const vertsRaw = new Uint8Array(buf, offset, vertCount * 4)
+      const verts    = new Float32Array(vertsRaw.slice().buffer)
+      offset += vertCount * 4
+
+      let norms: Float32Array | null = null
+      if (hasNorms) {
+        const normsRaw = new Uint8Array(buf, offset, vertCount * 4)
+        norms = new Float32Array(normsRaw.slice().buffer)
+        offset += vertCount * 4
+      }
+
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+      if (norms) geo.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3))
+      else geo.computeVertexNormals()
+      meshes.push({ geo, name })
+    }
+    return meshes
+  })()
+
+  return { promise, cancel: () => controller.abort() }
 }
 
 async function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
@@ -296,7 +324,9 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     measureObjsRef.current.forEach(o => sceneRef.current!.remove(o))
     measureObjsRef.current = []
 
-    const isStep = /\.(stp|step)$/i.test(url)
+    const isStep = /\.(stp|step|cad)$/i.test(url)
+    let cancelled = false
+    let stepLoader: { promise: Promise<{ geo: THREE.BufferGeometry; name: string }[]>; cancel: () => void } | null = null
 
     async function doLoad() {
       try {
@@ -304,7 +334,9 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
         const partNodes: PartNode[] = []
 
         if (isStep) {
-          const { meshes } = await loadStepGeometry(url)
+          stepLoader = loadStepViaServer(url)
+          const meshes = await stepLoader.promise
+          if (cancelled) return
           for (const { geo, name } of meshes) {
             geo.computeBoundingBox()
             geo.computeVertexNormals()
@@ -372,13 +404,17 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
         // bewaar eerste mesh voor raycasting
         bomMeshRef.current = partNodes[0]?.mesh ?? null
       } catch (err) {
-        setLoadError(String(err))
+        if (!cancelled) setLoadError(String(err))
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     doLoad()
+    return () => {
+      cancelled = true
+      stepLoader?.cancel()
+    }
   }, [url])
 
   // ── Compare model ─────────────────────────────────────────────────────────
@@ -391,11 +427,13 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     if (!compareMode || !compareTarget) return
 
     const isStep = /\.(stp|step)$/i.test(compareTarget)
+    let cmpLoader: { promise: Promise<{ geo: THREE.BufferGeometry; name: string }[]>; cancel: () => void } | null = null
     async function loadCompare() {
       try {
         const group = new THREE.Group()
         if (isStep) {
-          const { meshes } = await loadStepGeometry(compareTarget!)
+          cmpLoader = loadStepViaServer(compareTarget!)
+          const meshes = await cmpLoader.promise
           for (const { geo, name } of meshes) {
             geo.computeVertexNormals()
             const mat  = new THREE.MeshPhongMaterial({ color: 0xff3333, transparent: true, opacity: 0.45, depthWrite: false })
@@ -438,6 +476,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     loadCompare()
 
     return () => {
+      cmpLoader?.cancel()
       // restore main model material on cleanup
       mainGroupRef.current?.traverse(o => {
         if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) {
@@ -934,7 +973,8 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
       {loading && (
         <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-gray-50/90">
           <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin mb-3" />
-          <p className="text-sm text-gray-500">CAD bestand laden…</p>
+          <p className="text-sm text-gray-500">CAD bestand verwerken…</p>
+          <p className="text-xs text-gray-400 mt-1">Grote bestanden kunnen 30–60 seconden duren (wordt gecached)</p>
         </div>
       )}
 

@@ -37,6 +37,16 @@
     { "idx": 32, "version": "7", "when": 1778940000000, "tag": "0032_wisselplaat_photo",          "breakpoints": true },
     { "idx": 33, "version": "7", "when": 1778950000000, "tag": "0033_schroef",                    "breakpoints": true },
     { "idx": 34, "version": "7", "when": 1779000000000, "tag": "0034_tooling_articles",           "breakpoints": true },
-    { "idx": 35, "version": "7", "when": 1779100000000, "tag": "0035_product_setups",             "breakpoints": true }
+    { "idx": 35, "version": "7", "when": 1779100000000, "tag": "0035_product_setups",             "breakpoints": true },
+    { "idx": 36, "version": "7", "when": 1779200000000, "tag": "0036_product_setup_overdracht",    "breakpoints": true },
+    { "idx": 37, "version": "7", "when": 1779300000000, "tag": "0037_overdracht_photos",           "breakpoints": true },
+    { "idx": 38, "version": "7", "when": 1779400000000, "tag": "0038_zero_text",                   "breakpoints": true },
+    { "idx": 39, "version": "7", "when": 1779500000000, "tag": "0039_product_setup_order_required","breakpoints": true },
+    { "idx": 40, "version": "7", "when": 1779600000000, "tag": "0040_step_bewerking_nr",           "breakpoints": true },
+    { "idx": 41, "version": "7", "when": 1779700000000, "tag": "0041_machine_tool_table_format",   "breakpoints": true },
+    { "idx": 42, "version": "7", "when": 1779800000000, "tag": "0042_ncr_human_factor",            "breakpoints": true },
+    { "idx": 43, "version": "7", "when": 1779900000000, "tag": "0043_ncr_human_factor_array",      "breakpoints": true },
+    { "idx": 44, "version": "7", "when": 1780000000000, "tag": "0044_meetmiddelen_teamleider",      "breakpoints": true },
+    { "idx": 45, "version": "7", "when": 1780100000000, "tag": "0045_meetmiddelen_afgekeurd",       "breakpoints": true }
   ]
 }
