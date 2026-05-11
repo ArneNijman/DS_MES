@@ -241,7 +241,9 @@ function getLoggedInId(): string | null {
 
 const CATEGORIES = [
   'Freesmachine', 'Draaibank', 'Zaagmachine', 'Lasapparaat', 'Boormachine',
-  'Ponsknipmachine', 'Kantpers', 'Slijpmachine', 'Overig',
+  'Ponsknipmachine', 'Kantpers', 'Slijpmachine',
+  'Meetapparaat', '3D-meetapparaat',
+  'Overig',
 ]
 
 interface MachineFormProps {

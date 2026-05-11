@@ -31,6 +31,7 @@ interface MeasuringTool {
   actief: boolean | null
   afgekeurd: boolean | null
   afgekeurdReden: string | null
+  serieSuffix: string | null
   interneKalibratie: boolean | null
   externeKalibratie: boolean | null
   eindmaatKalibratie: boolean | null
@@ -192,8 +193,8 @@ function ReadonlyField({ value }: { value: string | null | undefined }) {
   )
 }
 
-function TextInput({ value, onChange, placeholder, type = 'text', disabled }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean
+function TextInput({ value, onChange, placeholder, type = 'text', disabled, maxLength }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean; maxLength?: number
 }) {
   return (
     <input
@@ -202,6 +203,7 @@ function TextInput({ value, onChange, placeholder, type = 'text', disabled }: {
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
+      maxLength={maxLength}
       className={cn(
         'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400',
         disabled && 'bg-gray-50 text-gray-500',
@@ -243,6 +245,7 @@ type MmForm = {
   actief: boolean
   afgekeurd: boolean
   afgekeurdReden: string
+  serieSuffix: string
   interneKalibratie: boolean
   externeKalibratie: boolean
   eindmaatKalibratie: boolean
@@ -268,6 +271,7 @@ function initForm(t?: Partial<MeasuringTool>): MmForm {
     actief:             t?.actief             ?? true,
     afgekeurd:          t?.afgekeurd          ?? false,
     afgekeurdReden:     t?.afgekeurdReden     ?? '',
+    serieSuffix:        t?.serieSuffix        ?? '',
     interneKalibratie:  t?.interneKalibratie  ?? false,
     externeKalibratie:  t?.externeKalibratie  ?? false,
     eindmaatKalibratie: t?.eindmaatKalibratie ?? false,
@@ -549,6 +553,7 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
       actief:             form.actief,
       afgekeurd:          form.afgekeurd,
       afgekeurdReden:     form.afgekeurdReden || null,
+      serieSuffix:        form.serieSuffix    || null,
       interneKalibratie:  form.interneKalibratie,
       externeKalibratie:  form.externeKalibratie,
       eindmaatKalibratie: form.eindmaatKalibratie,
@@ -700,6 +705,12 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
                     {canEdit
                       ? <TextInput value={form.afmeting} onChange={(v) => set('afmeting', v)} placeholder="bijv. 150 mm" />
                       : <ReadonlyField value={form.afmeting} />}
+                  </div>
+                  <div>
+                    <FieldLabel>Serie (laatste 5)</FieldLabel>
+                    {canEdit
+                      ? <TextInput value={form.serieSuffix} onChange={(v) => set('serieSuffix', v)} placeholder="bijv. 12345" maxLength={5} />
+                      : <ReadonlyField value={form.serieSuffix} />}
                   </div>
                   <div>
                     <FieldLabel>Locatie</FieldLabel>

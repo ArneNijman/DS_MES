@@ -404,6 +404,7 @@ export const measuringTools = pgTable('measuring_tools', {
   diepteKalibratie: boolean('diepte_kalibratie').default(false),
   afgekeurd: boolean('afgekeurd').default(false),
   afgekeurdReden: text('afgekeurd_reden'),
+  serieSuffix: text('serie_suffix'),
   instructie: text('instructie'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -507,6 +508,7 @@ export const productSetups = pgTable('product_setups', {
   articleName:       text('article_name'),
   description:       text('description'),
   origin:            text('origin').notNull().default('manual'),
+  setupType:         text('setup_type').notNull().default('product'),
   createdBy:         uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -523,6 +525,7 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   zeroY:           text('zero_y'),
   zeroZ:           text('zero_z'),
   stepDescription: text('step_description'),
+  opmerkingen:     text('opmerkingen'),
   createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:       timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

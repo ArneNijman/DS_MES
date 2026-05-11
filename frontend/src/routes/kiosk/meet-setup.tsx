@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check,
-  FileText, Cpu, Paperclip, Info,
-  ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
-  Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send,
+  Cpu, Paperclip, Info,
+  ExternalLink, RefreshCw, Ruler,
+  Download, FolderOpen, FileText, Layers,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -62,28 +62,7 @@ interface Step {
   zeroZ:           string | null
   stepDescription: string | null
   opmerkingen:     string | null
-  ncFiles:         NcFile[]
   attachments:     Attachment[]
-}
-
-interface NcFile {
-  id:            string
-  stepId:        string
-  fileName:      string
-  programName:   string | null
-  toolCallCount: number
-  uploadedAt:    string
-  toolCalls:     StoredToolCall[]
-}
-
-interface StoredToolCall {
-  id:           string
-  ncFileId:     string
-  sequence:     number
-  toolNumber:   number | null
-  toolName:     string | null
-  axis:         string | null
-  spindleSpeed: number | null
 }
 
 interface Attachment {
@@ -148,121 +127,8 @@ interface SetupDetail {
   documents:         Document[]
 }
 
-interface ValidationToolCall {
-  sequence:     number
-  toolNumber:   number | null
-  toolName:     string | null
-  axis:         string | null
-  spindleSpeed: number | null
-  status:       'aanwezig' | 'ontbreekt' | 'onbekend'
-  magazineEntry?: {
-    toolNumber: number | null
-    name:       string | null
-    doc:        string | null
-    l:          string | null
-    r:          string | null
-    dl:         string | null
-    dr:         string | null
-    time2:      string | null
-    curTime:    string | null
-    locked:     boolean | null
-  }
-  assembly?: {
-    id:             string
-    ncName:         string
-    toolLength:     number | null
-    presetDiameter: number | null
-    components:     {
-      itemId: string | null
-      type: string; name: string; comment: string | null; category: string | null; reach: number | null
-      orderingCode: string | null; manufacturer: string | null; photoUrl: string | null
-      wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null
-    }[]
-  } | null
-  inOtherMachines?:   { machineId: string; machineName: string; toolNumber: number; count: number }[]
-  componentsInStock?: { itemId: string; itemName: string; itemType: string; locations: { locId: string; locationCode: string; quantity: number }[] }[]
-}
-
-interface ValidationResult {
-  ncFileId:    string
-  programName: string | null
-  machineId:   string | null
-  machineName: string | null
-  summary:     { total: number; present: number; missing: number }
-  toolCalls:   ValidationToolCall[]
-  lastSyncAt:  string | null
-  validatedAt: string | null
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function lifePercent(time2: string | null, curTime: string | null): number | null {
-  const t2  = time2   ? parseFloat(time2)   : 0
-  const cur = curTime ? parseFloat(curTime) : 0
-  if (t2 <= 0) return null
-  return Math.min((cur / t2) * 100, 100)
-}
-
-function lifeColor(pct: number | null): string {
-  if (pct === null) return ''
-  if (pct >= 100) return 'bg-red-700'
-  if (pct >= 90)  return 'bg-red-500'
-  if (pct >= 70)  return 'bg-orange-400'
-  return 'bg-green-500'
-}
-
-function lifeDotColor(time2: string | null, curTime: string | null): string {
-  const pct = lifePercent(time2, curTime)
-  if (pct === null) {
-    const cur = curTime ? parseFloat(curTime) : 0
-    return cur > 0 ? 'bg-green-500' : 'bg-gray-300'
-  }
-  if (pct >= 100) return 'bg-red-700'
-  if (pct >= 90)  return 'bg-red-500'
-  if (pct >= 70)  return 'bg-orange-400'
-  return 'bg-green-500'
-}
-
-function fmt(val: string | null): string {
-  if (!val) return '—'
-  const n = parseFloat(val)
-  return isNaN(n) ? '—' : n.toFixed(3)
-}
-
-function fmtTime(val: string | null): string {
-  if (!val) return '—'
-  const n = parseFloat(val)
-  return isNaN(n) ? '—' : n.toFixed(0)
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('nl-NL', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
-function isImage(mimeType: string | null, fileName: string): boolean {
-  if (mimeType?.startsWith('image/')) return true
-  return /\.(jpe?g|png|gif|webp|svg)$/i.test(fileName)
-}
-
-// ── LifeBar (mini) ────────────────────────────────────────────────────────────
-
-function LifeBarMini({ time2, curTime }: { time2: string | null; curTime: string | null }) {
-  const pct = lifePercent(time2, curTime)
-  if (pct === null) return <span className="text-gray-400 text-xs">—</span>
-  return (
-    <div className="flex items-center gap-1.5 min-w-[80px]">
-      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div className={cn('h-full rounded-full', lifeColor(pct))} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs text-gray-500 w-8 text-right">{pct.toFixed(0)}%</span>
-    </div>
-  )
-}
-
-// ── InlineEdit ────────────────────────────────────────────────────────────────
 
 function InlineEdit({
   value, onSave, placeholder = '', className = '', textarea = false,
@@ -316,84 +182,10 @@ function InlineEdit({
 
 // ── Assembly helpers (zelfde logica als CNC machining) ────────────────────────
 
-function parseWisselplaat(comment: string | null): { body: string; wisselplaat: string } | null {
-  if (!comment) return null
-  const idx = comment.indexOf('WP:')
-  if (idx === -1) return null
-  const body = comment.slice(0, idx).trim()
-  const wisselplaat = comment.slice(idx + 3).trim()
-  return body && wisselplaat ? { body, wisselplaat } : null
-}
-
-function componentLabel(type: string, category: string | null): string {
-  if (type === 'holder') return 'Houder'
-  if (type === 'extension') return 'Adapter'
-  if (!category) return 'Onderdeel'
-  if (['Endmill', 'Radiusmill', 'Ballmill', 'Lollipop', 'TSlotCutter', 'Woodruff', 'IndexableHighFeedCutter', 'IndexableRoundInsertCutter'].includes(category)) return 'Frees'
-  if (['Drilltool', 'GunDrill'].includes(category)) return 'Boor'
-  if (category === 'Tap') return 'Tap'
-  if (category === 'Reamer') return 'Ruimer'
-  if (category === 'ThreadMill') return 'Draadsnijder'
-  if (category === 'BoringBar') return 'Uitboorder'
-  return 'Gereedschap'
-}
-
-function componentBadgeColor(type: string, category: string | null): string {
-  const label = componentLabel(type, category)
-  return type === 'holder'    ? 'bg-blue-100 text-blue-700'   :
-         type === 'extension' ? 'bg-gray-100 text-gray-600'   :
-         label === 'Frees'    ? 'bg-green-100 text-green-700' :
-         label === 'Boor'     ? 'bg-orange-100 text-orange-700' :
-         label === 'Tap'      ? 'bg-purple-100 text-purple-700' :
-         'bg-gray-100 text-gray-600'
-}
-
-interface DisplayRow {
-  itemId: string | null
-  label: string; labelColor: string; name: string
-  photoUrl: string | null; orderingCode: string | null; manufacturer: string | null; reach: number | null
-}
-
-type AssemblyComponent = {
-  itemId: string | null
-  type: string; name: string; comment: string | null; category: string | null; reach: number | null
-  orderingCode: string | null; manufacturer: string | null; photoUrl: string | null
-  wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null
-}
-
-function expandComponents(components: AssemblyComponent[]): DisplayRow[] {
-  const rows: DisplayRow[] = []
-  for (const c of components) {
-    const wp = parseWisselplaat(c.comment)
-    if (wp) {
-      rows.push({ itemId: c.itemId, label: componentLabel(c.type, c.category), labelColor: componentBadgeColor(c.type, c.category), name: wp.body, photoUrl: c.photoUrl, orderingCode: c.orderingCode, manufacturer: c.manufacturer, reach: c.reach })
-      rows.push({ itemId: null, label: 'Wisselplaat', labelColor: 'bg-yellow-100 text-yellow-700', name: wp.wisselplaat, photoUrl: c.wisselplaatPhotoUrl, orderingCode: null, manufacturer: null, reach: null })
-      if (c.schroefOrderingCode || c.schroefPhotoUrl) {
-        rows.push({ itemId: null, label: 'Schroef', labelColor: 'bg-gray-100 text-gray-500', name: c.schroefOrderingCode ?? '—', photoUrl: c.schroefPhotoUrl, orderingCode: null, manufacturer: null, reach: null })
-      }
-    } else {
-      rows.push({ itemId: c.itemId, label: componentLabel(c.type, c.category), labelColor: componentBadgeColor(c.type, c.category), name: c.name, photoUrl: c.photoUrl, orderingCode: c.orderingCode, manufacturer: c.manufacturer, reach: c.reach })
-    }
-  }
-  return rows
-}
-
-// ── StatusBadge ───────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: 'aanwezig' | 'ontbreekt' | 'onbekend' }) {
-  if (status === 'aanwezig')  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><Check size={10} />in machine</span>
-  if (status === 'ontbreekt') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700"><Wrench size={10} />opbouwen</span>
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">onbekend</span>
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SCHERM 1 — Machine selectie
-// ══════════════════════════════════════════════════════════════════════════════
-
 function MachineGrid({ onSelect }: { onSelect: (m: FresMachine) => void }) {
   const { data: machines = [], isLoading } = useQuery<FresMachine[]>({
-    queryKey: ['product-setup-machines'],
-    queryFn:  () => apiFetch('/kiosk/product-setups/machines'),
+    queryKey: ['meet-setup-machines'],
+    queryFn:  () => apiFetch('/kiosk/meet-setups/machines'),
   })
 
   if (isLoading) return <div className="flex-1 flex items-center justify-center text-gray-400">Laden…</div>
@@ -401,7 +193,7 @@ function MachineGrid({ onSelect }: { onSelect: (m: FresMachine) => void }) {
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Product Setup</h1>
+        <h1 className="text-xl font-bold text-gray-900">Meet Setup</h1>
         <p className="text-sm text-gray-500 mt-1">Selecteer een freesmachine om setups te bekijken of aan te maken</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -468,14 +260,14 @@ function SetupList({
   })
 
   const { data: setups = [], isLoading } = useQuery<SetupSummary[]>({
-    queryKey: ['product-setups', machine.id, search],
-    queryFn:  () => apiFetch(`/kiosk/product-setups?machineId=${machine.id}&search=${encodeURIComponent(search)}`),
+    queryKey: ['meet-setups', machine.id, search],
+    queryFn:  () => apiFetch(`/kiosk/meet-setups?machineId=${machine.id}&search=${encodeURIComponent(search)}`),
   })
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/product-setups', { method: 'POST', body: JSON.stringify(body) }),
+    mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/meet-setups', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
+      qc.invalidateQueries({ queryKey: ['meet-setups', machine.id] })
       setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription(''); setShowBcMsg(false); setIsFromBc(false); setBcOrderSearch('')
     },
   })
@@ -560,7 +352,7 @@ function SetupList({
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowNew(false)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="font-bold text-lg text-gray-800">Nieuwe product setup</h2>
+              <h2 className="font-bold text-lg text-gray-800">Nieuwe meet setup</h2>
               <button onClick={() => setShowNew(false)} className="p-1 rounded hover:bg-gray-100"><X size={18} /></button>
             </div>
 
@@ -696,7 +488,7 @@ function SetupDetail({
 }) {
   const qc = useQueryClient()
   const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
-  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht'>('cnc')
+  const [activeTab, setActiveTab]               = useState<'info' | 'bijlagen' | 'overdracht'>('info')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
@@ -710,33 +502,33 @@ function SetupDetail({
   const [inspectionPoints, setInspectionPoints] = useState<InspectionFeature[]>([])
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
-    queryKey: ['product-setup', setupId],
-    queryFn:  () => apiFetch(`/kiosk/product-setups/${setupId}`),
+    queryKey: ['meet-setup', setupId],
+    queryFn:  () => apiFetch(`/kiosk/meet-setups/${setupId}`),
   })
 
 
   const patchSetup = useMutation({
-    mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+    mutationFn: (body: object) => apiFetch(`/kiosk/meet-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', setupId] }),
   })
 
   const deleteSetup = useMutation({
-    mutationFn: () => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'DELETE' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['product-setups'] }); onBack() },
+    mutationFn: () => apiFetch(`/kiosk/meet-setups/${setupId}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['meet-setups'] }); onBack() },
   })
 
   const patchStep = useMutation({
     mutationFn: ({ stepId, ...body }: { stepId: string } & Record<string, unknown>) =>
-      apiFetch(`/kiosk/product-setups/steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+      apiFetch(`/kiosk/meet-setups/steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', setupId] }),
   })
 
   const addStep = useMutation({
-    mutationFn: (body: object) => apiFetch<{ stepId: string }>(`/kiosk/product-setups/${setupId}/steps`, { method: 'POST', body: JSON.stringify(body) }),
+    mutationFn: (body: object) => apiFetch<{ stepId: string }>(`/kiosk/meet-setups/${setupId}/steps`, { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      qc.invalidateQueries({ queryKey: ['meet-setup', setupId] })
       setSelectedStepId(res.stepId)
-      setActiveTab('cnc')
+      setActiveTab('info')
       setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false)
     },
   })
@@ -750,16 +542,16 @@ function SetupDetail({
   })
 
   const deleteStep = useMutation({
-    mutationFn: (stepId: string) => apiFetch(`/kiosk/product-setups/steps/${stepId}`, { method: 'DELETE' }),
+    mutationFn: (stepId: string) => apiFetch(`/kiosk/meet-setups/steps/${stepId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      qc.invalidateQueries({ queryKey: ['meet-setup', setupId] })
       if (selectedStepId) setSelectedStepId(null)
     },
   })
 
   const { data: machines = [] } = useQuery<FresMachine[]>({
-    queryKey: ['product-setup-machines'],
-    queryFn:  () => apiFetch('/kiosk/product-setups/machines'),
+    queryKey: ['meet-setup-machines'],
+    queryFn:  () => apiFetch('/kiosk/meet-setups/machines'),
     enabled:  showMachinePicker,
   })
 
@@ -810,7 +602,7 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'cnc', 'bijlagen', 'overdracht'] as const).map(tab => (
+          {(['info', 'bijlagen', 'overdracht'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -819,7 +611,7 @@ function SetupDetail({
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
-              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
+              {tab === 'info' ? 'Algemene informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
             </button>
           ))}
         </div>
@@ -972,7 +764,6 @@ function SetupDetail({
               </div>
             )
           })()}
-          {activeTab === 'cnc'        && <CncInfoTab step={selectedStep} setupId={setupId} />}
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
             <OverdrachtTab stepId={selectedStep.id} />
@@ -1099,7 +890,7 @@ function SetupDetail({
             {setup.steps.map(step => (
               <div key={step.id} className="group relative">
                 <button
-                  onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
+                  onClick={() => { setSelectedStepId(step.id); setActiveTab('info') }}
                   className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
                 >
                   <span className="text-xs font-mono text-gray-400">#{step.stepNumber}</span>
@@ -1246,439 +1037,6 @@ function SetupDetail({
 }
 
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB: CNC informatie
-// ══════════════════════════════════════════════════════════════════════════════
-
-function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
-  const qc = useQueryClient()
-  const [selectedNcFileId, setSelectedNcFileId] = useState<string | null>(
-    step.ncFiles.length > 0 ? step.ncFiles[step.ncFiles.length - 1].id : null
-  )
-  const [openTcSeq, setOpenTcSeq]     = useState<number | null>(null)
-  const [showNcPortal, setShowNcPortal] = useState(false)
-  const [syncStatus, setSyncStatus]   = useState<'idle' | 'syncing' | 'error'>('idle')
-  const [syncError, setSyncError]     = useState<string | null>(null)
-
-  async function handleSyncAndValidate() {
-    setSyncStatus('syncing')
-    setSyncError(null)
-    try {
-      await apiFetch('/kiosk/cnc/trigger-sync', { method: 'POST' })
-      await new Promise(r => setTimeout(r, 8000))
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Agent niet bereikbaar — alleen hervalideerd')
-    }
-    await validate()
-    setSyncStatus('idle')
-  }
-
-  const patchStep = useMutation({
-    mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/steps/${step.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
-  })
-
-  const [showEditor, setShowEditor]         = useState(false)
-  const [editorContent, setEditorContent]   = useState('')
-  const [editorOriginal, setEditorOriginal] = useState('')
-  const [editorConfirm, setEditorConfirm]   = useState<'save' | 'discard' | null>(null)
-
-  const [editorError, setEditorError] = useState<string | null>(null)
-
-  async function openEditor() {
-    if (!selectedNcFileId) return
-    setEditorError(null)
-    try {
-      const res = await apiFetch<{ fileContent: string; fileName: string }>(`/kiosk/product-setups/nc-files/${selectedNcFileId}/content`)
-      setEditorContent(res.fileContent ?? '')
-      setEditorOriginal(res.fileContent ?? '')
-      setShowEditor(true)
-    } catch (err: any) {
-      setEditorError(err.message ?? 'Laden mislukt')
-    }
-  }
-
-  function closeEditor() {
-    if (editorContent !== editorOriginal) {
-      setEditorConfirm('discard')
-    } else {
-      setShowEditor(false)
-    }
-  }
-
-  const saveContent = useMutation({
-    mutationFn: () => apiFetch(`/kiosk/product-setups/nc-files/${selectedNcFileId}/content`, {
-      method: 'PATCH',
-      body: JSON.stringify({ fileContent: editorContent }),
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      qc.invalidateQueries({ queryKey: ['nc-validate', selectedNcFileId] })
-      setEditorOriginal(editorContent)
-      setEditorConfirm(null)
-      setShowEditor(false)
-    },
-  })
-
-  const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const sendToMachine = useMutation({
-    mutationFn: (ncFileId: string) =>
-      apiFetch(`/kiosk/product-setups/steps/${step.id}/nc-files/${ncFileId}/send-to-machine`, { method: 'POST' }),
-    onSuccess: (res: any) => setSendResult({ ok: true,  msg: `Verstuurd → ${res.path ?? ''}` }),
-    onError:   (err: any) => setSendResult({ ok: false, msg: err.message ?? 'Versturen mislukt' }),
-  })
-
-  const { data: validation, isFetching: validating, refetch: validate } = useQuery<ValidationResult>({
-    queryKey: ['nc-validate', selectedNcFileId],
-    queryFn:  () => apiFetch(`/kiosk/product-setups/nc-files/${selectedNcFileId}/validate`),
-    enabled:  false,
-  })
-
-  return (
-    <div className="p-5 space-y-6 max-w-4xl">
-      {/* Nulpunt + Opmerkingen */}
-      <div className="flex gap-8 items-start">
-        <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Nulpunt (Work Zero)</h3>
-          <div className="flex gap-4">
-            {(['zeroX', 'zeroY', 'zeroZ'] as const).map(axis => (
-              <div key={axis}>
-                <label className="text-xs text-gray-500 block mb-1">{axis.replace('zero', '')}</label>
-                <input
-                  type="text"
-                  className="w-28 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                  defaultValue={step[axis] ?? ''}
-                  onBlur={e => patchStep.mutate({ [axis]: e.target.value.trim() || null })}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="flex-1">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Opmerkingen</h3>
-          <textarea
-            key={step.id}
-            className="w-full h-20 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 resize-none focus:outline-none focus:ring-1 focus:ring-teal-400"
-            placeholder="Opmerkingen voor deze stap…"
-            defaultValue={step.opmerkingen ?? ''}
-            onBlur={e => patchStep.mutate({ opmerkingen: e.target.value.trim() || null })}
-          />
-        </section>
-      </div>
-
-      {/* NC bestanden */}
-      <section>
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">NC-programmabestanden (.h)</h3>
-
-        {/* Portaal kaart */}
-        {(() => {
-          const activeFile = step.ncFiles.find(f => f.id === selectedNcFileId)
-          return (
-            <button
-              onClick={() => setShowNcPortal(true)}
-              className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left mb-4"
-            >
-              <FolderOpen size={18} className="text-gray-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                {activeFile ? (
-                  <>
-                    <p className="text-sm font-medium text-gray-800 truncate">{activeFile.fileName}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {activeFile.programName && <span className="mr-2">{activeFile.programName}</span>}
-                      {activeFile.toolCallCount} tool calls · {fmtDate(activeFile.uploadedAt)}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm text-gray-400">Geen bestand geselecteerd</p>
-                )}
-              </div>
-              <span className="text-xs text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5 shrink-0">
-                {step.ncFiles.length}
-              </span>
-            </button>
-          )
-        })()}
-
-        {/* Importeer / Sync knop voor actief bestand */}
-        {selectedNcFileId && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {!validation ? (
-              <button
-                onClick={() => validate()}
-                disabled={validating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-              >
-                <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
-                Importeer samenstellingen
-              </button>
-            ) : (
-              <button
-                onClick={() => handleSyncAndValidate()}
-                disabled={syncStatus === 'syncing' || validating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-              >
-                <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
-                {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
-              </button>
-            )}
-            {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
-
-            {/* Bewerken */}
-            <button
-              onClick={openEditor}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
-            >
-              <FileText size={12} />
-              Bewerken
-            </button>
-            {editorError && (
-              <span className="text-xs text-red-500">✗ {editorError}</span>
-            )}
-
-            {/* Stuur naar machine */}
-            {step.machineId && step.bewerkingNr != null && (
-              <button
-                onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
-                disabled={sendToMachine.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-                title="Stuur naar machine via TNCcmd"
-              >
-                <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
-                {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
-              </button>
-            )}
-            {sendResult && (
-              <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
-                {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Tijdstempels */}
-        {validation && (
-          <div className="flex gap-4 mb-2 text-[11px] text-gray-400">
-            {validation.validatedAt && (
-              <span>
-                Gevalideerd: <span className="font-medium text-gray-500">
-                  {new Date(validation.validatedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
-                </span>
-              </span>
-            )}
-            {validation.lastSyncAt ? (
-              <span>
-                Laatste sync: <span className="font-medium text-gray-500">
-                  {new Date(validation.lastSyncAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
-                </span>
-              </span>
-            ) : (
-              <span className="text-gray-300">Nog niet gesynchroniseerd</span>
-            )}
-          </div>
-        )}
-
-        {/* NC portal modal */}
-        {showNcPortal && (
-          <NcFilePortalModal
-            files={step.ncFiles}
-            stepId={step.id}
-            setupId={setupId}
-            activeId={selectedNcFileId}
-            onSelect={id => { setSelectedNcFileId(id) }}
-            onClose={() => setShowNcPortal(false)}
-          />
-        )}
-
-        {/* NC bestand editor modal */}
-        {showEditor && (
-          <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60">
-            <div className="flex flex-col w-full max-w-4xl bg-white shadow-2xl">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">NC-bestand bewerken</p>
-                  {step.ncFiles.find(f => f.id === selectedNcFileId)?.fileName && (
-                    <p className="text-xs text-gray-400 mt-0.5">{step.ncFiles.find(f => f.id === selectedNcFileId)!.fileName}</p>
-                  )}
-                </div>
-                <button onClick={closeEditor} className="p-2 rounded-lg hover:bg-gray-200 transition-colors">
-                  <X size={18} className="text-gray-500" />
-                </button>
-              </div>
-
-              {/* Textarea */}
-              <textarea
-                className="flex-1 w-full p-4 font-mono text-xs text-gray-800 resize-none focus:outline-none border-0"
-                value={editorContent}
-                onChange={e => setEditorContent(e.target.value)}
-                spellCheck={false}
-                autoCorrect="off"
-                autoCapitalize="off"
-              />
-
-              {/* Footer */}
-              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 shrink-0">
-                <button
-                  onClick={closeEditor}
-                  className="px-4 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  Annuleren
-                </button>
-                <button
-                  onClick={() => setEditorConfirm('save')}
-                  disabled={saveContent.isPending || editorContent === editorOriginal}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 disabled:opacity-40 transition-colors"
-                >
-                  {saveContent.isPending ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
-                  Opslaan
-                </button>
-              </div>
-            </div>
-
-            {/* Bevestigingsdialoog */}
-            {editorConfirm && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
-                <div className="bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full">
-                  {editorConfirm === 'save' ? (
-                    <>
-                      <p className="text-base font-semibold text-gray-800 mb-1">Opslaan?</p>
-                      <p className="text-sm text-gray-500 mb-5">Het NC-bestand wordt overschreven en tool calls worden opnieuw ingelezen.</p>
-                      <div className="flex gap-3 justify-end">
-                        <button
-                          onClick={() => setEditorConfirm(null)}
-                          className="px-4 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-100"
-                        >
-                          Terug
-                        </button>
-                        <button
-                          onClick={() => saveContent.mutate()}
-                          disabled={saveContent.isPending}
-                          className="px-4 py-2 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 disabled:opacity-50"
-                        >
-                          {saveContent.isPending ? 'Bezig…' : 'Ja, opslaan'}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-base font-semibold text-gray-800 mb-1">Wijzigingen annuleren?</p>
-                      <p className="text-sm text-gray-500 mb-5">Je aanpassingen gaan verloren.</p>
-                      <div className="flex gap-3 justify-end">
-                        <button
-                          onClick={() => setEditorConfirm(null)}
-                          className="px-4 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-100"
-                        >
-                          Terug
-                        </button>
-                        <button
-                          onClick={() => { setEditorConfirm(null); setShowEditor(false) }}
-                          className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600"
-                        >
-                          Ja, annuleren
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Validatietabel */}
-        {validation && (
-          <div>
-            {/* Summary */}
-            <div className="flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
-              <div className="text-sm font-medium text-gray-700">
-                {validation.programName && <span className="mr-2 text-gray-500">{validation.programName}</span>}
-                Validatie: <span className="text-green-600">{validation.summary.present} in machine</span>
-                {validation.summary.missing > 0 && <span className="text-orange-600"> · {validation.summary.missing} opbouwen</span>}
-                <span className="text-gray-400"> van {validation.summary.total}</span>
-              </div>
-            </div>
-
-            {/* Tabel */}
-            <div className="overflow-x-auto rounded-xl border border-gray-200">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="w-4 px-2 py-2" />
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600">TOOL</th>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600">NAME</th>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600">DOC</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">L</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">DL</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">DR</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">TIME2</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">CUR.TIME</th>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600 w-24">LIFE %</th>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-600">LOCK</th>
-                    <th className="px-2 py-2 w-6" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {validation.toolCalls.map(tc => {
-                    const me = tc.magazineEntry
-                    return (
-                      <tr key={tc.sequence} className={cn('group', tc.status === 'ontbreekt' && 'bg-red-50/40')}>
-                        <td className="px-2 py-2">
-                          <div className={cn('w-2 h-2 rounded-full', me
-                            ? lifeDotColor(me.time2, me.curTime)
-                            : tc.status === 'ontbreekt' ? 'bg-red-300' : 'bg-gray-200'
-                          )} />
-                        </td>
-                        <td className="px-3 py-2 font-mono font-medium text-gray-800">
-                          {me ? `T${me.toolNumber}` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {me?.name ?? tc.toolName ?? '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-500">{me?.doc ?? '—'}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.l ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
-                        <td className={cn('px-3 py-2 text-right font-mono', (() => {
-                          const t2 = me?.time2 ? parseFloat(me.time2) : 0
-                          const ct = me?.curTime ? parseFloat(me.curTime) : 0
-                          return t2 > 0 && ct >= t2 ? 'text-red-600 font-semibold' : 'text-gray-600'
-                        })())}>{fmtTime(me?.curTime ?? null)}</td>
-                        <td className="px-3 py-2">
-                          <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
-                        </td>
-                        <td className="px-3 py-2">
-                          {me ? (me.locked
-                            ? <Lock size={13} className="text-gray-500" />
-                            : <Unlock size={13} className="text-gray-300" />
-                          ) : null}
-                        </td>
-                        <td className="px-2 py-2">
-                          <button
-                            onClick={() => setOpenTcSeq(tc.sequence)}
-                            className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 transition-colors"
-                          >
-                            <Info size={13} />
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Tool detail modal */}
-      {openTcSeq !== null && validation && (() => {
-        const tc = validation.toolCalls.find(t => t.sequence === openTcSeq)
-        return tc ? <ToolDetailModal tc={tc} onClose={() => setOpenTcSeq(null)} /> : null
-      })()}
-    </div>
-  )
-}
 
 // ── Overdracht portaal modal ──────────────────────────────────────────────────
 
@@ -1709,14 +1067,14 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
 
   const { data: entries = [], isLoading } = useQuery<OverdrachtEntry[]>({
     queryKey: ['overdracht', stepId],
-    queryFn:  () => apiFetch(`/kiosk/product-setups/steps/${stepId}/overdracht`),
+    queryFn:  () => apiFetch(`/kiosk/meet-setups/steps/${stepId}/overdracht`),
   })
 
   async function handleSave() {
     if (!tekst.trim()) return
     setSaving(true)
     try {
-      await apiFetch(`/kiosk/product-setups/steps/${stepId}/overdracht`, {
+      await apiFetch(`/kiosk/meet-setups/steps/${stepId}/overdracht`, {
         method: 'POST',
         body:   JSON.stringify({ tekst }),
       })
@@ -1731,7 +1089,7 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
     if (!editTekst.trim()) return
     setSavingEdit(true)
     try {
-      await apiFetch(`/kiosk/product-setups/overdracht/${id}`, {
+      await apiFetch(`/kiosk/meet-setups/overdracht/${id}`, {
         method: 'PATCH',
         body:   JSON.stringify({ tekst: editTekst }),
       })
@@ -1744,7 +1102,7 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
 
   async function handleDelete(id: string) {
     if (!confirm('Overdracht verwijderen?')) return
-    await apiFetch(`/kiosk/product-setups/overdracht/${id}`, { method: 'DELETE' })
+    await apiFetch(`/kiosk/meet-setups/overdracht/${id}`, { method: 'DELETE' })
     qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
   }
 
@@ -1756,7 +1114,7 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
       for (const file of files) {
         const fd = new FormData()
         fd.append('file', file)
-        await apiFetch(`/kiosk/product-setups/overdracht/${overdrachtId}/photos`, { method: 'POST', body: fd })
+        await apiFetch(`/kiosk/meet-setups/overdracht/${overdrachtId}/photos`, { method: 'POST', body: fd })
       }
       qc.invalidateQueries({ queryKey: ['overdracht', stepId] })
     } finally {
@@ -1924,194 +1282,15 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
   )
 }
 
-// ── NC bestand portaal modal ─────────────────────────────────────────────────
-
-interface NcFile {
-  id: string
-  fileName: string
-  programName: string | null
-  toolCallCount: number
-  uploadedAt: string
-}
-
-function NcFilePortalModal({
-  files, stepId, setupId, activeId, onSelect, onClose,
-}: {
-  files: NcFile[]
-  stepId: string
-  setupId: string
-  activeId: string | null
-  onSelect: (id: string) => void
-  onClose: () => void
-}) {
-  const qc = useQueryClient()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-
-  const deleteNcFile = useMutation({
-    mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
-  })
-
-  const renameNcFile = useMutation({
-    mutationFn: ({ id, fileName }: { id: string; fileName: string }) =>
-      apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'PATCH', body: JSON.stringify({ fileName }) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      setRenamingId(null)
-    },
-  })
-
-  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true); setUploadError(null)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await apiFetch<{ ncFileId: string }>(`/kiosk/product-setups/steps/${stepId}/nc-files`, {
-        method: 'POST', body: fd,
-      })
-      await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      onSelect(res.ncFileId)
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  const sorted = [...files].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <FileText size={16} className="text-gray-400" />
-            <p className="font-bold text-gray-800">NC-programmabestanden</p>
-            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{files.length}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
-            >
-              <Upload size={13} />
-              {uploading ? 'Bezig…' : 'Uploaden'}
-            </button>
-            <input ref={fileRef} type="file" accept=".h" className="hidden" onChange={handleUpload} />
-            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
-          </div>
-        </div>
-
-        {uploadError && (
-          <div className="mx-5 mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600 shrink-0">{uploadError}</div>
-        )}
-
-        {/* Bestandslijst */}
-        <div className="flex-1 overflow-auto">
-          {sorted.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-300">
-              <FileText size={36} className="mb-2" />
-              <p className="text-sm">Nog geen NC-bestanden geüpload</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-50">
-              {sorted.map(f => {
-                const isActive = f.id === activeId
-                const isRenaming = renamingId === f.id
-                return (
-                  <li
-                    key={f.id}
-                    className={cn(
-                      'flex items-center gap-3 px-5 py-3 group cursor-pointer',
-                      isActive ? 'bg-teal-50' : 'hover:bg-gray-50',
-                    )}
-                    onClick={() => { if (!isRenaming) { onSelect(f.id); onClose() } }}
-                  >
-                    <FileText size={15} className={isActive ? 'text-teal-500 shrink-0' : 'text-gray-300 shrink-0'} />
-                    <div className="flex-1 min-w-0">
-                      {isRenaming ? (
-                        <input
-                          autoFocus
-                          value={renameValue}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') renameNcFile.mutate({ id: f.id, fileName: renameValue })
-                            if (e.key === 'Escape') setRenamingId(null)
-                          }}
-                          onClick={e => e.stopPropagation()}
-                          className="text-sm border border-teal-300 rounded px-2 py-0.5 w-full focus:outline-none focus:ring-2 focus:ring-teal-200"
-                        />
-                      ) : (
-                        <p className={cn('text-sm font-medium truncate', isActive ? 'text-teal-700' : 'text-gray-800')}>
-                          {f.fileName}
-                          {isActive && <span className="ml-2 text-[10px] font-semibold text-teal-500 uppercase tracking-wide">actief</span>}
-                        </p>
-                      )}
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        {f.programName && <span className="mr-2">{f.programName}</span>}
-                        {f.toolCallCount} tool calls ·{' '}
-                        {new Date(f.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                      {isRenaming ? (
-                        <>
-                          <button
-                            onClick={() => renameNcFile.mutate({ id: f.id, fileName: renameValue })}
-                            className="px-2 py-1 text-xs bg-teal-600 text-white rounded hover:bg-teal-700"
-                          >Opslaan</button>
-                          <button
-                            onClick={() => setRenamingId(null)}
-                            className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
-                          >Annuleren</button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => { setRenamingId(f.id); setRenameValue(f.fileName) }}
-                          className="p-1.5 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Hernoemen"
-                        >
-                          <ExternalLink size={13} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { if (confirm('NC bestand verwijderen?')) deleteNcFile.mutate(f.id) }}
-                        className="p-1.5 rounded text-gray-200 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                      ><Trash2 size={13} /></button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Document portaal modal ────────────────────────────────────────────────────
-
 // ── MeetPortalModal ───────────────────────────────────────────────────────────
 
 const RAPPORTAGE_LABELS: Record<string, string> = {
-  frezen:     'Frezen',
   inmeten:    'Inmeten',
   controle:   'Controle',
   eindmeting: 'Eindmeting',
 }
 
 const RAPPORTAGE_COLORS: Record<string, string> = {
-  frezen:     'text-teal-700 bg-teal-50 border-teal-200',
   inmeten:    'text-blue-700 bg-blue-50 border-blue-200',
   controle:   'text-orange-700 bg-orange-50 border-orange-200',
   eindmeting: 'text-green-700 bg-green-50 border-green-200',
@@ -2140,14 +1319,14 @@ function MeetPortalModal({
 
   const { data: inspectionData, isLoading: inspLoading } = useQuery<InspectionResult>({
     queryKey: ['inspection-data', selectedDocId],
-    queryFn: () => apiFetch(`/kiosk/product-setups/documents/${selectedDocId}/inspection-data`) as Promise<InspectionResult>,
+    queryFn: () => apiFetch(`/kiosk/meet-setups/documents/${selectedDocId}/inspection-data`) as Promise<InspectionResult>,
     enabled: !!selectedDocId,
   })
 
   const deleteDoc = useMutation({
-    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
+    mutationFn: (docId: string) => apiFetch(`/kiosk/meet-setups/documents/${docId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      qc.invalidateQueries({ queryKey: ['meet-setup', setupId] })
       setSelectedDocId(null)
     },
   })
@@ -2160,8 +1339,8 @@ function MeetPortalModal({
       fd.append('file', file)
       fd.append('documentType', documentType)
       if (rapportageType) fd.append('rapportageType', rapportageType)
-      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      await apiFetch(`/kiosk/meet-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      qc.invalidateQueries({ queryKey: ['meet-setup', setupId] })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setUploadError(`Upload mislukt: ${msg}`)
@@ -2290,7 +1469,6 @@ function MeetPortalModal({
                   </div>
                 ) : inspectionData ? (
                   <div className="p-4 space-y-3">
-                    {/* Samenvatting header */}
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-gray-500 space-x-3">
                         {inspectionData.operator && <span>Operator: <strong>{inspectionData.operator}</strong></span>}
@@ -2308,7 +1486,6 @@ function MeetPortalModal({
                       </div>
                     </div>
 
-                    {/* Feature tabel */}
                     {inspectionData.features.length > 0 && (
                       <div className="overflow-auto max-h-52 rounded-lg border border-gray-100">
                         <table className="w-full text-xs">
@@ -2471,8 +1648,8 @@ function DocumentPortalModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const deleteDoc = useMutation({
-    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+    mutationFn: (docId: string) => apiFetch(`/kiosk/meet-setups/documents/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', setupId] }),
   })
 
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
@@ -2484,8 +1661,8 @@ function DocumentPortalModal({
       const fd = new FormData()
       fd.append('file', file)
       fd.append('documentType', type)
-      const result = await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd }) as { fileUrl: string; fileName: string }
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      const result = await apiFetch(`/kiosk/meet-setups/${setupId}/documents`, { method: 'POST', body: fd }) as { fileUrl: string; fileName: string }
+      qc.invalidateQueries({ queryKey: ['meet-setup', setupId] })
       if (type === 'cad' && onSelectForViewer && /\.(stp|step|stl|cad)$/i.test(result.fileName)) {
         onSelectForViewer(result.fileUrl)
       }
@@ -2532,14 +1709,12 @@ function DocumentPortalModal({
           </div>
         </div>
 
-        {/* Foutmelding */}
         {uploadError && (
           <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">
             {uploadError}
           </div>
         )}
 
-        {/* Bestandslijst */}
         <div className="flex-1 overflow-auto">
           {docs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-300">
@@ -2558,27 +1733,14 @@ function DocumentPortalModal({
                       {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
                     </p>
                   </div>
-                  {type === 'cad' && /\.(stp|step|stl)$/i.test(doc.fileName) && (
-                    <>
-                      {onSelectForViewer && (
-                        <button
-                          onClick={() => { onSelectForViewer(doc.fileUrl); onClose() }}
-                          className="p-1.5 rounded hover:bg-teal-50 text-gray-300 hover:text-teal-600 shrink-0 transition-colors"
-                          title="Toon in 3D viewer"
-                        >
-                          <Layers size={14} />
-                        </button>
-                      )}
-                      {onSelectForCompare && (
-                        <button
-                          onClick={() => { onSelectForCompare(doc.fileUrl); onClose() }}
-                          className="p-1.5 rounded hover:bg-purple-50 text-gray-300 hover:text-purple-500 shrink-0 transition-colors"
-                          title="Vergelijk met huidig model"
-                        >
-                          <GitCompare size={14} />
-                        </button>
-                      )}
-                    </>
+                  {type === 'cad' && /\.(stp|step|stl)$/i.test(doc.fileName) && onSelectForViewer && (
+                    <button
+                      onClick={() => { onSelectForViewer(doc.fileUrl); onClose() }}
+                      className="p-1.5 rounded hover:bg-teal-50 text-gray-300 hover:text-teal-600 shrink-0 transition-colors"
+                      title="Toon in 3D viewer"
+                    >
+                      <Layers size={14} />
+                    </button>
                   )}
                   <a
                     href={doc.fileUrl}
@@ -2604,257 +1766,6 @@ function DocumentPortalModal({
   )
 }
 
-// ── Tool detail modal (Samenstelling · In machines · Voorraad) ────────────────
-
-function ToolDetailModal({ tc, onClose }: { tc: ValidationToolCall; onClose: () => void }) {
-  const [tab, setTab] = useState<'samenstelling' | 'machines' | 'voorraad'>('samenstelling')
-  const qc = useQueryClient()
-
-  // Machine-gebruik per component ophalen zodra de samenstelling-tab actief is
-  const [componentMachines, setComponentMachines] = useState<Map<string, { machineName: string; toolNumber: number }[]>>(new Map())
-  const [openMachinePopover, setOpenMachinePopover] = useState<string | null>(null)
-  useEffect(() => {
-    if (tab !== 'samenstelling' || !tc.assembly) return
-    const itemIds = [...new Set(tc.assembly.components.map(c => c.itemId).filter((id): id is string => !!id))]
-    if (itemIds.length === 0) return
-    Promise.all(
-      itemIds.map(id =>
-        apiFetch(`/kiosk/cnc/components/${id}`)
-          .then((d: unknown) => {
-            const data = d as { assemblies: { instances: { machineName: string; toolNumber: number }[] }[] }
-            return { id, instances: data.assemblies.flatMap(a => a.instances) }
-          })
-          .catch(() => ({ id, instances: [] }))
-      )
-    ).then(results => {
-      const map = new Map<string, { machineName: string; toolNumber: number }[]>()
-      for (const { id, instances } of results) {
-        // Dedupliceer op machineName + toolNumber
-        const seen = new Set<string>()
-        map.set(id, instances.filter(inst => {
-          const key = `${inst.machineName}:${inst.toolNumber}`
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        }))
-      }
-      setComponentMachines(map)
-    })
-  }, [tab, tc.assembly])
-
-  const uitnemen = useMutation({
-    mutationFn: (locId: string) => apiFetch(`/kiosk/tooling/stock-locations/${locId}/mutate`, {
-      method: 'POST',
-      body: JSON.stringify({ delta: -1 }),
-    }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['nc-validate'] }),
-  })
-
-  const toolLabel = tc.assembly?.ncName ?? tc.toolName ?? (tc.toolNumber != null ? `T${tc.toolNumber}` : '—')
-  const needsAssembly = tc.status === 'ontbreekt'
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
-        onClick={e => { e.stopPropagation(); setOpenMachinePopover(null) }}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <div className="min-w-0">
-            <p className="font-bold text-gray-800 truncate">{toolLabel}</p>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              {tc.assembly && (
-                <span className="text-xs text-gray-400">
-                  {tc.assembly.toolLength != null && `L ${tc.assembly.toolLength} mm`}
-                  {tc.assembly.presetDiameter != null && ` · Ø ${tc.assembly.presetDiameter} mm`}
-                </span>
-              )}
-              {needsAssembly && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                  <Wrench size={10} /> Opbouwen vereist
-                </span>
-              )}
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400 shrink-0 ml-3">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 px-5 pt-3 pb-0 border-b border-gray-100 shrink-0">
-          {([
-            { key: 'samenstelling', label: 'Samenstelling', icon: <Layers size={13} /> },
-            { key: 'machines',      label: `In machines (${tc.inOtherMachines?.length ?? 0})`, icon: <Cpu size={13} /> },
-            { key: 'voorraad',      label: 'Voorraad', icon: <PackageSearch size={13} /> },
-          ] as const).map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors',
-                tab === t.key ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
-              )}
-            >
-              {t.icon}{t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-5">
-
-          {/* ── Samenstelling ── */}
-          {tab === 'samenstelling' && (
-            <div>
-              {!tc.assembly || tc.assembly.components.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">Geen samenstelling gevonden in de bibliotheek.</p>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {expandComponents(tc.assembly.components).map((row, i) => (
-                    <div key={i} className="flex items-start gap-3 py-3">
-                      <span className="text-xs text-gray-300 w-5 text-right shrink-0 mt-1">{i + 1}</span>
-                      <div className="shrink-0">
-                        {row.photoUrl ? (
-                          <div className="rounded bg-gray-100 overflow-hidden border border-gray-100" style={{ width: 80, height: 80 }}>
-                            <img src={row.photoUrl} alt="" style={{ width: 80, height: 80, objectFit: 'contain', display: 'block' }} />
-                          </div>
-                        ) : (
-                          <div className="rounded bg-gray-50 border border-gray-100" style={{ width: 80, height: 80 }} />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={cn('inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide', row.labelColor)}>
-                            {row.label}
-                          </span>
-                          <span className="text-sm font-medium text-gray-800 truncate">{row.name}</span>
-                        </div>
-                        <div className="flex gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
-                          {row.manufacturer && <span>{row.manufacturer}</span>}
-                          {row.orderingCode && <span className="font-mono">{row.orderingCode}</span>}
-                          {row.reach != null && <span>Bereik: {row.reach.toFixed(1)} mm</span>}
-                        </div>
-                        {row.itemId && (() => {
-                          const instances = componentMachines.get(row.itemId)
-                          if (!instances) return null
-                          const popoverId = `${row.itemId}-${i}`
-                          const isOpen = openMachinePopover === popoverId
-                          return (
-                            <div className="relative mt-1">
-                              <button
-                                onClick={e => { e.stopPropagation(); setOpenMachinePopover(isOpen ? null : popoverId) }}
-                                className={cn(
-                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors',
-                                  instances.length > 0
-                                    ? 'bg-green-50 text-green-700 border-green-100 hover:bg-green-100'
-                                    : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100',
-                                )}
-                              >
-                                <Cpu size={9} />
-                                {instances.length === 0 ? 'Niet in machine' : `${instances.length} machine${instances.length !== 1 ? 's' : ''}`}
-                              </button>
-                              {isOpen && instances.length > 0 && (
-                                <div className="absolute left-0 top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
-                                  onClick={e => e.stopPropagation()}>
-                                  {instances.map((inst, j) => (
-                                    <div key={j} className="flex items-center justify-between gap-4 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
-                                      <span className="font-medium truncate">{inst.machineName}</span>
-                                      <span className="font-mono text-gray-400 shrink-0">T{inst.toolNumber}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── In machines ── */}
-          {tab === 'machines' && (
-            <div>
-              {!tc.inOtherMachines?.length ? (
-                <p className="text-sm text-gray-400 italic">Niet aangetroffen in andere machines.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
-                      <th className="text-left pb-2 font-semibold">Machine</th>
-                      <th className="text-left pb-2 font-semibold">Positie</th>
-                      <th className="text-right pb-2 font-semibold">Aantal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {tc.inOtherMachines.map((m, i) => (
-                      <tr key={i}>
-                        <td className="py-2 font-medium text-gray-700">{m.machineName}</td>
-                        <td className="py-2 text-gray-500 font-mono">T{m.toolNumber}</td>
-                        <td className="py-2 text-right text-gray-500">{m.count}×</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* ── Voorraad ── */}
-          {tab === 'voorraad' && (
-            <div>
-              {!tc.componentsInStock?.length ? (
-                <p className="text-sm text-gray-400 italic">Geen componenten op voorraad gevonden.</p>
-              ) : (
-                <div className="space-y-4">
-                  {tc.componentsInStock.map(item => (
-                    <div key={item.itemId}>
-                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                        {item.itemName} <span className="font-normal text-gray-400">({item.itemType})</span>
-                      </p>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-xs text-gray-500 border-b border-gray-100">
-                            <th className="text-left pb-1.5 font-semibold">Locatie</th>
-                            <th className="text-right pb-1.5 font-semibold">Aantal</th>
-                            <th className="pb-1.5" />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {item.locations.map(loc => (
-                            <tr key={loc.locId}>
-                              <td className="py-2 font-mono text-gray-700">{loc.locationCode}</td>
-                              <td className="py-2 text-right text-gray-600">{loc.quantity} st.</td>
-                              <td className="py-2 pl-3">
-                                <button
-                                  disabled={uitnemen.isPending || loc.quantity === 0}
-                                  onClick={() => uitnemen.mutate(loc.locId)}
-                                  className="px-2.5 py-1 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-40 transition-colors"
-                                >
-                                  Uitnemen
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: Bijlagen
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2866,14 +1777,14 @@ function BijlagenTab({ step }: { step: Step }) {
   const [lightbox, setLightbox] = useState<{ images: { url: string; name: string }[]; index: number } | null>(null)
 
   const deleteAttachment = useMutation({
-    mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/attachments/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', step.setupId] }),
+    mutationFn: (id: string) => apiFetch(`/kiosk/meet-setups/attachments/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', step.setupId] }),
   })
 
   const updateCaption = useMutation({
     mutationFn: ({ id, caption }: { id: string; caption: string }) =>
-      apiFetch(`/kiosk/product-setups/attachments/${id}`, { method: 'PATCH', body: JSON.stringify({ caption }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', step.setupId] }),
+      apiFetch(`/kiosk/meet-setups/attachments/${id}`, { method: 'PATCH', body: JSON.stringify({ caption }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', step.setupId] }),
   })
 
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
@@ -2884,9 +1795,9 @@ function BijlagenTab({ step }: { step: Step }) {
       for (const file of files) {
         const fd = new FormData()
         fd.append('file', file)
-        await apiFetch(`/kiosk/product-setups/steps/${step.id}/attachments`, { method: 'POST', body: fd })
+        await apiFetch(`/kiosk/meet-setups/steps/${step.id}/attachments`, { method: 'POST', body: fd })
       }
-      qc.invalidateQueries({ queryKey: ['product-setup', step.setupId] })
+      qc.invalidateQueries({ queryKey: ['meet-setup', step.setupId] })
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -2997,7 +1908,7 @@ function BijlagenTab({ step }: { step: Step }) {
 // ROOT EXPORT
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function ProductSetupContent() {
+export function MeetSetupContent() {
   const [machine, setMachine]   = useState<FresMachine | null>(null)
   const [setup, setSetup]       = useState<SetupSummary | null>(null)
 

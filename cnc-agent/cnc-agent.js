@@ -210,9 +210,58 @@ if (runOnce) {
   // HTTP server voor on-demand sync vanuit de MES kiosk
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json')
+
     if (req.method === 'POST' && req.url === '/sync') {
       syncAllGuarded()  // fire-and-forget
       res.end(JSON.stringify({ ok: true, message: 'Sync gestart' }))
+
+    } else if (req.method === 'POST' && req.url === '/send-nc-file') {
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', async () => {
+        try {
+          const { ip, articleNo, bewerkingNr, fileName, fileContent } = JSON.parse(body)
+          if (!ip || !articleNo || !bewerkingNr || !fileName || !fileContent) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ error: 'ip, articleNo, bewerkingNr, fileName en fileContent zijn verplicht' }))
+          }
+
+          const tempDir  = join(tmpdir(), 'cnc-agent')
+          await mkdir(tempDir, { recursive: true })
+          const tempFile = join(tempDir, `send_${Date.now()}.h`)
+
+          try {
+            await writeFile(tempFile, fileContent, 'utf8')
+
+            const rootPath  = `Program`
+            const artPath   = `${rootPath}\\${articleNo}`
+            const stepPath  = `${artPath}\\${bewerkingNr}`
+            const destPath  = `${stepPath}\\${fileName}`
+
+            // Maak mappen aan — fouten worden genegeerd (map bestaat al)
+            for (const dir of [rootPath, artPath, stepPath]) {
+              try {
+                console.log(`   📁  MKDIR ${dir} op ${ip}`)
+                await runTncCmd(ip, `MKDIR ${dir}`)
+              } catch { /* map bestaat al */ }
+            }
+
+            // Stuur bestand
+            console.log(`   📤  PUT → ${destPath} op ${ip}`)
+            await runTncCmd(ip, `PUT ${tempFile} ${destPath}`)
+
+            console.log(`   ✅  ${fileName} verstuurd naar ${ip}:${destPath}`)
+            res.end(JSON.stringify({ ok: true, path: destPath }))
+          } finally {
+            await unlink(tempFile).catch(() => {})
+          }
+        } catch (err) {
+          console.error('❌  send-nc-file fout:', err.message)
+          res.statusCode = 500
+          res.end(JSON.stringify({ error: err.message }))
+        }
+      })
+
     } else {
       res.statusCode = 404
       res.end(JSON.stringify({ error: 'Not found' }))

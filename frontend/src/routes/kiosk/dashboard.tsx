@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
 import { MachinesContent } from '@/routes/admin/machines'
 import { NCRContent } from '@/routes/kiosk/ncr'
@@ -12,6 +12,7 @@ import { MeetmiddelenContent, useMeetmiddelenCounts } from '@/routes/kiosk/meetm
 import { CncMachiningContent } from '@/routes/admin/cnc-machining'
 import { ToolingContent } from '@/routes/kiosk/tooling'
 import { ProductSetupContent } from '@/routes/kiosk/product-setup'
+import { MeetSetupContent } from '@/routes/kiosk/meet-setup'
 import { cn } from '@/lib/utils'
 
 interface UserInfo {
@@ -19,7 +20,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -299,6 +300,12 @@ export default function KioskDashboard() {
             <Layers size={15} />
             <span className="flex-1 text-left">Product Setup</span>
           </NavBtn>
+
+          {/* Meet Setup */}
+          <NavBtn active={active === 'meet_setup'} onClick={() => setActive('meet_setup')}>
+            <Ruler size={15} />
+            <span className="flex-1 text-left">Meet Setup</span>
+          </NavBtn>
         </nav>
 
         {/* Gebruikersinfo + uitloggen onderaan */}
@@ -334,6 +341,7 @@ export default function KioskDashboard() {
         {active === 'cnc_machining'  && <CncMachiningContent />}
         {active === 'tooling'        && <ToolingContent />}
         {active === 'product_setup'  && <ProductSetupContent />}
+        {active === 'meet_setup'     && <MeetSetupContent />}
       </div>
     </div>
   )

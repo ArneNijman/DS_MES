@@ -80,7 +80,9 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       })
       .from(productSetups)
 
-    const conditions: ReturnType<typeof eq>[] = []
+    const conditions: ReturnType<typeof eq>[] = [
+      eq(productSetups.setupType, 'product') as unknown as ReturnType<typeof eq>,
+    ]
 
     if (machineId) {
       conditions.push(
@@ -149,6 +151,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         articleNo:         body.articleNo?.trim() || null,
         description:       body.description?.trim() || null,
         origin:            body.origin ?? 'manual',
+        setupType:         'product',
         createdBy,
       })
       .returning()
@@ -183,6 +186,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         zeroY:           productSetupSteps.zeroY,
         zeroZ:           productSetupSteps.zeroZ,
         stepDescription: productSetupSteps.stepDescription,
+        opmerkingen:     productSetupSteps.opmerkingen,
         createdAt:       productSetupSteps.createdAt,
         updatedAt:       productSetupSteps.updatedAt,
       })
@@ -331,6 +335,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       zeroY?:           number | null
       zeroZ?:           number | null
       stepDescription?: string | null
+      opmerkingen?:     string | null
     }
 
     const [updated] = await fastify.db
@@ -343,6 +348,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         ...(body.zeroY           !== undefined && { zeroY:           body.zeroY?.toString() ?? null }),
         ...(body.zeroZ           !== undefined && { zeroZ:           body.zeroZ?.toString() ?? null }),
         ...(body.stepDescription !== undefined && { stepDescription: body.stepDescription || null }),
+        ...(body.opmerkingen     !== undefined && { opmerkingen:     body.opmerkingen || null }),
         updatedAt: new Date(),
       })
       .where(eq(productSetupSteps.id, stepId))
@@ -433,6 +439,108 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       const message = err instanceof Error ? err.message : 'Onbekende fout'
       return reply.status(422).send({ error: message })
     }
+  })
+
+  // ── NC-bestand sturen naar machine via cnc-agent ─────────────────────────
+
+  fastify.post('/kiosk/product-setups/steps/:stepId/nc-files/:ncFileId/send-to-machine', auth, async (req, reply) => {
+    const { stepId, ncFileId } = req.params as { stepId: string; ncFileId: string }
+
+    const [step] = await fastify.db
+      .select({ id: productSetupSteps.id, machineId: productSetupSteps.machineId, bewerkingNr: productSetupSteps.bewerkingNr, setupId: productSetupSteps.setupId })
+      .from(productSetupSteps)
+      .where(eq(productSetupSteps.id, stepId))
+      .limit(1)
+    if (!step) return reply.status(404).send({ error: 'Stap niet gevonden' })
+    if (!step.bewerkingNr) return reply.status(400).send({ error: 'Bewerkingstap heeft geen bewerkingsnummer' })
+    if (!step.machineId)   return reply.status(400).send({ error: 'Geen machine gekoppeld aan stap' })
+
+    const [setup] = await fastify.db
+      .select({ articleNo: productSetups.articleNo })
+      .from(productSetups)
+      .where(eq(productSetups.id, step.setupId))
+      .limit(1)
+    if (!setup?.articleNo) return reply.status(400).send({ error: 'Setup heeft geen artikelnummer' })
+
+    const [machine] = await fastify.db
+      .select({ cncIpAddress: machines.cncIpAddress })
+      .from(machines)
+      .where(eq(machines.id, step.machineId))
+      .limit(1)
+    if (!machine?.cncIpAddress) return reply.status(400).send({ error: 'Machine heeft geen IP-adres' })
+
+    const [ncFile] = await fastify.db
+      .select({ fileName: productSetupNcFiles.fileName, fileContent: productSetupNcFiles.fileContent })
+      .from(productSetupNcFiles)
+      .where(eq(productSetupNcFiles.id, ncFileId))
+      .limit(1)
+    if (!ncFile) return reply.status(404).send({ error: 'NC-bestand niet gevonden' })
+
+    const agentUrl = `http://host.docker.internal:${process.env.AGENT_PORT ?? 3099}/send-nc-file`
+    let agentRes: Response
+    try {
+      agentRes = await fetch(agentUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          ip:          machine.cncIpAddress,
+          articleNo:   setup.articleNo,
+          bewerkingNr: String(step.bewerkingNr),
+          fileName:    ncFile.fileName,
+          fileContent: ncFile.fileContent,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      })
+    } catch (err: any) {
+      return reply.status(502).send({ error: `CNC-agent niet bereikbaar: ${err.message}` })
+    }
+
+    const result = await agentRes.json().catch(() => ({}))
+    if (!agentRes.ok) return reply.status(502).send({ error: result.error ?? 'Agent fout' })
+    return result
+  })
+
+  // ── NC-bestand inhoud ophalen en bewerken ────────────────────────────────
+
+  fastify.get('/kiosk/product-setups/nc-files/:ncFileId/content', auth, async (req, reply) => {
+    const { ncFileId } = req.params as { ncFileId: string }
+    const [ncFile] = await fastify.db
+      .select({ fileContent: productSetupNcFiles.fileContent, fileName: productSetupNcFiles.fileName })
+      .from(productSetupNcFiles)
+      .where(eq(productSetupNcFiles.id, ncFileId))
+      .limit(1)
+    if (!ncFile) return reply.status(404).send({ error: 'NC-bestand niet gevonden' })
+    return { fileContent: ncFile.fileContent, fileName: ncFile.fileName }
+  })
+
+  fastify.patch('/kiosk/product-setups/nc-files/:ncFileId/content', auth, async (req, reply) => {
+    const { ncFileId } = req.params as { ncFileId: string }
+    const { fileContent } = req.body as { fileContent: string }
+    if (typeof fileContent !== 'string') return reply.status(400).send({ error: 'fileContent is verplicht' })
+
+    const parsed   = parseNcProgram(fileContent)
+    const [updated] = await fastify.db
+      .update(productSetupNcFiles)
+      .set({ fileContent, toolCallCount: parsed.toolCalls.length })
+      .where(eq(productSetupNcFiles.id, ncFileId))
+      .returning({ id: productSetupNcFiles.id, stepId: productSetupNcFiles.stepId })
+    if (!updated) return reply.status(404).send({ error: 'NC-bestand niet gevonden' })
+
+    // Tool calls opnieuw opslaan
+    await fastify.db.delete(productSetupToolCalls).where(eq(productSetupToolCalls.ncFileId, ncFileId))
+    if (parsed.toolCalls.length > 0) {
+      await fastify.db.insert(productSetupToolCalls).values(
+        parsed.toolCalls.map((tc, i) => ({
+          ncFileId,
+          sequence:      i + 1,
+          toolNumber:    tc.toolNumber ?? null,
+          toolName:      tc.toolName   ?? null,
+          axis:          tc.axis       ?? null,
+          spindleSpeed:  tc.spindleSpeed ?? null,
+        }))
+      )
+    }
+    return { ok: true }
   })
 
   // ── Tool calls valideren tegen machinemagazijn ────────────────────────────
