@@ -555,10 +555,11 @@ export const productSetupDocuments = pgTable('product_setup_documents', {
   documentType: text('document_type').notNull(),
   fileUrl:      text('file_url').notNull(),
   fileName:     text('file_name').notNull(),
-  versionNote:  text('version_note'),
-  mimeType:     text('mime_type'),
-  uploadedBy:   uuid('uploaded_by').references(() => employees.id, { onDelete: 'set null' }),
-  uploadedAt:   timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+  versionNote:   text('version_note'),
+  mimeType:      text('mime_type'),
+  rapportageType: text('rapportage_type'),  // 'frezen' | 'controle' | 'eindmeting' | null
+  uploadedBy:    uuid('uploaded_by').references(() => employees.id, { onDelete: 'set null' }),
+  uploadedAt:    timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const productSetupAttachments = pgTable('product_setup_attachments', {
