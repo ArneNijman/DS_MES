@@ -139,13 +139,50 @@
 
 ---
 
-## 🚧 Fase 10: Meetmiddelen & Kalibratie
+## ✅ NCR verbeteringen — Human Factor
 
-**Status:** Not started
+**Afgerond:** mei 2026
 
-**Scope (gepland):**
-- Overzicht van alle meetmiddelen per categorie
-- Kalibratieschema + vervaldatum melding
+- Human factor velden toegevoegd aan NCR registratie (`0042_ncr_human_factor.sql`, `0043_ncr_human_factor_array.sql`)
+- NCR detail uitgebreid met extra categorisatie-opties
+
+---
+
+## ✅ Meetmiddelen uitbreidingen + Machine categorieën + Meet Setup
+
+**Afgerond:** 2026-05-11
+
+### Machine categorieën
+- Twee nieuwe categorieën toegevoegd: **Meetapparaat** en **3D-meetapparaat**
+
+### Meetmiddelen
+- Nieuw veld: **Serie suffix** — laatste 5 cijfers serienummer (label "Serie (laatste 5)", max 5 tekens)
+- Migratie `0047_meetmiddel_serie_suffix.sql`
+
+### Product Setup uitbreidingen
+- **Opmerkingen** per bewerkingsstap in de CNC informatie tab (naast nulpunt-veld)
+- Migratie `0048_step_opmerkingen.sql`
+
+### Meet Setup (nieuwe module)
+- Volledige kopie van Product Setup, gericht op 3D-meetapparaten
+- Geen CNC informatie tab; drie tabs: Algemene informatie · Bijlagen · Overdracht
+- Data gescheiden via `setup_type` kolom (`'product'` / `'meet'`) op `product_setups`
+- **Meet bestanden** portaal: upload en parseer XML meetbestanden (features, deviaties, pass/fail tabel, toon op 3D model); rapporten (PDF/HTML)
+- Rapportage type: standaard **Inmeten** (i.p.v. Frezen) — ook doorgevoerd in Product Setup
+- Backend routes onder `/kiosk/meet-setups/...`
+- Migratie `0049_setup_type.sql`
+
+---
+
+## 🚧 Fase 10: Meetmiddelen & Kalibratie (uitbreiding)
+
+**Status:** Gedeeltelijk — basis live, uitbreidingen gepland
+
+**Al gedaan:**
+- Overzicht per categorie, vervaldatum-badges
+- Serie suffix veld
+
+**Nog gepland:**
 - Kalibratielog per meetmiddel
 - Documenten (kalibratierapport upload)
 - Koppeling aan medewerker (wie heeft gecalibreerd)
@@ -195,7 +232,9 @@
 | — | CNC Machining — Tool tabel | ✅ Complete | 2026-04-21 |
 | — | Product Setup | ✅ Complete | 2026-04-29 |
 | — | Product Setup uitbr. + Demonteren + multi-format parser | ✅ Complete | 2026-04-30 |
-| 10 | Meetmiddelen & Kalibratie | ⬜ Not started | — |
+| — | NCR verbeteringen — Human Factor | ✅ Complete | mei 2026 |
+| — | Meetmiddelen uitbr. + Machine cat. + Meet Setup | ✅ Complete | 2026-05-11 |
+| 10 | Meetmiddelen & Kalibratie (uitbreiding) | 🚧 In progress | — |
 | 11 | CoC-Generatie | ⬜ Not started | — |
 | 12 | Stilstandregistratie | ⬜ Not started | — |
 | 13 | BC Webhooks | ⬜ Not started | — |

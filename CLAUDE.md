@@ -32,7 +32,7 @@ Drizzle genereert **geen** migraties automatisch. Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0039_beschrijving.sql` (oplopend nummer)
+   - Naamconventie: `0050_beschrijving.sql` (oplopend nummer, huidig laatste: 0049)
 3. Drizzle past alle `.sql` bestanden in die map toe bij opstarten
 
 Voorbeeld migratie:
@@ -139,6 +139,7 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 |--------|----------|---------------|
 | Kiosk dashboard | `routes/kiosk/dashboard.tsx` | — |
 | Product Setup | `routes/kiosk/product-setup.tsx` | `routes/kiosk/product-setup.ts` |
+| Meet Setup | `routes/kiosk/meet-setup.tsx` | `routes/kiosk/meet-setup.ts` |
 | CNC Machining (admin) | `routes/admin/cnc-machining.tsx` | `routes/admin/cnc.ts` |
 | Tooling Library | `routes/kiosk/tooling.tsx` | `routes/kiosk/tooling.ts` |
 | NCR | `routes/kiosk/ncr.tsx` | `routes/kiosk/ncr.ts` |
@@ -158,13 +159,14 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 | `cnc_sync_logs` | Log van TOOL.T syncs per machine |
 | `tool_library_assemblies` | Samenstellingen in toolbibliotheek |
 | `tool_library_items` | Individuele toolcomponenten |
-| `product_setups` | Product setup (koppeling order ↔ machine ↔ stap) |
-| `product_setup_steps` | Stappen per setup (machineId, nulpunt X/Y/Z als text, optioneel bewerkingNr) |
+| `product_setups` | Product/Meet setup; `setup_type` = `'product'` of `'meet'` scheidt de modules |
+| `product_setup_steps` | Stappen per setup (machineId, nulpunt X/Y/Z als text, bewerkingNr, opmerkingen) |
 | `product_setup_nc_files` | NC-bestanden per stap |
 | `product_setup_tool_calls` | Geparseerde TOOL CALL regels uit NC-bestand |
-| `product_setup_documents` | Tekeningen & CAD-bestanden per setup |
+| `product_setup_documents` | Tekeningen, CAD en meetbestanden per setup (documentType: tekening/cad/meting_xml/meting_rapport) |
 | `product_setup_overdracht` | Overdrachtlog per stap (vrije tekst + user + timestamp) |
 | `product_setup_overdracht_photos` | Foto's per overdrachtentry |
+| `measuring_tools` | Meetmiddelen; `serie_suffix` = laatste 5 cijfers serienummer |
 | `ncrs` | Non-conformiteit rapporten |
 | `preventive_measures` | Preventieve maatregelen (gekoppeld aan NCR) |
 

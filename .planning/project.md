@@ -25,10 +25,14 @@ Een event-driven Manufacturing Execution System (MES) dat als **operationele int
 | CNC — Wisselplaat, schroef, tooling kiosk | 2026-04-22 t/m 04-23 | 2 sessies | ~6 uur |
 | Product Setup (volledig) | 2026-04-23 t/m 04-29 | 4–5 sessies | ~16 uur |
 | Product Setup uitbr. + Demonteren + multi-format parser | 2026-04-30 | 1–2 sessies | ~5 uur |
-| **Totaal** | | **~32–37 sessies** | **~120 uur** |
+| NCR verbeteringen (human factor velden) | mei 2026 | 1 sessie | ~3 uur |
+| Machine categorieën + Meetmiddelen serie + opmerkingen stap | 2026-05-11 | 1 sessie | ~3 uur |
+| Meet Setup module | 2026-05-11 | 1 sessie | ~4 uur |
+| **Totaal** | **feb 2026 – mei 2026** | **~37–44 sessies** | **~130 uur** |
 
 *v1.0 (12.661 regels TypeScript/TSX, 186 bestanden) in ~11 werkdagen — gemiddeld ~5 uur/dag.*  
-*v2.0 t/m Product Setup uitbreidingen: ~65 uur aanvullende ontwikkeling.*
+*v2.0 t/m Meet Setup: ~75 uur aanvullende ontwikkeling over ~26–33 sessies.*  
+*Gemiddeld per sessie: ~3–4 uur. Totale doorlooptijd: ~10 weken (2026-03-09 t/m 2026-05-11).*
 
 ## Bredere visie
 
@@ -65,13 +69,14 @@ Factory Assistant is het volledige bedrijfsbesturingssysteem voor de werkvloer:
 ### Kiosk (touch-first, operators)
 - Medewerkerstegels + PIN-login
 - Dashboard met module-kaarten:
-  - **Product Setup** — stappen per machine, NC-bestanden, toolvalidatie, overdracht
+  - **Product Setup** — stappen per machine, NC-bestanden, toolvalidatie, opmerkingen, overdracht
+  - **Meet Setup** — meetstappen per 3D-meetapparaat, meetbestanden (XML/rapport), CAD, overdracht
   - **CNC Machining** — toolmagazijn, samenstellingen, wisselplaten, TOOL.T sync
   - **Tooling Library** — toolbeheer, componentenbeheer, samenstellingen
   - **NCR** — non-conformiteit kanban + detail
   - **Preventieve Maatregelen** — kanban + uitvoerder + datum
   - **Klantmeldingen** — kanban + detail (klant, oorzaak, artikel)
-  - **Meetmiddelen** — (in ontwikkeling)
+  - **Meetmiddelen** — kalibratiebeheer, serie suffix, vervaldatum melding
   - **Mijn Taken** — takenlijst per medewerker
   - **Mijn Meldingen** — eigen NCR-overzicht
 
@@ -96,7 +101,7 @@ Lijst-niveau:
 Per stap:
 - **Bewerkingsnummer** — optioneel bewerkingsnr. naast de stapnaam (bewerkingNr in DB)
 - **Algemene informatie** — nulpunt X/Y/Z (tekst), beschrijving; portaal voor tekeningen en CAD-bestanden
-- **CNC informatie** — NC-bestanden (portaal, hernoemen, actief selecteren), importeer samenstellingen, SYNC + validatietimestamp, toolvalidatietabel
+- **CNC informatie** — NC-bestanden (portaal, hernoemen, actief selecteren), importeer samenstellingen, SYNC + validatietimestamp, toolvalidatietabel; **opmerkingen** veld naast nulpunt
 - **Bijlagen** — foto's en documenten per stap met bijschrift, lightbox
 - **Overdracht** — vrij-tekst log met naam + timestamp + foto's, lightbox, bewerken/verwijderen
 
@@ -122,8 +127,22 @@ Twee tabs: **Artikelen** en **Demonteren**.
 - **Preventieve Maatregelen** — kanban, uitvoerder via EmployeePickerModal, datum + resultaat veld
 - **Klantmeldingen** — kanban, detail Tab Melding (klant, ordernummers, contactpersoon, artikel, oorzaak/foutcode)
 
+### Meet Setup (`routes/kiosk/meet-setup.tsx`)
+Identiek aan Product Setup maar gericht op 3D-meetapparaten. Geen CNC-tab.
+
+- Toont alleen machines met categorie `3D-meetapparaat`
+- Data gescheiden via `setup_type = 'meet'` op de gedeelde `product_setups` tabel
+- Per stap drie tabs: **Algemene informatie** (nulpunt, opmerkingen), **Bijlagen**, **Overdracht**
+- **Meet bestanden** portaal: XML meetbestanden uploaden + parsen (features, deviaties, pass/fail), rapporten (PDF/HTML)
+- **Tekeningen** en **CAD** portaal identiek aan Product Setup
+- Rapportage types: Inmeten · Controle · Eindmeting (geen "Frezen")
+
 ### Meetmiddelen (`routes/kiosk/meetmiddelen.tsx`)
-Kalibratiebeheer van meetgereedschappen — in ontwikkeling (Fase 10).
+Kalibratiebeheer van meetgereedschappen.
+
+- Overzicht per categorie, vervaldatum-badges (verlopen = rood, binnenkort = oranje)
+- Velden: naam, serienummer, **serie suffix** (laatste 5 cijfers), afmeting, locatie, kalibratie-interval
+- Categorieën machines: Meetapparaat en 3D-meetapparaat beschikbaar
 
 ## Key Decisions
 
