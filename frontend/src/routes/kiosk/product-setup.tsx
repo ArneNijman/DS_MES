@@ -779,12 +779,14 @@ function SetupDetail({
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-gray-400">#{selectedStep.stepNumber}</span>
               <input
+                key={`bew-${selectedStep.id}-${selectedStep.bewerkingNr}`}
                 type="number"
                 min="1"
                 className="w-14 border border-gray-200 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-teal-400"
                 placeholder="Bew."
-                value={selectedStep.bewerkingNr ?? ''}
-                onChange={e => patchStep.mutate({ stepId: selectedStep.id, bewerkingNr: e.target.value ? parseInt(e.target.value) : null })}
+                defaultValue={selectedStep.bewerkingNr ?? ''}
+                onBlur={e => patchStep.mutate({ stepId: selectedStep.id, bewerkingNr: e.target.value ? parseInt(e.target.value) : null })}
+                onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               />
               <InlineEdit
                 value={selectedStep.stepName}
@@ -930,40 +932,6 @@ function SetupDetail({
                     )
                   })()}
 
-                  {/* Bewerkingstappen */}
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Bewerkingstappen</label>
-                    {setup.steps.length === 0 ? (
-                      <p className="text-xs text-gray-400">Nog geen stappen aangemaakt</p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {setup.steps.map(step => (
-                          <li key={step.id}>
-                            <button
-                              onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
-                              className={cn(
-                                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
-                                selectedStepId === step.id
-                                  ? 'bg-teal-50 border border-teal-200 text-teal-800'
-                                  : 'hover:bg-gray-100 text-gray-700 border border-transparent',
-                              )}
-                            >
-                              <span className="text-xs font-mono text-gray-400 shrink-0">#{step.stepNumber}</span>
-                              {step.bewerkingNr != null && (
-                                <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5 shrink-0">
-                                  {step.bewerkingNr}
-                                </span>
-                              )}
-                              <span className="truncate font-medium">{step.stepName}</span>
-                              {step.machineName && (
-                                <span className="text-[10px] text-gray-400 shrink-0 ml-auto">{step.machineName}</span>
-                              )}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
 
                   {/* Actief CAD bestand indicator */}
                   {selectedCadUrl && viewableCad.length > 0 && (
@@ -1133,11 +1101,12 @@ function SetupDetail({
                   onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
                   className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
                 >
-                  <span className="text-xs font-mono text-gray-400">
-                    #{step.stepNumber}{step.bewerkingNr != null ? ` · Bew. ${step.bewerkingNr}` : ''}
-                  </span>
-                  <p className="text-sm font-semibold text-gray-800 leading-snug">{step.stepName}</p>
-                  {step.machineName && <p className="text-xs text-gray-500 truncate">{step.machineName}</p>}
+                  <span className="text-xs font-mono text-gray-400">#{step.stepNumber}</span>
+                  {step.bewerkingNr != null && (
+                    <div className="text-xs text-gray-500">Bewerkstap: <span className="font-semibold text-teal-600">{step.bewerkingNr}</span></div>
+                  )}
+                  <div className="text-xs text-gray-500">Stapnaam: <span className="text-sm font-semibold text-gray-800">{step.stepName}</span></div>
+                  {step.machineName && <div className="text-xs text-gray-500 truncate">{step.machineName}</div>}
                   <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
                     {step.ncFiles.length > 0 && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
@@ -2157,28 +2126,41 @@ function MeetPortalModal({
                           <thead className="bg-gray-50 sticky top-0">
                             <tr>
                               <th className="text-left px-3 py-2 font-semibold text-gray-500">Feature</th>
-                              <th className="text-left px-3 py-2 font-semibold text-gray-500">Type</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Deviatie</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Tol.</th>
-                              <th className="text-center px-3 py-2 font-semibold text-gray-500">Status</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Nom.</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Gemeten</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Dev.</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Min</th>
+                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Max</th>
+                              <th className="text-center px-3 py-2 font-semibold text-gray-500">OOT</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {inspectionData.features.map(f => (
-                              <tr key={f.id} className={f.status === 'fail' ? 'bg-red-50' : ''}>
-                                <td className="px-3 py-1.5 font-medium text-gray-800 truncate max-w-[120px]">{f.name}</td>
-                                <td className="px-3 py-1.5 text-gray-500">{f.type}</td>
-                                <td className={cn('px-3 py-1.5 text-right font-mono', f.deviation > 0 ? 'text-orange-600' : f.deviation < 0 ? 'text-blue-600' : 'text-gray-500')}>
-                                  {f.deviation >= 0 ? '+' : ''}{f.deviation.toFixed(3)}
-                                </td>
-                                <td className="px-3 py-1.5 text-right text-gray-400 font-mono">±{f.tolerancePlus.toFixed(3)}</td>
-                                <td className="px-3 py-1.5 text-center">
-                                  {f.status === 'pass'
-                                    ? <Check size={12} className="inline text-green-500" />
-                                    : <X size={12} className="inline text-red-500" />}
-                                </td>
-                              </tr>
-                            ))}
+                            {inspectionData.features.map(f => {
+                              const nominal  = f.nominalX !== 0 ? f.nominalX  : (f.deviation !== 0 ? f.measuredX - f.deviation : null)
+                              const measured = f.measuredX !== 0 ? f.measuredX : null
+                              const isFail   = f.status === 'fail'
+                              return (
+                                <tr key={f.id} className={isFail ? 'bg-red-50' : ''}>
+                                  <td className="px-3 py-1.5 font-medium text-gray-800 max-w-[160px] truncate">{f.name}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-gray-500">
+                                    {nominal != null ? nominal.toFixed(4) : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-gray-800">
+                                    {measured != null ? measured.toFixed(4) : '—'}
+                                  </td>
+                                  <td className={cn('px-3 py-1.5 text-right font-mono font-semibold', isFail ? 'text-red-600' : f.deviation > 0 ? 'text-orange-500' : f.deviation < 0 ? 'text-blue-500' : 'text-gray-400')}>
+                                    {f.deviation >= 0 ? '+' : ''}{f.deviation.toFixed(4)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-gray-400">{f.toleranceMinus.toFixed(4)}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-gray-400">+{f.tolerancePlus.toFixed(4)}</td>
+                                  <td className="px-3 py-1.5 text-center">
+                                    {isFail
+                                      ? <X size={12} className="inline text-red-500" />
+                                      : <Check size={12} className="inline text-green-500" />}
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>

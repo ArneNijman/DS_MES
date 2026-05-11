@@ -161,12 +161,62 @@ function tryFormatGeneric(root: Record<string, unknown>): InspectionFeature[] | 
   return features.length > 0 ? features : null
 }
 
+// ── Format D: PC-DMIS DataPage+ <ExecutionTransaction><DimensionCmd ...> ──────
+function tryFormatD(root: Record<string, unknown>): InspectionFeature[] | null {
+  const tx = root['ExecutionTransaction'] as Record<string, unknown> | undefined
+  if (!tx) return null
+  const raw = tx['DimensionCmd']
+  if (!raw) return null
+  const list = Array.isArray(raw) ? raw : [raw]
+  if (list.length === 0) return null
+
+  return list.map((d: Record<string, unknown>, i: number) => {
+    const nominal  = num(d['@_Nominal'])
+    const measured = num(d['@_Measured'])
+    const deviation = num(d['@_Deviation'] ?? measured - nominal)
+    const tolPlus  = num(d['@_PlusTol']  ?? 0)
+    const tolMinus = num(d['@_MinusTol'] ?? 0)
+    const featureId = str(d['@_FeatureID']) ?? `F${i + 1}`
+    const featureId2 = str(d['@_FeatureID2'])
+    const axis = str(d['@_Axis']) ?? ''
+    const name = featureId2 ? `${featureId} ↔ ${featureId2} [${axis}]` : `${featureId} [${axis}]`
+    return {
+      id: String(i + 1),
+      name,
+      type: str(d['@_Type']) ?? 'DIM',
+      nominalX: nominal, nominalY: 0, nominalZ: 0,
+      measuredX: measured, measuredY: 0, measuredZ: 0,
+      deviation,
+      tolerancePlus: tolPlus,
+      toleranceMinus: tolMinus,
+      status: statusFromOutOfTol(d['@_OutOfTolerance'] ?? 0),
+    }
+  })
+}
+
 function extractHeader(root: Record<string, unknown>): Pick<InspectionResult, 'partName' | 'programName' | 'operator' | 'machine' | 'dateTime' | 'serialNumber'> {
   // zoek header op meerdere bekende paden
   const get = (o: unknown, k: string): Record<string, unknown> | undefined => {
     if (o && typeof o === 'object') return (o as Record<string, unknown>)[k] as Record<string, unknown> | undefined
     return undefined
   }
+
+  // Format D: PartData in ExecutionTransaction
+  const tx = root['ExecutionTransaction'] as Record<string, unknown> | undefined
+  if (tx) {
+    const pd = tx['PartData'] as Record<string, unknown> | undefined
+    if (pd) {
+      return {
+        partName:     str(pd['@_PartName']),
+        programName:  str(pd['@_MeasurementRoutine']),
+        operator:     null,
+        machine:      null,
+        dateTime:     str((root['ExecutionTransaction'] as Record<string, unknown>)?.['@_DateTime']),
+        serialNumber: str(pd['@_SerialNumber']),
+      }
+    }
+  }
+
   const candidates = [
     get(get(root, 'RESULTS'), 'HEADER'),
     get(get(root, 'PCDMIS_RESULTS'), 'HEADER'),
@@ -197,6 +247,7 @@ export function parsePcdmisXml(xmlContent: string): InspectionResult {
   }
 
   const features =
+    tryFormatD(root) ??
     tryFormatA(root) ??
     tryFormatB(root) ??
     tryFormatGeneric(root) ??

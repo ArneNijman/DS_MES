@@ -174,6 +174,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         id:              productSetupSteps.id,
         setupId:         productSetupSteps.setupId,
         stepNumber:      productSetupSteps.stepNumber,
+        bewerkingNr:     productSetupSteps.bewerkingNr,
         stepName:        productSetupSteps.stepName,
         machineId:       productSetupSteps.machineId,
         machineName:     machines.name,
