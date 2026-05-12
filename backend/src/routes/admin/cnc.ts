@@ -611,31 +611,6 @@ export async function cncRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // ── WinTool database pad ophalen ─────────────────────────────────────────
-
-  fastify.get('/admin/cnc/wintool-path', auth, async () => {
-    const rows = await fastify.db
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, 'wintool_db_path'))
-      .limit(1)
-    return { path: rows[0]?.value ?? null }
-  })
-
-  // ── WinTool database pad opslaan ──────────────────────────────────────────
-
-  fastify.put('/admin/cnc/wintool-path', auth, async (req, reply) => {
-    const { path } = req.body as { path: string }
-    if (!path || typeof path !== 'string') {
-      return reply.status(400).send({ error: 'Pad is verplicht' })
-    }
-    await fastify.db
-      .insert(appSettings)
-      .values({ key: 'wintool_db_path', value: path.trim() })
-      .onConflictDoUpdate({ target: appSettings.key, set: { value: path.trim() } })
-    return { ok: true }
-  })
-
   // ── WinTool bibliotheek herladen via cnc-agent ───────────────────────────
 
   fastify.post('/admin/cnc/reload-tool-library', auth, async (_req, reply) => {
