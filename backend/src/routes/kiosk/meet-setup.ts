@@ -226,6 +226,12 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
       productionOrderNo?: string
       articleNo?:         string
       description?:       string
+      customer?:          string | null
+      customerPo?:        string | null
+      equipmentName?:     string | null
+      equipmentNumber?:   string | null
+      drawingNumber?:     string | null
+      rapportageInfo?:    string | null
     }
 
     const [updated] = await fastify.db
@@ -234,6 +240,12 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
         ...(body.productionOrderNo !== undefined && { productionOrderNo: body.productionOrderNo.trim() || null }),
         ...(body.articleNo         !== undefined && { articleNo:         body.articleNo.trim() || null }),
         ...(body.description       !== undefined && { description:       body.description.trim() || null }),
+        ...(body.customer          !== undefined && { customer:          body.customer?.trim() || null }),
+        ...(body.customerPo        !== undefined && { customerPo:        body.customerPo?.trim() || null }),
+        ...(body.equipmentName     !== undefined && { equipmentName:     body.equipmentName?.trim() || null }),
+        ...(body.equipmentNumber   !== undefined && { equipmentNumber:   body.equipmentNumber?.trim() || null }),
+        ...(body.drawingNumber     !== undefined && { drawingNumber:     body.drawingNumber?.trim() || null }),
+        ...(body.rapportageInfo    !== undefined && { rapportageInfo:    body.rapportageInfo?.trim() || null }),
         updatedAt: new Date(),
       })
       .where(and(eq(productSetups.id, id), eq(productSetups.setupType, 'meet')))

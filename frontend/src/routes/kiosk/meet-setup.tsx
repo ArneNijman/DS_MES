@@ -123,6 +123,12 @@ interface SetupDetail {
   origin:            string
   createdAt:         string
   updatedAt:         string
+  customer:          string | null
+  customerPo:        string | null
+  equipmentName:     string | null
+  equipmentNumber:   string | null
+  drawingNumber:     string | null
+  rapportageInfo:    string | null
   steps:             Step[]
   documents:         Document[]
 }
@@ -488,7 +494,7 @@ function SetupDetail({
 }) {
   const qc = useQueryClient()
   const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
-  const [activeTab, setActiveTab]               = useState<'info' | 'bijlagen' | 'overdracht'>('info')
+  const [activeTab, setActiveTab]               = useState<'info' | 'rapportage' | 'bijlagen' | 'overdracht'>('info')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
@@ -602,7 +608,7 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'bijlagen', 'overdracht'] as const).map(tab => (
+          {(['info', 'rapportage', 'bijlagen', 'overdracht'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -611,7 +617,10 @@ function SetupDetail({
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
-              {tab === 'info' ? 'Algemene informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
+              {tab === 'info' ? 'Algemene informatie'
+                : tab === 'rapportage' ? 'Rapportage informatie'
+                : tab === 'bijlagen' ? 'Bijlagen'
+                : 'Overdracht'}
             </button>
           ))}
         </div>
@@ -764,6 +773,7 @@ function SetupDetail({
               </div>
             )
           })()}
+          {activeTab === 'rapportage' && <RapportageTab setup={setup} setupId={setupId} />}
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
             <OverdrachtTab stepId={selectedStep.id} />
@@ -1052,6 +1062,65 @@ interface OverdrachtEntry {
   createdByName: string | null
   createdAt:     string
   photos:        OverdrachtPhoto[]
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Rapportage informatie
+// ══════════════════════════════════════════════════════════════════════════════
+
+function RapportageTab({ setup, setupId }: { setup: SetupDetail; setupId: string }) {
+  const qc = useQueryClient()
+
+  const patch = useMutation({
+    mutationFn: (fields: Partial<Record<string, string | null>>) =>
+      apiFetch(`/kiosk/meet-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['meet-setup', setupId] }),
+  })
+
+  function Field({ label, field, value }: { label: string; field: string; value: string | null }) {
+    return (
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</label>
+        <input
+          key={`${setupId}-${field}`}
+          type="text"
+          defaultValue={value ?? ''}
+          onBlur={e => {
+            const v = e.target.value.trim() || null
+            if (v !== (value ?? null)) patch.mutate({ [field]: v })
+          }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+          placeholder={`${label} invullen…`}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-6 max-w-2xl space-y-5">
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Customer"         field="customer"        value={setup.customer} />
+        <Field label="Customer PO"      field="customerPo"      value={setup.customerPo} />
+        <Field label="Equipment name"   field="equipmentName"   value={setup.equipmentName} />
+        <Field label="Equipment number" field="equipmentNumber" value={setup.equipmentNumber} />
+        <Field label="Drawing number"   field="drawingNumber"   value={setup.drawingNumber} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Aanvullende informatie</label>
+        <textarea
+          key={`${setupId}-rapportageInfo`}
+          defaultValue={setup.rapportageInfo ?? ''}
+          rows={5}
+          onBlur={e => {
+            const v = e.target.value.trim() || null
+            if (v !== (setup.rapportageInfo ?? null)) patch.mutate({ rapportageInfo: v })
+          }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white resize-none"
+          placeholder="Aanvullende informatie…"
+        />
+      </div>
+    </div>
+  )
 }
 
 function OverdrachtTab({ stepId }: { stepId: string }) {
