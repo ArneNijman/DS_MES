@@ -636,40 +636,26 @@ export async function cncRoutes(fastify: FastifyInstance) {
     return { ok: true }
   })
 
-  // ── WinTool bibliotheek herladen via geconfigureerd pad ───────────────────
+  // ── WinTool bibliotheek herladen via cnc-agent ───────────────────────────
 
   fastify.post('/admin/cnc/reload-tool-library', auth, async (_req, reply) => {
-    // Haal geconfigureerd pad op
-    const rows = await fastify.db
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, 'wintool_db_path'))
-      .limit(1)
+    const agentUrl = (process.env.CNC_AGENT_URL ?? 'http://host.docker.internal:3099').replace(/\/$/, '')
 
-    const dbPath = rows[0]?.value
-    if (!dbPath) {
-      return reply.status(400).send({
-        error: 'Geen WinTool pad geconfigureerd. Stel het in via Admin → Dashboard.',
-      })
-    }
-
-    if (!existsSync(dbPath)) {
-      return reply.status(400).send({
-        error: `Bestand niet gevonden: ${dbPath}. Controleer of de netwerkshare gemount is.`,
-      })
-    }
-
-    const sql = postgres(process.env.DATABASE_URL!, { max: 1 })
+    let agentRes: Response
     try {
-      const result = await importToolLibraryFromFile(dbPath, sql)
-      await syncToolingArticles(fastify.db)
-      return { ok: true, ...result }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Onbekende fout'
-      return reply.status(500).send({ error: `Import mislukt: ${message}` })
-    } finally {
-      await sql.end()
+      agentRes = await fetch(`${agentUrl}/sync-wintool`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      })
+    } catch {
+      return reply.status(502).send({ error: 'CNC-agent niet bereikbaar. Zorg dat de agent draait op de Windows machine.' })
     }
+
+    const result = await agentRes.json().catch(() => ({})) as Record<string, unknown>
+    if (!agentRes.ok) {
+      return reply.status(502).send({ error: (result.error as string) ?? `Agent fout: HTTP ${agentRes.status}` })
+    }
+    return result
   })
 
   // ── WinTool bibliotheek herladen via bestand upload (cnc-agent) ──────────
