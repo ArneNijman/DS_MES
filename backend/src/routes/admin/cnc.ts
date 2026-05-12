@@ -672,6 +672,32 @@ export async function cncRoutes(fastify: FastifyInstance) {
     }
   })
 
+  // ── WinTool bibliotheek herladen via bestand upload (cnc-agent) ──────────
+
+  fastify.post('/admin/cnc/sync-wintool', auth, async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const tempFile = join(tmpdir(), `wintool-${randomUUID()}.db`)
+    const sql = postgres(process.env.DATABASE_URL!, { max: 1 })
+
+    try {
+      const chunks: Buffer[] = []
+      for await (const chunk of data.file) chunks.push(chunk as Buffer)
+      await writeFile(tempFile, Buffer.concat(chunks))
+
+      const result = await importToolLibraryFromFile(tempFile, sql)
+      await syncToolingArticles(fastify.db)
+      return { ok: true, ...result }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Onbekende fout'
+      return reply.status(500).send({ error: `Import mislukt: ${message}` })
+    } finally {
+      await sql.end()
+      await unlink(tempFile).catch(() => {})
+    }
+  })
+
   // ── Component foto uploaden ───────────────────────────────────────────────
 
   fastify.post('/admin/cnc/components/:itemId/photo', auth, async (req, reply) => {

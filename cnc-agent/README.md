@@ -1,7 +1,8 @@
 # CNC Agent — Dutch Shape MES
 
 Haalt automatisch TOOL.T bestanden op van Heidenhain CNC-machines via TNCcmd.exe
-en stuurt ze naar de MES backend. Biedt ook een HTTP server zodat de Sync-knop
+en stuurt ze naar de MES backend. Detecteert ook wijzigingen in de WinTool database
+en synchroniseert deze automatisch. Biedt een HTTP server zodat de Sync-knop
 in de MES kiosk een directe sync kan triggeren.
 
 ---
@@ -13,8 +14,9 @@ in de MES kiosk een directe sync kan triggeren.
 3. [Automatisch starten bij Windows-login](#automatisch-starten-bij-windows-login)
 4. [Handmatig starten](#handmatig-starten)
 5. [Sync-knop in de kiosk](#sync-knop-in-de-kiosk)
-6. [Hoe werkt de sync?](#hoe-werkt-de-sync)
-7. [Probleemoplossing](#probleemoplossing)
+6. [WinTool synchronisatie](#wintool-synchronisatie)
+7. [Hoe werkt de sync?](#hoe-werkt-de-sync)
+8. [Probleemoplossing](#probleemoplossing)
 
 ---
 
@@ -40,7 +42,7 @@ Kopieer .env.example → .env
 Open `.env` in Kladblok en vul de gegevens in:
 
 ```
-BACKEND_URL=http://<server-ip>:8080     ← IP-adres van de Linux server (zie install.sh output)
+BACKEND_URL=http://<server-ip>:8080     ← IP-adres van de server (zie install.sh output)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD="jouw_wachtwoord"        ← wachtwoord uit de install.sh output; quotes verplicht als het een # bevat
 
@@ -49,9 +51,11 @@ TNCCMD_TIMEOUT_MS=30000                 ← max wachttijd per machine (milliseco
 
 SYNC_INTERVAL_MIN=30                    ← automatische sync elke 30 minuten
 AGENT_PORT=3099                         ← HTTP poort voor de Sync-knop in de kiosk
+
+WINTOOL_DB_PATH=R:\Arne\tooldatabase\Dutch-Shape_2025.db   ← pad naar WinTool .db bestand (optioneel)
 ```
 
-Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de Linux server.
+Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de server.
 
 ### Stap 2 — Testen of de agent werkt
 
@@ -165,6 +169,34 @@ verschijnt de melding _"CNC agent niet bereikbaar"_.
 
 ---
 
+## WinTool synchronisatie
+
+Als `WINTOOL_DB_PATH` is ingesteld in `.env`, synchroniseert de agent automatisch de WinTool toolbibliotheek met het MES.
+
+**Hoe het werkt:**
+
+- Bij elke sync-ronde vergelijkt de agent de wijzigingsdatum (`mtime`) van het `.db` bestand met de vorige sync
+- Alleen als het bestand gewijzigd is wordt het geüpload naar de MES backend
+- De backend importeert de tools, samenstellingen en componenten rechtstreeks uit het bestand
+
+**Voordelen ten opzichte van het handmatig instellen van een pad:**
+
+- Werkt direct via `R:\`, `\\server\share\` of elk ander Windows-pad — geen kopie nodig
+- Volledig automatisch: zodra WinTool een update wegschrijft, pikt de agent het op bij de volgende sync
+- Geen Docker volume-configuratie nodig op de server
+
+**Handmatige WinTool sync forceren:**
+
+Stuur een POST-verzoek naar de agent (forceer upload ook als bestand niet gewijzigd is):
+
+```
+curl -X POST http://localhost:3099/sync-wintool
+```
+
+Of gebruik de knop "Herlaad bibliotheek" in het MES (Admin → CNC Machining).
+
+---
+
 ## Hoe werkt de sync?
 
 Voor elke CNC-machine die een IP-adres heeft in het MES:
@@ -194,3 +226,5 @@ De overige machines worden gewoon gesynchroniseerd.
 | `CNC agent niet bereikbaar` | Agent draait niet | Start de agent in continue modus: `node --env-file=.env cnc-agent.js` |
 | Machine niet in dropdown | Geen IP ingesteld | Voeg een IP-adres toe via Admin > Machines in het MES |
 | Machine offline | Netwerk/machine uit | Controleer of de machine aan staat en bereikbaar is op het netwerk |
+| `WinTool bestand niet gevonden` | Verkeerd pad of share niet gemount | Controleer `WINTOOL_DB_PATH` in `.env`; zorg dat de netwerkschijf gemount is |
+| `WinTool ongewijzigd` | Bestand niet aangepast | Normaal gedrag — agent slaat sync over. Gebruik `/sync-wintool` om te forceren |

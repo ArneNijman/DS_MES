@@ -11,7 +11,7 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
+import { readFile, writeFile, unlink, mkdir, stat } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -21,13 +21,14 @@ const execFileAsync = promisify(execFile)
 
 // ── Configuratie (uit .env) ───────────────────────────────────────────────────
 
-const TNCCMD       = process.env.TNCCMD_PATH    ?? 'C:\\Program Files (x86)\\HEIDENHAIN\\TNCremo\\TNCcmd.exe'
-const BACKEND_URL  = (process.env.BACKEND_URL   ?? 'http://localhost:3000').replace(/\/$/, '')
-const USERNAME     = process.env.ADMIN_USERNAME
-const PASSWORD     = process.env.ADMIN_PASSWORD
-const INTERVAL_MIN = parseInt(process.env.SYNC_INTERVAL_MIN ?? '30', 10)
-const TIMEOUT_MS   = parseInt(process.env.TNCCMD_TIMEOUT_MS ?? '30000', 10)
-const AGENT_PORT   = parseInt(process.env.AGENT_PORT ?? '3099', 10)
+const TNCCMD           = process.env.TNCCMD_PATH              ?? 'C:\\Program Files (x86)\\HEIDENHAIN\\TNCremo\\TNCcmd.exe'
+const BACKEND_URL      = (process.env.BACKEND_URL             ?? 'http://localhost:3000').replace(/\/$/, '')
+const USERNAME         = process.env.ADMIN_USERNAME
+const PASSWORD         = process.env.ADMIN_PASSWORD
+const INTERVAL_MIN     = parseInt(process.env.SYNC_INTERVAL_MIN         ?? '30', 10)
+const TIMEOUT_MS       = parseInt(process.env.TNCCMD_TIMEOUT_MS         ?? '30000', 10)
+const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099', 10)
+const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
 
 if (!USERNAME || !PASSWORD) {
   console.error('❌  ADMIN_USERNAME en ADMIN_PASSWORD zijn verplicht in .env')
@@ -144,6 +145,52 @@ async function syncToolTable(machine) {
   }
 }
 
+// ── WinTool sync ──────────────────────────────────────────────────────────────
+
+let lastWintoolMtime = 0
+
+async function syncWintoolIfChanged() {
+  if (!WINTOOL_DB_PATH) return
+
+  let mtimeMs
+  try {
+    ;({ mtimeMs } = await stat(WINTOOL_DB_PATH))
+  } catch {
+    console.error(`   ❌  WinTool bestand niet gevonden: ${WINTOOL_DB_PATH}`)
+    return
+  }
+
+  if (mtimeMs <= lastWintoolMtime) {
+    console.log(`   ⏭️   WinTool ongewijzigd`)
+    return
+  }
+
+  console.log(`   📤  WinTool gewijzigd — uploaden naar backend…`)
+  try {
+    const content = await readFile(WINTOOL_DB_PATH)
+
+    const form = new FormData()
+    form.append('file', new Blob([content], { type: 'application/octet-stream' }), 'wintool.db')
+
+    const res = await fetch(`${BACKEND_URL}/api/admin/cnc/sync-wintool`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body:    form,
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error ?? `HTTP ${res.status}`)
+    }
+
+    const result = await res.json()
+    lastWintoolMtime = mtimeMs
+    console.log(`   ✅  WinTool gesynchroniseerd: ${result.items} items, ${result.assemblies} samenstellingen`)
+  } catch (err) {
+    console.error(`   ❌  WinTool upload mislukt: ${err.message}`)
+  }
+}
+
 // ── Hoofd sync loop ───────────────────────────────────────────────────────────
 
 async function syncAll() {
@@ -151,6 +198,13 @@ async function syncAll() {
 
   try {
     await authenticate()
+
+    // WinTool sync (alleen als WINTOOL_DB_PATH is ingesteld)
+    if (WINTOOL_DB_PATH) {
+      console.log(`\n🗄️   WinTool:`)
+      await syncWintoolIfChanged()
+    }
+
     const machines = await getCncMachines()
 
     if (!machines.length) {
@@ -214,6 +268,16 @@ if (runOnce) {
     if (req.method === 'POST' && req.url === '/sync') {
       syncAllGuarded()  // fire-and-forget
       res.end(JSON.stringify({ ok: true, message: 'Sync gestart' }))
+
+    } else if (req.method === 'POST' && req.url === '/sync-wintool') {
+      if (!WINTOOL_DB_PATH) {
+        res.statusCode = 400
+        res.end(JSON.stringify({ error: 'WINTOOL_DB_PATH niet ingesteld in .env' }))
+      } else {
+        lastWintoolMtime = 0  // forceer upload ook als bestand niet gewijzigd is
+        authenticate().then(() => syncWintoolIfChanged())  // fire-and-forget
+        res.end(JSON.stringify({ ok: true, message: 'WinTool sync gestart' }))
+      }
 
     } else if (req.method === 'POST' && req.url === '/send-nc-file') {
       let body = ''
