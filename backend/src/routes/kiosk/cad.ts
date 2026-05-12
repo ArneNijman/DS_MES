@@ -77,22 +77,34 @@ export async function kioskCadRoutes(fastify: FastifyInstance) {
       const m     = result.meshes[mi]
       const name  = m.name ?? `Part ${mi + 1}`
       const nameB = enc.encode(name)
-      const count = m.triangleCount * 3
+
+      // occt-import-js v0.0.x stores data in:
+      //   m.index.array        — flat triangle-index array
+      //   m.attributes.position.array — flat vertex positions (x,y,z per vertex)
+      //   m.attributes.normal?.array  — flat normals (optional)
+      const idxArr  = m.index?.array as number[] | undefined
+      const posArr  = m.attributes?.position?.array as number[] | undefined
+      const normArr = m.attributes?.normal?.array  as number[] | undefined
+
+      if (!idxArr || !posArr || idxArr.length === 0) continue
+
+      const triangleCount = Math.floor(idxArr.length / 3)
+      const count         = triangleCount * 3
 
       const verts = new Float32Array(count * 3)
-      const norms = m.normals ? new Float32Array(count * 3) : null
+      const norms = normArr ? new Float32Array(count * 3) : null
 
-      for (let fi = 0; fi < m.triangleCount; fi++) {
+      for (let fi = 0; fi < triangleCount; fi++) {
         for (let vi = 0; vi < 3; vi++) {
           const out = (fi * 3 + vi) * 3
-          const idx = m.triangleIndices[fi * 3 + vi]
-          verts[out]     = m.vertices[idx * 3]
-          verts[out + 1] = m.vertices[idx * 3 + 1]
-          verts[out + 2] = m.vertices[idx * 3 + 2]
-          if (norms) {
-            norms[out]     = m.normals[idx * 3]
-            norms[out + 1] = m.normals[idx * 3 + 1]
-            norms[out + 2] = m.normals[idx * 3 + 2]
+          const idx = idxArr[fi * 3 + vi]
+          verts[out]     = posArr[idx * 3]
+          verts[out + 1] = posArr[idx * 3 + 1]
+          verts[out + 2] = posArr[idx * 3 + 2]
+          if (norms && normArr) {
+            norms[out]     = normArr[idx * 3]
+            norms[out + 1] = normArr[idx * 3 + 1]
+            norms[out + 2] = normArr[idx * 3 + 2]
           }
         }
       }
