@@ -91,6 +91,11 @@ Je ziet dan zoiets als:
 
 ```
 🔄  Sync gestart: 21-4-2026, 08:25:00
+
+🗄️   WinTool:
+   📤  WinTool gewijzigd — uploaden naar backend…
+   ✅  WinTool gesynchroniseerd: 284 items, 96 samenstellingen
+
 📋  5 machine(s) gevonden, 5 met IP-adres
 
 🔌  BF 3200  (192.168.1.201)
@@ -102,6 +107,8 @@ Je ziet dan zoiets als:
 
 📊  Klaar: 5 geslaagd, 0 offline, 0 fout(en)
 ```
+
+Als `WINTOOL_DB_PATH` niet is ingesteld wordt de WinTool-regel niet getoond.
 
 Als alles werkt, ga dan door naar stap 3.
 
@@ -195,27 +202,24 @@ verschijnt de melding _"CNC agent niet bereikbaar"_.
 
 Als `WINTOOL_DB_PATH` is ingesteld in `.env`, synchroniseert de agent automatisch de WinTool toolbibliotheek met het MES.
 
+Het pad wordt **alleen in `.env` van de agent** ingesteld — er is geen instelling nodig in de MES admin UI.
+
 **Hoe het werkt:**
 
 - Bij elke sync-ronde vergelijkt de agent de wijzigingsdatum (`mtime`) van het `.db` bestand met de vorige sync
 - Alleen als het bestand gewijzigd is wordt het geüpload naar de MES backend
 - De backend importeert de tools, samenstellingen en componenten rechtstreeks uit het bestand
-
-**Voordelen ten opzichte van het handmatig instellen van een pad:**
-
 - Werkt direct via `R:\`, `\\server\share\` of elk ander Windows-pad — geen kopie nodig
-- Volledig automatisch: zodra WinTool een update wegschrijft, pikt de agent het op bij de volgende sync
-- Geen Docker volume-configuratie nodig op de server
 
 **Handmatige WinTool sync forceren:**
 
-Stuur een POST-verzoek naar de agent (forceer upload ook als bestand niet gewijzigd is):
+Via de knop **"Herlaad bibliotheek"** in het MES (Admin → CNC Machining), of via de command line:
 
 ```
 curl -X POST http://localhost:3099/sync-wintool
 ```
 
-Of gebruik de knop "Herlaad bibliotheek" in het MES (Admin → CNC Machining).
+Bij een geforceerde sync wordt het bestand altijd geüpload, ook als het niet gewijzigd is.
 
 ---
 
