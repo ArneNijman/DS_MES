@@ -223,7 +223,7 @@ Het pad wordt **alleen in `.env` van de agent** ingesteld — er is geen instell
 
 **Handmatige WinTool sync forceren:**
 
-Via de knop **"Herlaad bibliotheek"** in het MES (Admin → CNC Machining), of via de command line:
+Via de knop **"Herlaad bibliotheek"** in het MES (Admin → CNC Machining), of direct op de Windows machine via de command line (poort 3099 = de agent-poort, ingesteld via `AGENT_PORT` in `.env`):
 
 ```
 curl -X POST http://localhost:3099/sync-wintool
