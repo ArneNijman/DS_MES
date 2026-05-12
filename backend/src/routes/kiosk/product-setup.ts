@@ -24,6 +24,7 @@ import {
   toolingStockLocations,
 } from '../../db/schema.js'
 import { parseNcProgram } from '../../cnc/ncProgramParser.js'
+import { callAgent } from '../../cnc/agentProxy.js'
 import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
 import { readFile } from 'node:fs/promises'
 
@@ -1015,11 +1016,9 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     if (!row.articleNo)    return reply.status(422).send({ error: 'Setup heeft geen artikelnummer' })
     if (row.bewerkingNr == null) return reply.status(422).send({ error: 'Stap heeft geen bewerkingsnummer' })
 
-    const agentUrl = (process.env.CNC_AGENT_URL ?? 'http://host.docker.internal:3099').replace(/\/$/, '')
-
     let agentRes: Response
     try {
-      agentRes = await fetch(`${agentUrl}/send-nc-file`, {
+      agentRes = await callAgent('/send-nc-file', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

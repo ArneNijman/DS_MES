@@ -14,6 +14,7 @@ import {
 import { parseToolTable, type ToolTableFormat } from '../../cnc/toolTableParser.js'
 import { importToolLibraryFromFile } from '../../cnc/importToolLibrary.js'
 import { syncToolingArticles } from '../../cnc/syncToolingArticles.js'
+import { callAgent } from '../../cnc/agentProxy.js'
 
 // Alias helpers voor dubbele join op tool_library_items
 const toolItem   = toolLibraryItems
@@ -111,12 +112,8 @@ export async function cncRoutes(fastify: FastifyInstance) {
   // ── On-demand sync via Windows agent ─────────────────────────────────────
 
   fastify.post('/kiosk/cnc/trigger-sync', authRead, async (_req, reply) => {
-    const agentUrl = (process.env.CNC_AGENT_URL ?? 'http://host.docker.internal:3099').replace(/\/$/, '')
     try {
-      const res = await fetch(`${agentUrl}/sync`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(5000),
-      })
+      const res = await callAgent('/sync', { method: 'POST' }, 5_000)
       if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
       return { ok: true }
     } catch (err: unknown) {
@@ -614,14 +611,9 @@ export async function cncRoutes(fastify: FastifyInstance) {
   // ── WinTool bibliotheek herladen via cnc-agent ───────────────────────────
 
   fastify.post('/admin/cnc/reload-tool-library', auth, async (_req, reply) => {
-    const agentUrl = (process.env.CNC_AGENT_URL ?? 'http://host.docker.internal:3099').replace(/\/$/, '')
-
     let agentRes: Response
     try {
-      agentRes = await fetch(`${agentUrl}/sync-wintool`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(120_000),
-      })
+      agentRes = await callAgent('/sync-wintool', { method: 'POST' }, 120_000)
     } catch {
       return reply.status(502).send({ error: 'CNC-agent niet bereikbaar. Zorg dat de agent draait op de Windows machine.' })
     }
