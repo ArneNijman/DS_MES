@@ -1401,8 +1401,8 @@ export function CncMachiningContent() {
 
               {stats && (
                 <span className="text-sm text-gray-500 ml-auto">
-                  {filteredTools.length !== stats.total
-                    ? `${filteredTools.length} van ${stats.total} tools`
+                  {search
+                    ? `${filteredTools.filter(t => !t.isEmpty && t.name).length} van ${stats.total} tools`
                     : `${stats.total} tools`}
                 </span>
               )}

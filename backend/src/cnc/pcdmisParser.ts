@@ -339,9 +339,9 @@ function tryFormatE(root: Record<string, unknown>): InspectionFeature[] | null {
                       : obj['AxisFixedOfTPStartLocation'] ? 'AxisFixedOfTPStartLocation'
                       : null
       const z  = zFixedKey ? extractAxisData(obj[zFixedKey]) : null
-      const devX  = num((obj['TruePositionXLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation']?.['@_value'])
-      const devY  = num((obj['TruePositionYLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation']?.['@_value'])
-      const devZ  = (z && zFixedKey) ? num((obj[zFixedKey] as Record<string, unknown>)?.['DeviationOfTPLocation']?.['@_value']) : 0
+      const devX  = num(((obj['TruePositionXLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation'] as Record<string, unknown>)?.['@_value'])
+      const devY  = num(((obj['TruePositionYLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation'] as Record<string, unknown>)?.['@_value'])
+      const devZ  = (z && zFixedKey) ? num(((obj[zFixedKey] as Record<string, unknown>)?.['DeviationOfTPLocation'] as Record<string, unknown>)?.['@_value']) : 0
       const tDev  = td.measured - td.nominal
       const tOOT  = tDev < -td.tolMinus || tDev > td.tolPlus
       const xOOT  = devX < -x.tolMinus || devX > x.tolPlus
@@ -354,7 +354,7 @@ function tryFormatE(root: Record<string, unknown>): InspectionFeature[] | null {
       ]
       if (z) axes.push({ axis: 'Z', nominal: z.nominal, measured: z.measured, deviation: devZ, tolerancePlus: z.tolPlus, toleranceMinus: z.tolMinus, outOfTol: zOOT, min: z.min, max: z.max })
       if (df) {
-        const devDF = num((obj['TruePositionDFLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation']?.['@_value'])
+        const devDF = num(((obj['TruePositionDFLocation'] as Record<string, unknown>)?.['DeviationOfTPLocation'] as Record<string, unknown>)?.['@_value'])
         const dfOOT = devDF < -df.tolMinus || devDF > df.tolPlus
         axes.push({ axis: 'DF', nominal: df.nominal, measured: df.measured, deviation: devDF, tolerancePlus: df.tolPlus, toleranceMinus: df.tolMinus, outOfTol: dfOOT, min: df.min, max: df.max })
       }

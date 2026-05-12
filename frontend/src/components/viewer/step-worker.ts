@@ -66,7 +66,7 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
         meshes.push({ verts, norms, name: m.name ?? `Part ${mi + 1}` })
       }
 
-      self.postMessage({ type: 'parse-ok', id, meshes }, transfers)
+      self.postMessage({ type: 'parse-ok', id, meshes }, { transfer: transfers })
     } catch (err: any) {
       self.postMessage({ type: 'parse-error', id, error: err?.message ?? 'Parse mislukt' })
     }
