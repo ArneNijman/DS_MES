@@ -1,5 +1,6 @@
 # Installeert de CNC Agent als Windows Taakplanner taak
-# Uitvoeren als Administrator: Right-click > Run as administrator
+# Uitvoeren als Administrator via PowerShell:
+#   powershell -ExecutionPolicy Bypass -File install-scheduler.ps1
 #
 # De agent draait continu (geen --once):
 #   - Synct automatisch elke 30 minuten
@@ -22,8 +23,10 @@ $Action = New-ScheduledTaskAction `
     -Argument "--env-file=`"$EnvFile`" `"$ScriptPath`"" `
     -WorkingDirectory $AgentDir
 
-# Starten bij inloggen (blijft dan actief)
-$Trigger = New-ScheduledTaskTrigger -AtLogOn
+# Starten bij opstarten én bij inloggen (zodat agent ook draait zonder actieve sessie)
+$TriggerBoot  = New-ScheduledTaskTrigger -AtStartup
+$TriggerLogon = New-ScheduledTaskTrigger -AtLogOn
+$Trigger = @($TriggerBoot, $TriggerLogon)
 
 $Settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 0) `

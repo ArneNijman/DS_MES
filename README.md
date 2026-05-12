@@ -6,20 +6,36 @@ Een event-driven MES dat als operationele intelligentielaag bovenop Microsoft Bu
 
 ---
 
-## Installatie
+## Architectuur — twee machines
+
+De installatie bestaat uit twee onderdelen die op **aparte machines** draaien:
+
+```
+┌──────────────────────────────────┐     ┌──────────────────────────────────┐
+│  Linux server (Ubuntu/Debian)    │     │  Windows PC bij CNC-machines     │
+│                                  │     │                                  │
+│  Docker Compose:                 │◄────│  cnc-agent/                      │
+│  • Frontend  (React + Nginx)     │     │  • cnc-agent.js                  │
+│  • Backend   (Fastify + Node)    │     │  • install-scheduler.ps1         │
+│  • PostgreSQL 16                 │     │  • run.bat                       │
+│  • Redis 7                       │     │                                  │
+│                                  │     │  Vereist: Node.js 22 + TNCremo   │
+└──────────────────────────────────┘     └──────────────────────────────────┘
+```
+
+> **Let op:** de bestanden in `cnc-agent/` (`.ps1`, `.bat`) zijn **uitsluitend voor de Windows PC** en hoeven niet op de Linux server te staan. Op de Linux server draait alleen Docker.
+
+---
+
+## Installatie — Linux server
 
 ### Wat je nodig hebt
 
-**Linux server** (Ubuntu 22.04 of Debian 12 aanbevolen)
+- Ubuntu 22.04 / Debian 12 (of nieuwer)
 - Docker Engine 24+ en Docker Compose v2
 - Git
 - Poort 8080 open in de firewall
 - Netwerktoegang naar de Windows share met WinTool database (optioneel)
-
-**Windows PC bij de CNC-machines** (aparte machine)
-- Node.js 22 LTS
-- Heidenhain TNCremo (levert TNCcmd.exe)
-- Netwerktoegang naar de Linux server op poort 8080
 
 ---
 
@@ -28,8 +44,6 @@ Een event-driven MES dat als operationele intelligentielaag bovenop Microsoft Bu
 ```bash
 sudo apt update && sudo apt upgrade -y
 ```
-
-✓ Klaar als er geen foutmeldingen zijn.
 
 ---
 
@@ -46,8 +60,6 @@ sudo usermod -aG docker $USER
 docker --version          # bijv. Docker version 26.0.0
 docker compose version    # bijv. Docker Compose version v2.x
 ```
-
-✓ Klaar als beide commando's een versienummer tonen.
 
 ---
 
@@ -73,15 +85,13 @@ Het script begeleidt je door de rest:
 - Secrets worden automatisch gegenereerd
 - WinTool netwerkshare configureren (optioneel, ook later te doen via Admin)
 - Docker images bouwen en starten
-- Admin-inloggegevens worden aan het einde duidelijk getoond
+- Admin-inloggegevens worden aan het einde getoond
 
 **Sla het getoonde wachtwoord op — het wordt niet opnieuw getoond.**
 
 ---
 
 ### Updates uitrollen
-
-Als er een nieuwe versie beschikbaar is:
 
 ```bash
 cd DS_MES
@@ -92,9 +102,9 @@ Data (database, uploads) blijft altijd behouden.
 
 ---
 
-## CNC Agent instellen (Windows PC bij de machines)
+## CNC Agent instellen — Windows PC bij de machines
 
-De CNC agent draait op de Windows PC die verbinding heeft met de Heidenhain CNC-machines. Hij haalt automatisch de gereedschapstabel op en stuurt die naar het MES.
+De CNC agent draait op de **Windows PC** die verbinding heeft met de Heidenhain CNC-machines. Hij haalt automatisch de gereedschapstabel op en stuurt die naar het MES.
 
 **Stap 1** — Installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
 
@@ -115,9 +125,14 @@ Dubbelklik `cnc-agent\run.bat`
 Het venster moet "Sync voltooid" tonen en daarna sluiten.
 
 **Stap 4** — Installeer als automatische achtergrondtaak:
-Rechtsklik `cnc-agent\install-scheduler.ps1` → "Uitvoeren als administrator"
+Open PowerShell als administrator en voer uit:
+```
+powershell -ExecutionPolicy Bypass -File cnc-agent\install-scheduler.ps1
+```
 
-De agent draait nu automatisch op de achtergrond en synchroniseert elke 30 minuten.
+De agent draait nu automatisch op de achtergrond en synchroniseert bij elke Windows-opstart en elke 30 minuten daarna.
+
+> Zie `cnc-agent\README.md` voor uitgebreide documentatie, probleemoplossing en de werking van de Sync-knop in de kiosk.
 
 ---
 
@@ -133,43 +148,55 @@ De gereedschapsdatabase uit WinTool kan worden gekoppeld via een netwerkshare.
 
 ---
 
-## Structuur
+## Modules
+
+### Kiosk — werkvloer touch-interface
+
+| Module | Status |
+|--------|--------|
+| Aanmeldscherm (medewerkers + PIN) | Beschikbaar |
+| Product Setup | Beschikbaar |
+| Meet Setup | Beschikbaar |
+| Tooling bibliotheek | Beschikbaar |
+| NCR-registraties | Beschikbaar |
+| Preventieve maatregelen | Beschikbaar |
+| Klantmeldingen | Beschikbaar |
+| Meetmiddelen + kalibratie | Beschikbaar |
+| Mijn taken | Beschikbaar |
+| Mijn meldingen | Beschikbaar |
+
+### Admin — beheerpaneel
+
+| Module | Status |
+|--------|--------|
+| BC Configuratie + OAuth2 koppeling | Beschikbaar |
+| BC Veldmapping (auto-detectie) | Beschikbaar |
+| Medewerkersbeheer (CRUD, PIN, sync) | Beschikbaar |
+| Machines beheer | Beschikbaar |
+| CNC Machining (tooling beheer) | Beschikbaar |
+
+---
+
+## Projectstructuur
 
 ```
 ├── backend/          # Fastify API + worker
-│   ├── src/
-│   │   ├── bc/       # Business Central koppeling (MSAL + poller)
-│   │   ├── cnc/      # CNC tooling (parser + bibliotheek import)
-│   │   ├── db/       # Schema (Drizzle) + migraties
-│   │   ├── routes/   # API routes (admin + kiosk)
-│   │   └── worker/   # BullMQ achtergrondtaken
+│   └── src/
+│       ├── bc/       # Business Central koppeling (MSAL + poller)
+│       ├── cnc/      # CNC tooling (parser + bibliotheek import)
+│       ├── db/       # Schema (Drizzle) + migraties
+│       ├── routes/   # API routes (admin + kiosk)
+│       └── worker/   # BullMQ achtergrondtaken
 ├── frontend/         # React kiosk + admin interface
 │   └── src/
-│       ├── routes/
-│       │   ├── admin/    # Beheerpagina's
-│       │   └── kiosk/    # Werkvloer touch-interface
+│       └── routes/
+│           ├── admin/    # Beheerpagina's
+│           └── kiosk/    # Werkvloer touch-interface
 ├── cnc-agent/        # Windows agent voor CNC-machine koppeling
 ├── install.sh        # Eerste installatie op Linux server
 ├── update.sh         # Updates uitrollen
 └── docker-compose.yml
 ```
-
----
-
-## Modules
-
-| Module | Status |
-|--------|--------|
-| Kiosk aanmeldscherm (medewerkers + PIN) | Beschikbaar |
-| Admin: BC Configuratie + OAuth2 koppeling | Beschikbaar |
-| Admin: Medewerkersbeheer (CRUD, PIN, sync) | Beschikbaar |
-| Admin: BC Veldmapping (auto-detectie) | Beschikbaar |
-| Machines: onderhoud, storingen, CNC | Beschikbaar |
-| NCR-registraties + preventieve acties | Beschikbaar |
-| Klantmeldingen | Beschikbaar |
-| Meetmiddelen + kalibratie | Beschikbaar |
-| Taken | Beschikbaar |
-| CNC tooling bibliotheek (WinTool) | Beschikbaar |
 
 ---
 

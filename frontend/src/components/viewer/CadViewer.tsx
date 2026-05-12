@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { EMPLOYEE_TOKEN_KEY, ADMIN_TOKEN_KEY } from '@/lib/auth'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -13,6 +13,7 @@ interface InspectionFeature {
   id: string
   name: string
   type: string
+  dimensionType?: string
   nominalX: number
   nominalY: number
   nominalZ: number
@@ -23,6 +24,9 @@ interface InspectionFeature {
   tolerancePlus: number
   toleranceMinus: number
   status: 'pass' | 'fail'
+  axisI?: number
+  axisJ?: number
+  axisK?: number
 }
 
 interface CadViewerProps {
@@ -222,6 +226,12 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   const inspGroupRef        = useRef<THREE.Group | null>(null)
   const inspMarkersGroupRef = useRef<THREE.Group | null>(null)
   const devVectorsGroupRef  = useRef<THREE.Group | null>(null)
+  const inspMarkerMapRef    = useRef<Map<string, THREE.Mesh>>(new Map())
+  const labelDivRefs        = useRef<Map<string, HTMLDivElement>>(new Map())
+  const labelLineRefs       = useRef<Map<string, SVGLineElement>>(new Map())
+  const labelOffsetsRef     = useRef<Map<string, { dx: number; dy: number }>>(new Map())
+  const activeDragRef       = useRef<{ id: string; startMx: number; startMy: number; startDx: number; startDy: number } | null>(null)
+  const showXYZLabelsRef    = useRef(false)
 
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState<string | null>(null)
@@ -258,6 +268,41 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   const [showHeatmap, setShowHeatmap]               = useState(false)
   const [showDevVectors, setShowDevVectors]         = useState(false)
   const [hoveredFeature, setHoveredFeature]         = useState<InspectionFeature | null>(null)
+  const [showInspPanel, setShowInspPanel]           = useState(false)
+  const [visibleFeatureIds, setVisibleFeatureIds]   = useState<Set<string>>(new Set())
+  const [inspFilter, setInspFilter]                 = useState<'all' | 'fail' | 'pass'>('all')
+  const [showXYZLabels, setShowXYZLabels]           = useState(false)
+
+  // Dedupleer op ID — dezelfde feature kan meerdere keren in de XML voorkomen
+  const dedupedPoints = useMemo(() => {
+    if (!inspectionPoints) return []
+    const seen = new Set<string>()
+    return inspectionPoints.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true })
+  }, [inspectionPoints])
+
+  useEffect(() => { showXYZLabelsRef.current = showXYZLabels }, [showXYZLabels])
+
+  // Globale drag-handlers voor sleepbare labels
+  useEffect(() => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      if (!activeDragRef.current) return
+      const mx = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX
+      const my = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY
+      const { id, startMx, startMy, startDx, startDy } = activeDragRef.current
+      labelOffsetsRef.current.set(id, { dx: startDx + mx - startMx, dy: startDy + my - startMy })
+    }
+    const onUp = () => { activeDragRef.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+    window.addEventListener('touchmove', onMove as EventListener, { passive: false })
+    window.addEventListener('touchend',  onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+      window.removeEventListener('touchmove', onMove as EventListener)
+      window.removeEventListener('touchend',  onUp)
+    }
+  }, [])
 
   // ── Inspection point cloud + feature markers ────────────────────────────
   useEffect(() => {
@@ -265,56 +310,43 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     if (!scene) return
     if (inspGroupRef.current) { scene.remove(inspGroupRef.current); inspGroupRef.current = null }
     inspMarkersGroupRef.current = null
-    if (!inspectionPoints || inspectionPoints.length === 0) { setInspStats(null); return }
+    if (!dedupedPoints || dedupedPoints.length === 0) { setInspStats(null); return }
 
-    const mesh   = bomMeshRef.current
-    const box    = modelBoxRef.current
-    const diag   = box.getSize(new THREE.Vector3()).length()
-    const spread = diag * 0.05
-    const ptSize = Math.max(diag * 0.005, 0.2)
-    const mrkR   = Math.max(diag * 0.007, 0.25)
-    const invMtx = mesh ? new THREE.Matrix4().copy(mesh.matrixWorld).invert() : null
+    const pts = dedupedPoints
 
-    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
-    const minDev    = Math.min(...inspectionPoints.map(p => p.deviation))
-    const maxDev    = Math.max(...inspectionPoints.map(p => p.deviation))
+    const box  = modelBoxRef.current
+    if (box.isEmpty()) return   // model nog niet geladen — effect loopt opnieuw als stats verandert
+
+    const globalTol = Math.max(...pts.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+    const minDev    = Math.min(...pts.map(p => p.deviation))
+    const maxDev    = Math.max(...pts.map(p => p.deviation))
     setInspStats({ minDev, maxDev, tol: globalTol })
+
+    // Gebruik ruwe coördinaten — zelfde stelsel als CAD model
+    const inspBox = new THREE.Box3()
+    for (const pt of pts) inspBox.expandByPoint(new THREE.Vector3(pt.nominalX, pt.nominalY, pt.nominalZ))
+
+    // Sfergrootte op basis van het gecombineerde bounding box
+    const combinedBox = box.clone().union(inspBox)
+    const diag  = combinedBox.getSize(new THREE.Vector3()).length()
+    const ptSize = Math.max(diag * 0.003, 0.5)
+    const mrkR  = Math.max(ptSize * 0.7, 0.3)  // iets groter dan de kleurmap-dots
 
     const rootGroup    = new THREE.Group()
     const cloudGroup   = new THREE.Group()
     const markersGroup = new THREE.Group()
     rootGroup.add(cloudGroup, markersGroup)
 
-    // ── 1) Colormap point cloud ──────────────────────────────────────────
+    // ── 1) Colormap punt-cloud ───────────────────────────────────────────
     const posBuf: number[] = []
     const colBuf: number[] = []
-    for (const pt of inspectionPoints) {
-      const center = new THREE.Vector3(
-        pt.measuredX || pt.nominalX,
-        pt.measuredY || pt.nominalY,
-        pt.measuredZ || pt.nominalZ,
-      )
+    for (const pt of pts) {
+      const x = pt.measuredX || pt.nominalX
+      const y = pt.measuredY || pt.nominalY
+      const z = pt.measuredZ || pt.nominalZ
       const col = deviationToJetColor(pt.deviation, globalTol)
-      for (let i = 0; i < 100; i++) {
-        const theta  = Math.random() * Math.PI * 2
-        const phi    = Math.acos(2 * Math.random() - 1)
-        const r      = spread * Math.cbrt(Math.random())
-        const sample = center.clone().add(new THREE.Vector3(
-          r * Math.sin(phi) * Math.cos(theta),
-          r * Math.sin(phi) * Math.sin(theta),
-          r * Math.cos(phi),
-        ))
-        let finalPos = sample
-        if (mesh && invMtx) {
-          const local  = sample.clone().applyMatrix4(invMtx)
-          const target = { point: new THREE.Vector3(), distance: Infinity }
-          ;(mesh.geometry as any).boundsTree?.closestPointToPoint(local, target)
-          if (isFinite(target.distance) && target.distance < spread * 3)
-            finalPos = target.point.clone().applyMatrix4(mesh.matrixWorld)
-        }
-        posBuf.push(finalPos.x, finalPos.y, finalPos.z)
-        colBuf.push(col.r, col.g, col.b)
-      }
+      posBuf.push(x, y, z)
+      colBuf.push(col.r, col.g, col.b)
     }
     const cloudGeo = new THREE.BufferGeometry()
     cloudGeo.setAttribute('position', new THREE.Float32BufferAttribute(posBuf, 3))
@@ -322,42 +354,76 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     cloudGroup.add(new THREE.Points(cloudGeo, new THREE.PointsMaterial({ size: ptSize, vertexColors: true, sizeAttenuation: true })))
     cloudGroup.visible = showInspection
 
-    // ── 2) Feature markers (zichtbaar, togglebaar, hover-detectie) ───────
-    for (const pt of inspectionPoints) {
-      const col    = deviationToJetColor(pt.deviation, globalTol)
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(mrkR, 8, 8),
-        new THREE.MeshStandardMaterial({ color: col, metalness: 0.1, roughness: 0.5 }),
-      )
-      sphere.position.set(pt.nominalX, pt.nominalY, pt.nominalZ)
-      sphere.userData = { feature: pt }
-      markersGroup.add(sphere)
+    // ── 2) Feature markers ───────────────────────────────────────────────
+    const isCyl = (pt: typeof pts[0]) =>
+      /cyl/i.test(pt.name) || /cyl/i.test(pt.dimensionType ?? '')
+
+    const newMarkerMap = new Map<string, THREE.Mesh>()
+    for (const pt of pts) {
+      const col        = deviationToJetColor(pt.deviation, globalTol)
+      const mat        = new THREE.MeshStandardMaterial({ color: col, metalness: 0.1, roughness: 0.5 })
+      const cylFeature = isCyl(pt)
+      const geo        = cylFeature
+        ? new THREE.TorusGeometry(mrkR * 1.4, mrkR * 0.3, 8, 24)
+        : new THREE.SphereGeometry(mrkR, 8, 8)
+      const marker = new THREE.Mesh(geo, mat)
+      marker.position.set(pt.nominalX, pt.nominalY, pt.nominalZ)
+      // Orient torus so its hole axis aligns with the cylinder axis (default torus hole = Z)
+      if (cylFeature && pt.axisI != null && pt.axisJ != null && pt.axisK != null) {
+        const axisVec = new THREE.Vector3(pt.axisI, pt.axisJ, pt.axisK).normalize()
+        const zAxis   = new THREE.Vector3(0, 0, 1)
+        if (axisVec.lengthSq() > 0.001) {
+          marker.quaternion.setFromUnitVectors(zAxis, axisVec)
+        }
+      }
+      marker.userData = { feature: pt }
+      newMarkerMap.set(pt.id, marker)
+      markersGroup.add(marker)
     }
-    markersGroup.visible = showFeatureMarkers
+    inspMarkerMapRef.current = newMarkerMap
+    labelOffsetsRef.current  = new Map()   // reset sleepposities bij nieuw XML
+    markersGroup.visible = true
+    setVisibleFeatureIds(new Set(pts.map(p => p.id)))
 
     scene.add(rootGroup)
     inspGroupRef.current        = cloudGroup
     inspMarkersGroupRef.current = markersGroup
+
+    // Camera past op gecombineerde bounding box (model + meetpunten)
+    if (cameraRef.current && controlsRef.current) {
+      fitCameraToBox(cameraRef.current, controlsRef.current, combinedBox)
+    }
 
     return () => {
       scene.remove(rootGroup)
       inspGroupRef.current        = null
       inspMarkersGroupRef.current = null
     }
-  }, [inspectionPoints])
+  }, [dedupedPoints, stats])
 
-  useEffect(() => { if (inspGroupRef.current)        inspGroupRef.current.visible        = showInspection    }, [showInspection])
-  useEffect(() => { if (inspMarkersGroupRef.current) inspMarkersGroupRef.current.visible = showFeatureMarkers }, [showFeatureMarkers])
+  useEffect(() => { if (inspGroupRef.current) inspGroupRef.current.visible = showInspection }, [showInspection])
+
+  // ── Per-feature visibility — beheert ook de groep ────────────────────────
+  // markersGroup.visible hoeft nooit apart gezet te worden:
+  // de groep is zichtbaar zodra er ≥1 feature zichtbaar is.
+  useEffect(() => {
+    const grp = inspMarkersGroupRef.current
+    if (!grp) return
+    grp.visible = true   // groep altijd aan; individuele sferen regelen de zichtbaarheid
+    inspMarkerMapRef.current.forEach((mesh, id) => {
+      mesh.visible = visibleFeatureIds.has(id)
+    })
+  }, [visibleFeatureIds])
 
   // ── Vertex-colormap heatmap (IDW interpolatie op meshoppervlak) ──────────
   useEffect(() => {
     if (!mainGroupRef.current) return
     const meshes: THREE.Mesh[] = []
     mainGroupRef.current.traverse(o => {
-      if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) meshes.push(o as THREE.Mesh)
+      if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry) && !(o.geometry instanceof THREE.TorusGeometry)) meshes.push(o as THREE.Mesh)
     })
 
-    if (!showHeatmap || !inspectionPoints || inspectionPoints.length === 0) {
+    if (!showHeatmap || dedupedPoints.length === 0) {
       // herstel standaard materiaal
       meshes.forEach(m => {
         m.geometry.deleteAttribute('color')
@@ -366,7 +432,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
       return
     }
 
-    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+    const globalTol = Math.max(...dedupedPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
 
     meshes.forEach(m => {
       const pos    = m.geometry.attributes.position
@@ -376,7 +442,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
         const vx = pos.getX(i), vy = pos.getY(i), vz = pos.getZ(i)
         let wSum = 0, devSum = 0
 
-        for (const pt of inspectionPoints) {
+        for (const pt of dedupedPoints) {
           const dx = vx - pt.nominalX, dy = vy - pt.nominalY, dz = vz - pt.nominalZ
           const d2 = dx*dx + dy*dy + dz*dz
           if (d2 < 0.0001) { devSum = pt.deviation; wSum = 1; break }
@@ -400,23 +466,23 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
         side: THREE.DoubleSide,
       })
     })
-  }, [inspectionPoints, showHeatmap, viewMode, opacity])
+  }, [dedupedPoints, showHeatmap, viewMode, opacity])
 
   // ── Deviatievectoren (nominaal → gemeten, uitvergroot) ───────────────────
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
     if (devVectorsGroupRef.current) { scene.remove(devVectorsGroupRef.current); devVectorsGroupRef.current = null }
-    if (!showDevVectors || !inspectionPoints || inspectionPoints.length === 0) return
+    if (!showDevVectors || dedupedPoints.length === 0) return
 
     const box    = modelBoxRef.current
+    if (box.isEmpty()) return
     const diag   = box.getSize(new THREE.Vector3()).length()
-    // Vergrotingsfactor: deviaties zijn typisch 0.001–0.15mm op een 100mm model → ×100 voor zichtbaarheid
     const amplify = Math.max(diag * 0.5, 20)
-    const globalTol = Math.max(...inspectionPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
+    const globalTol = Math.max(...dedupedPoints.map(p => Math.max(Math.abs(p.tolerancePlus), Math.abs(p.toleranceMinus))), 0.001)
 
     const group = new THREE.Group()
-    for (const pt of inspectionPoints) {
+    for (const pt of dedupedPoints) {
       const nom  = new THREE.Vector3(pt.nominalX, pt.nominalY, pt.nominalZ)
       const meas = new THREE.Vector3(pt.measuredX || pt.nominalX, pt.measuredY || pt.nominalY, pt.measuredZ || pt.nominalZ)
       const diff = meas.clone().sub(nom)
@@ -438,7 +504,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
     scene.add(group)
     devVectorsGroupRef.current = group
     return () => { scene.remove(group); devVectorsGroupRef.current = null }
-  }, [inspectionPoints, showDevVectors])
+  }, [dedupedPoints, showDevVectors])
 
   // ── Init Three.js ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -496,6 +562,37 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
       frameRef.current = requestAnimationFrame(animate)
       controls.update()
       renderer.render(scene, camera)
+      // XYZ-labels + verbindingslijnen: directe DOM-updates zonder React re-render
+      if (showXYZLabelsRef.current) {
+        const w = canvas.clientWidth, h = canvas.clientHeight
+        const LABEL_GAP = 52  // px standaard boven de bol
+        labelDivRefs.current.forEach((div, id) => {
+          const mesh = inspMarkerMapRef.current.get(id)
+          const line = labelLineRefs.current.get(id)
+          const hide = () => { div.style.display = 'none'; if (line) line.style.display = 'none' }
+          if (!mesh || !mesh.visible) { hide(); return }
+          const v = mesh.position.clone().project(camera)
+          if (v.z > 1) { hide(); return }
+          const sx = (v.x + 1) / 2 * w
+          const sy = -(v.y - 1) / 2 * h
+          const off = labelOffsetsRef.current.get(id) ?? { dx: 0, dy: 0 }
+          // Label: onderkant (via translateY(-100%)) op (lx, ly)
+          const lx = sx + off.dx
+          const ly = sy - LABEL_GAP + off.dy
+          div.style.display   = 'block'
+          div.style.left      = `${lx}px`
+          div.style.top       = `${ly}px`
+          div.style.transform = 'translateX(-50%) translateY(-100%)'
+          // Lijn: bol → onderkant label
+          if (line) {
+            line.style.display = 'block'
+            line.setAttribute('x1', String(Math.round(sx)))
+            line.setAttribute('y1', String(Math.round(sy)))
+            line.setAttribute('x2', String(Math.round(lx)))
+            line.setAttribute('y2', String(Math.round(ly)))
+          }
+        })
+      }
     }
     animate()
 
@@ -667,7 +764,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
 
         // make main model semi-transparent blue
         mainGroupRef.current?.traverse(o => {
-          if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) {
+          if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry) && !(o.geometry instanceof THREE.TorusGeometry)) {
             const m = o.material as THREE.MeshPhongMaterial
             m.color.set(0x3366ff)
             m.transparent = true
@@ -686,7 +783,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
       cmpLoader?.cancel()
       // restore main model material on cleanup
       mainGroupRef.current?.traverse(o => {
-        if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) {
+        if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry) && !(o.geometry instanceof THREE.TorusGeometry)) {
           const m = o.material as THREE.MeshPhongMaterial
           m.color.set(0x88aacc)
           m.transparent = opacity < 1
@@ -701,7 +798,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
   useEffect(() => {
     if (showHeatmap) return  // heatmap effect beheert het materiaal
     mainGroupRef.current?.traverse(o => {
-      if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry)) {
+      if (o instanceof THREE.Mesh && !(o.geometry instanceof THREE.SphereGeometry) && !(o.geometry instanceof THREE.TorusGeometry)) {
         o.material = buildMaterial(viewMode, opacity)
       }
     })
@@ -824,7 +921,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     // hover over feature markers
-    if (inspMarkersGroupRef.current && showFeatureMarkers) {
+    if (inspMarkersGroupRef.current && visibleFeatureIds.size > 0) {
       const canvas = canvasRef.current!
       const rect   = canvas.getBoundingClientRect()
       const ndc    = new THREE.Vector2(
@@ -990,11 +1087,15 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
             </button>
           </Tip>
         )}
-        {inspectionPoints && inspectionPoints.length > 0 && (<>
+        {dedupedPoints.length > 0 && (<>
           <ToolBtn active={showInspection}     onClick={() => setShowInspection((v: boolean) => !v)}     label="Kleurmap"  tooltip="Colormap punt-cloud — toon of verberg de gekleurde meetpunten op het model" />
-          <ToolBtn active={showFeatureMarkers} onClick={() => setShowFeatureMarkers((v: boolean) => !v)} label="Punten"    tooltip="Feature markers — toon of verberg de meetpunt-bollen (met hover tooltip)" />
+          <ToolBtn active={visibleFeatureIds.size > 0} onClick={() => {
+            if (visibleFeatureIds.size > 0) setVisibleFeatureIds(new Set())
+            else setVisibleFeatureIds(new Set(dedupedPoints.map(p => p.id)))
+          }} label="Punten" tooltip="Feature markers — toon of verberg alle meetpunt-bollen" />
           <ToolBtn active={showHeatmap}        onClick={() => setShowHeatmap((v: boolean) => !v)}        label="Heatmap"   tooltip="Heatmap — kleurt het modeloppervlak zelf via IDW-interpolatie van de meetpunten" />
           <ToolBtn active={showDevVectors}     onClick={() => setShowDevVectors((v: boolean) => !v)}     label="Vectoren"  tooltip="Deviatievectoren — pijlen van nominaal naar gemeten positie (uitvergroot)" />
+          <ToolBtn active={showInspPanel}      onClick={() => setShowInspPanel((v: boolean) => !v)}      label={`Lijst (${dedupedPoints.length})`} tooltip="Meetpunten-lijst — selecteer welke punten zichtbaar zijn in het 3D-model" />
         </>)}
       </div>
 
@@ -1043,7 +1144,7 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
       )}
 
       {/* Colormap legenda */}
-      {inspStats && (showInspection || showFeatureMarkers) && (
+      {inspStats && (showInspection || visibleFeatureIds.size > 0) && (
         <div className="absolute top-10 right-2 z-20 flex flex-col items-end gap-0.5 pointer-events-none select-none">
           {/* waarde-labels + balk */}
           <div className="flex items-stretch gap-1.5">
@@ -1063,6 +1164,86 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
           <div className="text-[9px] text-gray-400 mt-0.5">tol ±{inspStats.tol.toFixed(3)} mm</div>
         </div>
       )}
+
+      {/* Meetpunten-panel */}
+      {showInspPanel && dedupedPoints.length > 0 && (() => {
+        const filtered = dedupedPoints.filter(p =>
+          inspFilter === 'all' ? true : inspFilter === 'fail' ? p.status === 'fail' : p.status === 'pass'
+        )
+        const allVisible   = filtered.every(p => visibleFeatureIds.has(p.id))
+        const noneVisible  = filtered.every(p => !visibleFeatureIds.has(p.id))
+        const failCount    = dedupedPoints.filter(p => p.status === 'fail').length
+        const passCount    = dedupedPoints.filter(p => p.status === 'pass').length
+
+        const toggleOne = (id: string) => setVisibleFeatureIds(prev => {
+          const next = new Set(prev)
+          if (next.has(id)) next.delete(id); else next.add(id)
+          return next
+        })
+        const toggleAll = () => setVisibleFeatureIds(prev => {
+          const next = new Set(prev)
+          if (allVisible) filtered.forEach(p => next.delete(p.id))
+          else            filtered.forEach(p => next.add(p.id))
+          return next
+        })
+
+        return (
+          <div className="absolute top-9 left-0 z-20 w-64 flex flex-col bg-white/97 border border-gray-200 shadow-lg"
+               style={{ maxHeight: 'calc(100% - 80px)' }}>
+            {/* Header */}
+            <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
+              <span className="text-[11px] font-semibold text-gray-700 flex-1">Meetpunten</span>
+              <button onClick={toggleAll}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-teal-50 text-gray-500 hover:text-teal-700">
+                {allVisible ? 'Verbergen' : 'Tonen'}
+              </button>
+              <button
+                onClick={() => setShowXYZLabels(v => !v)}
+                className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold transition-colors ${showXYZLabels ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}
+                title="Toon X/Y/Z waarden als labels in het 3D model">
+                XYZ
+              </button>
+              <button onClick={() => setShowInspPanel(false)} className="text-gray-400 hover:text-gray-600 text-xs px-1">✕</button>
+            </div>
+            {/* Filter tabs */}
+            <div className="flex text-[10px] border-b border-gray-100">
+              {(['all', 'fail', 'pass'] as const).map(f => (
+                <button key={f} onClick={() => setInspFilter(f)}
+                  className={`flex-1 py-1 font-medium transition-colors ${inspFilter === f ? 'bg-teal-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+                  {f === 'all' ? `Alle (${dedupedPoints.length})` : f === 'fail' ? `❌ Fail (${failCount})` : `✓ OK (${passCount})`}
+                </button>
+              ))}
+            </div>
+            {/* Lijst */}
+            <div className="overflow-y-auto flex-1 text-[11px]">
+              {filtered.map(pt => {
+                const visible = visibleFeatureIds.has(pt.id)
+                return (
+                  <div key={pt.id}
+                    className={`flex items-center gap-1.5 px-2 py-1 border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${!visible ? 'opacity-40' : ''}`}
+                    onClick={() => toggleOne(pt.id)}>
+                    {/* Oog-icoon */}
+                    <span className={`text-[13px] select-none ${visible ? 'text-teal-600' : 'text-gray-300'}`}>
+                      {visible ? '●' : '○'}
+                    </span>
+                    {/* Status dot */}
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pt.status === 'fail' ? 'bg-red-500' : 'bg-green-500'}`} />
+                    {/* Naam */}
+                    <span className="flex-1 truncate text-gray-700 font-medium">{pt.name}</span>
+                    {/* Deviatie */}
+                    <span className={`font-mono text-[10px] ${pt.deviation > (pt.tolerancePlus || 0.15) ? 'text-red-500' : 'text-gray-400'}`}>
+                      {pt.deviation >= 0 ? '+' : ''}{pt.deviation.toFixed(3)}
+                    </span>
+                  </div>
+                )
+              })}
+              {filtered.length === 0 && (
+                <div className="px-3 py-4 text-center text-gray-400 text-[11px]">Geen features in deze filter</div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Coordinate readout */}
       {coordReadout && (
@@ -1246,6 +1427,65 @@ export default function CadViewer({ url, fileName, compareUrl, compareFileName, 
           </div>
         )}
       </div>
+
+      {/* XYZ labels — positionering via animation loop, content via React */}
+      {/* SVG overlay voor verbindingslijnen van label naar bol */}
+      {showXYZLabels && (
+        <svg className="absolute inset-0 pointer-events-none z-29" style={{ width: '100%', height: '100%' }}>
+          {dedupedPoints.filter(p => visibleFeatureIds.has(p.id)).map(pt => (
+            <line
+              key={pt.id}
+              ref={el => { if (el) labelLineRefs.current.set(pt.id, el as unknown as SVGLineElement); else labelLineRefs.current.delete(pt.id) }}
+              stroke="#9ca3af"
+              strokeWidth="1"
+              strokeDasharray="3 2"
+              style={{ display: 'none' }}
+            />
+          ))}
+        </svg>
+      )}
+
+      {/* XYZ label kaartjes — positie via animation loop, sleepbaar */}
+      {showXYZLabels && dedupedPoints.filter(p => visibleFeatureIds.has(p.id)).map(pt => (
+        <div
+          key={pt.id}
+          ref={el => { if (el) labelDivRefs.current.set(pt.id, el as HTMLDivElement); else labelDivRefs.current.delete(pt.id) }}
+          className="absolute z-30 select-none"
+          style={{ display: 'none', cursor: 'grab' }}
+          onMouseDown={e => {
+            e.stopPropagation()
+            const off = labelOffsetsRef.current.get(pt.id) ?? { dx: 0, dy: 0 }
+            activeDragRef.current = { id: pt.id, startMx: e.clientX, startMy: e.clientY, startDx: off.dx, startDy: off.dy }
+          }}
+          onTouchStart={e => {
+            e.stopPropagation()
+            const off = labelOffsetsRef.current.get(pt.id) ?? { dx: 0, dy: 0 }
+            activeDragRef.current = { id: pt.id, startMx: e.touches[0].clientX, startMy: e.touches[0].clientY, startDx: off.dx, startDy: off.dy }
+          }}
+        >
+          <div className="bg-white/95 border border-gray-300 rounded shadow-md px-1.5 py-1 text-[9px] leading-tight whitespace-nowrap">
+            <div className="font-semibold text-gray-800 mb-1">{pt.name}</div>
+            <table className="font-mono text-[9px] border-collapse">
+              <thead>
+                <tr className="text-gray-400">
+                  <td className="pr-1.5" />
+                  <td className="pr-2 text-right">NOM</td>
+                  <td className="text-right">MEAS</td>
+                </tr>
+              </thead>
+              <tbody>
+                {([['X', pt.nominalX, pt.measuredX], ['Y', pt.nominalY, pt.measuredY], ['Z', pt.nominalZ, pt.measuredZ]] as [string, number, number][]).map(([ax, nom, meas]) => (
+                  <tr key={ax}>
+                    <td className="pr-1.5 text-gray-400 font-semibold">{ax}</td>
+                    <td className="pr-2 text-right text-gray-600">{nom.toFixed(3)}</td>
+                    <td className={`text-right font-semibold ${Math.abs(meas - nom) > 0.5 ? 'text-orange-600' : 'text-gray-700'}`}>{meas.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
 
       {/* Loading overlay */}
       {loading && (

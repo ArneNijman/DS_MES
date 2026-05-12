@@ -108,10 +108,23 @@ interface Document {
   uploadedByName: string | null
 }
 
+interface InspectionAxis {
+  axis: string
+  nominal: number
+  measured: number
+  deviation: number
+  tolerancePlus: number
+  toleranceMinus: number
+  outOfTol: boolean
+  min?: number
+  max?: number
+}
+
 interface InspectionFeature {
   id: string
   name: string
   type: string
+  dimensionType: string
   nominalX: number
   nominalY: number
   nominalZ: number
@@ -122,6 +135,7 @@ interface InspectionFeature {
   tolerancePlus: number
   toleranceMinus: number
   status: 'pass' | 'fail'
+  axes?: InspectionAxis[]
 }
 
 interface InspectionResult {
@@ -992,7 +1006,7 @@ function SetupDetail({
         )}
         {openPortal === 'meting' && (
           <MeetPortalModal
-            docs={setup.documents.filter(d => d.documentType === 'meting_xml' || d.documentType === 'meting_rapport')}
+            docs={setup.documents.filter(d => ['meting_xml', 'meting_rapport', 'iges'].includes(d.documentType))}
             setupId={setupId}
             onClose={() => setOpenPortal(null)}
             onShowOnModel={(features) => { setInspectionPoints(features); setOpenPortal(null) }}
@@ -2126,17 +2140,19 @@ function MeetPortalModal({
   onShowOnModel: (features: InspectionFeature[]) => void
 }) {
   const qc = useQueryClient()
-  const xmlFileRef = useRef<HTMLInputElement>(null)
-  const rapFileRef = useRef<HTMLInputElement>(null)
-  const [innerTab, setInnerTab] = useState<'xml' | 'rapport'>('xml')
+  const xmlFileRef  = useRef<HTMLInputElement>(null)
+  const rapFileRef  = useRef<HTMLInputElement>(null)
+  const igesFileRef = useRef<HTMLInputElement>(null)
+  const [innerTab, setInnerTab] = useState<'xml' | 'rapport' | 'iges'>('xml')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedRapportageType, setSelectedRapportageType] = useState<string>('inmeten')
   const [selectedRapType, setSelectedRapType] = useState<string>('controle')
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
 
-  const xmlDocs = docs.filter(d => d.documentType === 'meting_xml')
-  const rapDocs = docs.filter(d => d.documentType === 'meting_rapport')
+  const xmlDocs  = docs.filter(d => d.documentType === 'meting_xml')
+  const rapDocs  = docs.filter(d => d.documentType === 'meting_rapport')
+  const igesDocs = docs.filter(d => d.documentType === 'iges')
 
   const { data: inspectionData, isLoading: inspLoading } = useQuery<InspectionResult>({
     queryKey: ['inspection-data', selectedDocId],
@@ -2184,7 +2200,7 @@ function MeetPortalModal({
 
         {/* Inner tabs */}
         <div className="flex border-b border-gray-100 shrink-0">
-          {(['xml', 'rapport'] as const).map(t => (
+          {(['xml', 'rapport', 'iges'] as const).map(t => (
             <button
               key={t}
               onClick={() => setInnerTab(t)}
@@ -2195,7 +2211,7 @@ function MeetPortalModal({
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
-              {t === 'xml' ? `XML bestanden (${xmlDocs.length})` : `Rapporten (${rapDocs.length})`}
+              {t === 'xml' ? `XML bestanden (${xmlDocs.length})` : t === 'rapport' ? `Rapporten (${rapDocs.length})` : `IGES bestanden (${igesDocs.length})`}
             </button>
           ))}
         </div>
@@ -2310,43 +2326,84 @@ function MeetPortalModal({
 
                     {/* Feature tabel */}
                     {inspectionData.features.length > 0 && (
-                      <div className="overflow-auto max-h-52 rounded-lg border border-gray-100">
+                      <div className="overflow-auto max-h-64 rounded-lg border border-gray-100">
                         <table className="w-full text-xs">
                           <thead className="bg-gray-50 sticky top-0">
                             <tr>
                               <th className="text-left px-3 py-2 font-semibold text-gray-500">Feature</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Nom.</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Gemeten</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Dev.</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Min</th>
-                              <th className="text-right px-3 py-2 font-semibold text-gray-500">Max</th>
-                              <th className="text-center px-3 py-2 font-semibold text-gray-500">OOT</th>
+                              <th className="text-left px-2 py-2 font-semibold text-gray-500">Dimensie</th>
+                              <th className="text-center px-2 py-2 font-semibold text-gray-500">T</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">+Tol</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">-Tol</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">Nom</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">MEAS</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">DEV</th>
+                              <th className="text-center px-2 py-2 font-semibold text-gray-500">OOT</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">MIN</th>
+                              <th className="text-right px-2 py-2 font-semibold text-gray-500">MAX</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-50">
+                          <tbody>
                             {inspectionData.features.map(f => {
-                              const nominal  = f.nominalX !== 0 ? f.nominalX  : (f.deviation !== 0 ? f.measuredX - f.deviation : null)
+                              const isFail = f.status === 'fail'
+                              const dimLabel = f.dimensionType || '—'
+                              if (f.axes && f.axes.length > 0) {
+                                return f.axes.map((ax, ai) => {
+                                  const axFail = ax.outOfTol
+                                  const devColor = axFail ? 'text-red-600' : ax.deviation > 0 ? 'text-orange-500' : ax.deviation < 0 ? 'text-blue-500' : 'text-gray-400'
+                                  const isT = ax.axis === 'T'
+                                  return (
+                                    <tr key={`${f.id}-${ax.axis}`} className={cn(
+                                      'border-t border-gray-50',
+                                      axFail ? 'bg-red-50' : isT ? 'bg-gray-50' : ''
+                                    )}>
+                                      <td className={cn('px-3 py-1 font-medium text-gray-800 max-w-[120px] truncate', ai > 0 && 'text-transparent select-none')}>
+                                        {ai === 0 ? f.name : '│'}
+                                      </td>
+                                      <td className={cn('px-2 py-1 text-xs text-gray-500 max-w-[100px] truncate', ai > 0 && 'text-transparent select-none')}>
+                                        {ai === 0 ? dimLabel : ''}
+                                      </td>
+                                      <td className={cn('px-2 py-1 text-center font-semibold', isT ? 'text-gray-600' : 'text-teal-700')}>{ax.axis}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-400">{ax.tolerancePlus >= 0 ? '+' : ''}{ax.tolerancePlus.toFixed(4)}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-400">{ax.toleranceMinus > 0 ? '+' : ''}{ax.toleranceMinus.toFixed(4)}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-500">{isT && ax.nominal === 0 ? '0' : ax.nominal.toFixed(4)}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-800">{ax.measured.toFixed(4)}</td>
+                                      <td className={cn('px-2 py-1 text-right font-mono font-semibold', devColor)}>
+                                        {ax.deviation >= 0 ? '+' : ''}{ax.deviation.toFixed(4)}
+                                      </td>
+                                      <td className="px-2 py-1 text-center">
+                                        {axFail
+                                          ? <X size={11} className="inline text-red-500" />
+                                          : <Check size={11} className="inline text-green-500" />}
+                                      </td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-400">{ax.min != null ? ax.min.toFixed(4) : '—'}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-gray-400">{ax.max != null ? ax.max.toFixed(4) : '—'}</td>
+                                    </tr>
+                                  )
+                                })
+                              }
+                              const nominal  = f.nominalX !== 0 ? f.nominalX : null
                               const measured = f.measuredX !== 0 ? f.measuredX : null
-                              const isFail   = f.status === 'fail'
+                              const devColor = isFail ? 'text-red-600' : f.deviation > 0 ? 'text-orange-500' : f.deviation < 0 ? 'text-blue-500' : 'text-gray-400'
                               return (
-                                <tr key={f.id} className={isFail ? 'bg-red-50' : ''}>
-                                  <td className="px-3 py-1.5 font-medium text-gray-800 max-w-[160px] truncate">{f.name}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono text-gray-500">
-                                    {nominal != null ? nominal.toFixed(4) : '—'}
-                                  </td>
-                                  <td className="px-3 py-1.5 text-right font-mono text-gray-800">
-                                    {measured != null ? measured.toFixed(4) : '—'}
-                                  </td>
-                                  <td className={cn('px-3 py-1.5 text-right font-mono font-semibold', isFail ? 'text-red-600' : f.deviation > 0 ? 'text-orange-500' : f.deviation < 0 ? 'text-blue-500' : 'text-gray-400')}>
+                                <tr key={f.id} className={cn('border-t border-gray-50', isFail ? 'bg-red-50' : '')}>
+                                  <td className="px-3 py-1.5 font-medium text-gray-800 max-w-[120px] truncate">{f.name}</td>
+                                  <td className="px-2 py-1.5 text-xs text-gray-500 max-w-[100px] truncate">{dimLabel}</td>
+                                  <td className="px-2 py-1.5 text-center font-semibold text-teal-700">—</td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-400">+{f.tolerancePlus.toFixed(4)}</td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-400">-{f.toleranceMinus.toFixed(4)}</td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-500">{nominal != null ? nominal.toFixed(4) : '—'}</td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-800">{measured != null ? measured.toFixed(4) : '—'}</td>
+                                  <td className={cn('px-2 py-1.5 text-right font-mono font-semibold', devColor)}>
                                     {f.deviation >= 0 ? '+' : ''}{f.deviation.toFixed(4)}
                                   </td>
-                                  <td className="px-3 py-1.5 text-right font-mono text-gray-400">{f.toleranceMinus.toFixed(4)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono text-gray-400">+{f.tolerancePlus.toFixed(4)}</td>
-                                  <td className="px-3 py-1.5 text-center">
+                                  <td className="px-2 py-1.5 text-center">
                                     {isFail
-                                      ? <X size={12} className="inline text-red-500" />
-                                      : <Check size={12} className="inline text-green-500" />}
+                                      ? <X size={11} className="inline text-red-500" />
+                                      : <Check size={11} className="inline text-green-500" />}
                                   </td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-400">—</td>
+                                  <td className="px-2 py-1.5 text-right font-mono text-gray-400">—</td>
                                 </tr>
                               )
                             })}
@@ -2369,6 +2426,68 @@ function MeetPortalModal({
                   </div>
                 ) : null}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* IGES tab */}
+        {innerTab === 'iges' && (
+          <div className="flex-1 overflow-auto flex flex-col">
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 shrink-0">
+              <button
+                onClick={() => igesFileRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                <Upload size={13} />
+                {uploading ? 'Bezig…' : 'IGES uploaden'}
+              </button>
+              <input
+                ref={igesFileRef}
+                type="file"
+                className="hidden"
+                accept=".igs,.iges"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleUpload(f, 'iges')
+                  e.target.value = ''
+                }}
+              />
+            </div>
+            {igesDocs.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-12 text-gray-300">
+                <FileText size={32} className="mb-2" />
+                <p className="text-sm">Nog geen IGES bestanden toegevoegd</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {igesDocs.map(doc => (
+                  <li key={doc.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
+                    <FileText size={16} className="text-gray-300 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
+                      </p>
+                    </div>
+                    <a
+                      href={doc.fileUrl}
+                      download={doc.fileName}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 shrink-0"
+                      title="Downloaden"
+                    >
+                      <Download size={14} />
+                    </a>
+                    <button
+                      onClick={() => deleteDoc.mutate(doc.id)}
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-200 hover:text-red-500 shrink-0 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

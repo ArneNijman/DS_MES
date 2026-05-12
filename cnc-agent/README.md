@@ -81,31 +81,38 @@ Als alles werkt, ga dan door naar stap 3.
 
 ### Stap 3 — Taakplanner installeren (eenmalig, als Administrator)
 
-Zodat de agent automatisch start bij Windows-login:
+Zodat de agent automatisch start bij Windows-opstart en bij inloggen:
 
-1. Rechtsklik op `install-scheduler.ps1`
-2. Kies **"Als administrator uitvoeren"**
-3. Bevestig de UAC-melding
+1. Open **PowerShell als administrator**
+   (Startmenu → zoek "PowerShell" → rechtsklik → "Als administrator uitvoeren")
+2. Navigeer naar de cnc-agent map:
+   ```
+   cd "C:\pad\naar\DS_MES\cnc-agent"
+   ```
+3. Voer het installatiescript uit:
+   ```
+   powershell -ExecutionPolicy Bypass -File install-scheduler.ps1
+   ```
 4. Je ziet de bevestiging:
    ```
    Taak 'DutchShape-CNC-Agent' geinstalleerd - start bij inloggen, draait continu
    ```
-5. Log uit en weer in — de agent start nu automatisch op de achtergrond
+5. Herstart de PC — de agent start nu automatisch op de achtergrond
 
 De taak is te beheren via **Taakplanner > Taakplanner-bibliotheek > DutchShape-CNC-Agent**.
 
 ---
 
-## Automatisch starten bij Windows-login
+## Automatisch starten bij Windows-opstart
 
-Na de taakplanner-installatie (stap 3 hierboven) gebeurt het volgende bij elke login:
+Na de taakplanner-installatie (stap 3 hierboven) gebeurt het volgende bij elke opstart én bij inloggen:
 
 - Agent start automatisch op de achtergrond
 - Direct een eerste sync van alle CNC-machines
 - Daarna elke 30 minuten automatisch opnieuw
 - HTTP server op poort 3099 blijft actief voor de Sync-knop
 
-Je hoeft verder niets te doen. De agent draait stil op de achtergrond.
+De agent draait ook na een onbeheerde herstart (bijv. na stroomstoring) zonder dat iemand hoeft in te loggen. Je hoeft verder niets te doen.
 
 ---
 
