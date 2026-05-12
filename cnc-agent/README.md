@@ -54,7 +54,7 @@ Kopieer .env.example → .env
 Open `.env` in Kladblok en vul de gegevens in:
 
 ```
-BACKEND_URL=http://<server-ip>:8080     ← IP-adres van de server (zie install.sh output)
+BACKEND_URL=http://<server-ip>:8080     ← IP-adres van de MES-server (zie install.sh output)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD="jouw_wachtwoord"        ← wachtwoord uit de install.sh output; quotes verplicht als het een # bevat
 
@@ -68,6 +68,16 @@ WINTOOL_DB_PATH=R:\Arne\tooldatabase\Dutch-Shape_2025.db   ← pad naar WinTool 
 ```
 
 Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de server.
+
+> **Belangrijk — BACKEND_URL:** De agent verbindt altijd **vanuit de Windows machine naar de MES-server**.
+> De MES-server hoeft de agent niet te kunnen bereiken, alleen andersom.
+> Zolang de Windows machine het opgegeven adres kan bereiken, werkt de agent ongeacht waar hij draait.
+>
+> | Situatie | BACKEND_URL |
+> |----------|-------------|
+> | Dev (lokaal op laptop) | `http://localhost:3000` |
+> | Testserver / productie | `http://192.168.1.x:8080` |
+> | Windows VM op zelfde server | `http://host-ip:8080` |
 
 ### Stap 2 — Testen of de agent werkt
 
