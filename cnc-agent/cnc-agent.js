@@ -260,7 +260,7 @@ if (runOnce) {
   console.log(`    HTTP poort: ${AGENT_PORT}\n`)
 
   // HTTP server voor on-demand sync vanuit de MES kiosk
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
 
     if (req.method === 'POST' && req.url === '/sync') {
