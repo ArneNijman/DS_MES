@@ -22,8 +22,18 @@ in de MES kiosk een directe sync kan triggeren.
 
 ## Vereisten
 
-De agent draait op **één Windows machine** in het netwerk — een vaste PC, Windows server of Windows VM.
+De agent draait op **één of meerdere Windows machines** in het netwerk — een vaste PC, Windows server of Windows VM.
 Deze machine hoeft **niet** dezelfde te zijn als de server waarop de MES backend draait (die draait op Linux/Docker).
+
+> **Meerdere agents (optioneel — voor redundantie):**
+> Je kunt de agent op meerdere Windows machines installeren. Als één machine uitvalt, neemt een andere het over.
+> Geef alle agents dezelfde `.env` (zelfde `WINTOOL_DB_PATH`, zelfde `BACKEND_URL`).
+> Stel op de MES-server de `CNC_AGENT_URL` in als komma-gescheiden lijst:
+> ```
+> CNC_AGENT_URL=http://pc1:3099,http://pc2:3099
+> ```
+> De backend probeert de agents op volgorde — de eerste die reageert wordt gebruikt.
+> Draaien meerdere agents tegelijk? Dat is veilig: TOOL.T en WinTool syncs zijn idempotent (upsert).
 
 **De Windows machine moet voldoen aan:**
 
