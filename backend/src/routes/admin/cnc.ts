@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { eq, desc, isNotNull, or, and, asc, ilike, sql, inArray } from 'drizzle-orm'
+import { eq, desc, isNotNull, or, and, asc, ilike, sql, inArray, ne } from 'drizzle-orm'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, extname } from 'node:path'
@@ -44,6 +44,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
       .where(
         and(
           eq(machines.isActive, true),
+          ne(machines.category, '3D-meetapparaat'),
           or(
             isNotNull(machines.cncIpAddress),
             isNotNull(machines.cncController),
