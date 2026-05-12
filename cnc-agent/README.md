@@ -22,10 +22,22 @@ in de MES kiosk een directe sync kan triggeren.
 
 ## Vereisten
 
-- Windows (TNCcmd.exe werkt alleen op Windows)
-- Node.js 22 of hoger — controleer met `node --version`
-- HEIDENHAIN TNCremo geïnstalleerd (bevat `TNCcmd.exe`)
-- CNC-machines met een IP-adres ingesteld in het MES (Admin > Machines)
+De agent draait op **één Windows machine** in het netwerk — een vaste PC, Windows server of Windows VM.
+Deze machine hoeft **niet** dezelfde te zijn als de server waarop de MES backend draait (die draait op Linux/Docker).
+
+**De Windows machine moet voldoen aan:**
+
+| Vereiste | Toelichting |
+|----------|-------------|
+| Windows 10/11 of Windows Server | TNCcmd.exe en de Taakplanner werken alleen op Windows |
+| Node.js 22 of hoger | Controleer met `node --version` — [nodejs.org](https://nodejs.org) |
+| HEIDENHAIN TNCremo geïnstalleerd | Bevat `TNCcmd.exe` — nodig voor communicatie met Heidenhain-machines |
+| Netwerktoegang tot de CNC-machines | Zelfde subnet of routing naar de machines (ping moet werken) |
+| Netwerktoegang tot de MES-server | Voor `BACKEND_URL` in `.env` — bv. `http://192.168.1.10:8080` |
+| Toegang tot de WinTool netwerkschijf | Bv. `R:\` gemount als de WinTool database op een fileserver staat |
+| Altijd ingeschakeld | Agent moet draaien voor automatische sync en de knoppen in de kiosk |
+
+**CNC-machines met een IP-adres ingesteld in het MES** (Admin > Machines) zijn vereist voor de TOOL.T sync.
 
 ---
 
