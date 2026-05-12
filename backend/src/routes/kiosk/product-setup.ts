@@ -990,6 +990,58 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     return { ok: true }
   })
 
+  // ── NC bestand sturen naar machine via cnc-agent ──────────────────────────
+
+  fastify.post('/kiosk/product-setups/nc-files/:ncFileId/send-to-machine', auth, async (req, reply) => {
+    const { ncFileId } = req.params as { ncFileId: string }
+
+    const [row] = await fastify.db
+      .select({
+        fileName:     productSetupNcFiles.fileName,
+        fileContent:  productSetupNcFiles.fileContent,
+        bewerkingNr:  productSetupSteps.bewerkingNr,
+        articleNo:    productSetups.articleNo,
+        cncIpAddress: machines.cncIpAddress,
+      })
+      .from(productSetupNcFiles)
+      .innerJoin(productSetupSteps, eq(productSetupSteps.id, productSetupNcFiles.stepId))
+      .innerJoin(productSetups,     eq(productSetups.id,     productSetupSteps.setupId))
+      .leftJoin(machines,           eq(machines.id,          productSetupSteps.machineId))
+      .where(eq(productSetupNcFiles.id, ncFileId))
+      .limit(1)
+
+    if (!row)              return reply.status(404).send({ error: 'NC-bestand niet gevonden' })
+    if (!row.cncIpAddress) return reply.status(422).send({ error: 'Machine heeft geen IP-adres ingesteld' })
+    if (!row.articleNo)    return reply.status(422).send({ error: 'Setup heeft geen artikelnummer' })
+    if (row.bewerkingNr == null) return reply.status(422).send({ error: 'Stap heeft geen bewerkingsnummer' })
+
+    const agentUrl = (process.env.CNC_AGENT_URL ?? 'http://host.docker.internal:3099').replace(/\/$/, '')
+
+    let agentRes: Response
+    try {
+      agentRes = await fetch(`${agentUrl}/send-nc-file`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          ip:          row.cncIpAddress,
+          articleNo:   row.articleNo,
+          bewerkingNr: row.bewerkingNr,
+          fileName:    row.fileName,
+          fileContent: row.fileContent,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      })
+    } catch {
+      return reply.status(502).send({ error: 'CNC-agent niet bereikbaar' })
+    }
+
+    const result = await agentRes.json().catch(() => ({})) as Record<string, unknown>
+    if (!agentRes.ok) {
+      return reply.status(502).send({ error: (result.error as string) ?? `Agent HTTP ${agentRes.status}` })
+    }
+    return result
+  })
+
   // ── Document (tekening/CAD) uploaden ─────────────────────────────────────
 
   fastify.post('/kiosk/product-setups/:id/documents', auth, async (req, reply) => {

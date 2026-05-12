@@ -1337,7 +1337,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const sendToMachine = useMutation({
     mutationFn: (ncFileId: string) =>
-      apiFetch(`/kiosk/product-setups/steps/${step.id}/nc-files/${ncFileId}/send-to-machine`, { method: 'POST' }),
+      apiFetch(`/kiosk/product-setups/nc-files/${ncFileId}/send-to-machine`, { method: 'POST' }),
     onSuccess: (res: any) => setSendResult({ ok: true,  msg: `Verstuurd → ${res.path ?? ''}` }),
     onError:   (err: any) => setSendResult({ ok: false, msg: err.message ?? 'Versturen mislukt' }),
   })

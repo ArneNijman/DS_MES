@@ -235,7 +235,7 @@ if (runOnce) {
 
             const rootPath  = `Program`
             const artPath   = `${rootPath}\\${articleNo}`
-            const stepPath  = `${artPath}\\${bewerkingNr}`
+            const stepPath  = `${artPath}\\Bewerking ${bewerkingNr}`
             const destPath  = `${stepPath}\\${fileName}`
 
             // Maak mappen aan — fouten worden genegeerd (map bestaat al)
