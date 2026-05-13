@@ -58,6 +58,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
   fastify.get('/kiosk/product-setups', auth, async (req) => {
     const { machineId, search } = req.query as { machineId?: string; search?: string }
+    const isNoneMachine = machineId === 'none'
 
     // Subquery: stap-aantallen per setup
     const baseQuery = fastify.db
@@ -73,10 +74,15 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
           SELECT COUNT(*)::int FROM product_setup_steps s WHERE s.setup_id = ${productSetups.id}
         )`,
         stepsOnMachine:    machineId
-          ? sql<number>`(
-              SELECT COUNT(*)::int FROM product_setup_steps s
-              WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
-            )`
+          ? isNoneMachine
+            ? sql<number>`(
+                SELECT COUNT(*)::int FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
+              )`
+            : sql<number>`(
+                SELECT COUNT(*)::int FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+              )`
           : sql<number>`0`,
       })
       .from(productSetups)
@@ -87,16 +93,27 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     if (machineId) {
       conditions.push(
-        sql`(
-          EXISTS (
-            SELECT 1 FROM product_setup_steps s
-            WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
-          )
-          OR NOT EXISTS (
-            SELECT 1 FROM product_setup_steps s
-            WHERE s.setup_id = ${productSetups.id}
-          )
-        )` as unknown as ReturnType<typeof eq>,
+        isNoneMachine
+          ? sql`(
+              EXISTS (
+                SELECT 1 FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
+              )
+              OR NOT EXISTS (
+                SELECT 1 FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id}
+              )
+            )` as unknown as ReturnType<typeof eq>
+          : sql`(
+              EXISTS (
+                SELECT 1 FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+              )
+              OR NOT EXISTS (
+                SELECT 1 FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id}
+              )
+            )` as unknown as ReturnType<typeof eq>,
       )
     }
 
