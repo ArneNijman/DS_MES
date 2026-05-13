@@ -35,7 +35,6 @@ De installatie bestaat uit twee onderdelen die op **aparte machines** draaien:
 - Docker Engine 24+ en Docker Compose v2
 - Git
 - Poort 8080 open in de firewall
-- Netwerktoegang naar de Windows share met WinTool database (optioneel)
 
 ---
 
@@ -83,7 +82,6 @@ chmod +x install.sh
 
 Het script begeleidt je door de rest:
 - Secrets worden automatisch gegenereerd
-- WinTool sync instellen via `WINTOOL_DB_PATH` in de cnc-agent `.env` (optioneel)
 - Docker images bouwen en starten
 - Admin-inloggegevens worden aan het einde getoond
 
@@ -120,9 +118,20 @@ ADMIN_PASSWORD=<wachtwoord uit de installatie>
 TNCCMD_PATH=C:\Program Files (x86)\HEIDENHAIN\TNCremo\TNCcmd.exe
 ```
 
+**Stap 2b** — WinTool koppelen *(optioneel)*:
+Vul ook `WINTOOL_DB_PATH=` in met het volledige pad naar het `.db` bestand op deze Windows PC, bijvoorbeeld:
+```
+WINTOOL_DB_PATH=R:\Tooldatabase\Dutch-Shape_2025.db
+```
+
 **Stap 3** — Test de verbinding:
 Dubbelklik `cnc-agent\run.bat`
-Het venster moet "Sync voltooid" tonen en daarna sluiten.
+Het venster toont de sync-voortgang per machine en sluit daarna af:
+```
+📋  5 machine(s) gevonden, 5 met IP-adres
+✅  55 tools geladen voor BF 3200
+📊  Klaar: 5 geslaagd, 0 offline, 0 fout(en)
+```
 
 **Stap 4** — Installeer als automatische achtergrondtaak:
 Open PowerShell als administrator en voer uit:
@@ -132,19 +141,18 @@ powershell -ExecutionPolicy Bypass -File cnc-agent\install-scheduler.ps1
 
 De agent draait nu automatisch op de achtergrond en synchroniseert bij elke Windows-opstart en elke 30 minuten daarna.
 
-> Zie `cnc-agent\README.md` voor uitgebreide documentatie, probleemoplossing en de werking van de Sync-knop in de kiosk.
+> **Volg voor de volledige installatie van de CNC agent het stappenplan in [`cnc-agent\README.md`](cnc-agent/README.md).**
+> Dat document bevat uitgebreide uitleg per stap, probleemoplossing, de werking van de Sync-knop in de kiosk en het instellen van meerdere agents voor redundantie.
 
 ---
 
 ## WinTool bibliotheek koppelen
 
-De gereedschapsdatabase uit WinTool kan worden gekoppeld via een netwerkshare.
+De gereedschapsdatabase uit WinTool synchroniseert automatisch via de CNC agent.
 
-**Eenmalig tijdens installatie:** `install.sh` vraagt of je de share wilt configureren.
+**Instellen:** Vul `WINTOOL_DB_PATH=` in de cnc-agent `.env` in met het volledige pad naar het `.db` bestand op de Windows PC (zie stap 2b hierboven). De agent detecteert wijzigingen automatisch en uploadt naar het MES.
 
-**Later aanpassen:** Admin → Dashboard → sectie "Systeem" → WinTool database pad instellen.
-
-**Bibliotheek herladen:** Admin → CNC Machining → Bibliotheek → knop "Herlaad bibliotheek".
+**Bibliotheek herladen:** Admin → CNC Machining → Bibliotheek → knop "Herlaad bibliotheek". Dit forceert een directe upload, ook als het bestand niet gewijzigd is.
 
 ---
 
