@@ -658,7 +658,7 @@ function SetupList({
                   <input
                     autoFocus={!isFromBc}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                    placeholder="bijv. PO-2024-001"
+                    placeholder="bijv. 2604129"
                     value={newOrder}
                     onChange={e => setNewOrder(e.target.value)}
                   />
@@ -667,7 +667,7 @@ function SetupList({
                   <label className="text-xs font-medium text-gray-600 block mb-1">Artikel</label>
                   <input
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                    placeholder="bijv. ART-0042"
+                    placeholder="bijv. 26013-1300-00"
                     value={newArticle}
                     onChange={e => setNewArticle(e.target.value)}
                   />
@@ -676,7 +676,7 @@ function SetupList({
                   <label className="text-xs font-medium text-gray-600 block mb-1">Omschrijving</label>
                   <input
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                    placeholder="bijv. Deksel 12345"
+                    placeholder="bijv. WING BODY W INSTRUMENTATION"
                     value={newDescription}
                     onChange={e => setNewDescription(e.target.value)}
                   />
