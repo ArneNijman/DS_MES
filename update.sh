@@ -43,7 +43,7 @@ ok "Images herbouwd"
 echo ""
 echo -e "${BOLD}[3/3] Herstarten...${RESET}"
 docker compose up -d
-ok "Containers herstarten (database en data blijven behouden)"
+ok "Containers herstarten (database en uploads blijven behouden — volumes worden nooit verwijderd)"
 
 # Wacht even en toon status
 sleep 5
@@ -58,4 +58,5 @@ echo -e "  ${CYAN}http://${SERVER_IP}:8080/kiosk${RESET}"
 echo -e "  ${CYAN}http://${SERVER_IP}:8080/admin/login${RESET}"
 echo ""
 echo "  Database migraties zijn automatisch uitgevoerd."
+echo "  Data (database + uploads) is behouden — volumes worden nooit verwijderd door dit script."
 echo ""
