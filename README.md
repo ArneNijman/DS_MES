@@ -114,6 +114,27 @@ Data (database, uploads) blijft altijd behouden.
 
 ---
 
+### Back-up maken
+
+```bash
+./backup.sh
+```
+
+Slaat de database en uploads op in `backups/` op de server. Backups ouder dan 7 dagen worden automatisch verwijderd. Terugzetten:
+
+```bash
+gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes
+```
+
+Automatische dagelijkse back-up via cron (optioneel):
+```bash
+crontab -e
+# Voeg toe:
+0 2 * * * cd /pad/naar/DS_MES && ./backup.sh >> backups/backup.log 2>&1
+```
+
+---
+
 ## CNC Agent instellen — Windows PC
 
 De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-machine afzonderlijk. Die PC hoeft alleen **netwerkbereik** te hebben naar de CNC-machines (ping werkt) en naar de MES-server (poort 8080). De agent haalt de gereedschapstabellen op via TNCcmd.exe en stuurt ze naar het MES.
