@@ -1,5 +1,26 @@
 # Installatie Audit — Dutch Shape MES
 
+## Audit 2026-05-13
+
+Volledige audit van beide README's en alle installatiescripts. Één kritieke fix doorgevoerd.
+
+| Onderdeel | Status | Opmerking |
+|-----------|--------|-----------|
+| `README.md` | ✅ | Correct en actueel — architectuur, CNC agent stappen, WinTool sectie |
+| `cnc-agent/README.md` | ✅ | Correct en volledig |
+| `install.sh` | ✅ | Verouderde WinTool share stap verwijderd, stappen hernummerd naar 4 |
+| `update.sh` | ✅ | Correct — git pull + build + restart |
+| `cnc-agent/install-scheduler.ps1` | ✅ | Correct — taakplanner, AtStartup + AtLogOn, herstart bij fout |
+| `cnc-agent/run.bat` | ✅ | Correct — `--once` flag, .env controle |
+| `.env.example` | ✅ | Alle variabelen aanwezig |
+| `cnc-agent/.env.example` | ✅ | Alle variabelen aanwezig, `WINTOOL_DB_PATH=` actief (niet uitgecommentarieerd) |
+
+### Fix doorgevoerd tijdens audit
+
+- `install.sh` — Stap 3 (WinTool CIFS netwerkshare mounten) volledig verwijderd. Dit was de oude aanpak; WinTool sync loopt nu via de cnc-agent `.env`. Stappen hernummerd van `[1/5]…[5/5]` naar `[1/4]…[4/4]`.
+
+---
+
 ## Audit 2026-05-12
 
 Volledige installatie-audit uitgevoerd. Geen kritieke fouten gevonden.
