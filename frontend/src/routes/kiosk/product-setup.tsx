@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Search, ChevronLeft, Plus, Upload, Trash2, X, Check,
+  Search, ChevronLeft, Plus, Upload, Trash2, X, Check, Pencil,
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
   Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send,
@@ -486,6 +486,10 @@ function SetupList({
   const [showBcMsg, setShowBcMsg] = useState(false)
   const [isFromBc, setIsFromBc] = useState(false)
   const [bcOrderSearch, setBcOrderSearch] = useState('')
+  const [editSetup, setEditSetup] = useState<SetupSummary | null>(null)
+  const [editOrder, setEditOrder] = useState('')
+  const [editArticle, setEditArticle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   const { data: bcOrders = [], isLoading: bcOrdersLoading } = useQuery<BcOrder[]>({
     queryKey: ['bc-production-orders'],
@@ -505,6 +509,20 @@ function SetupList({
       qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
       setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription(''); setShowBcMsg(false); setIsFromBc(false); setBcOrderSearch('')
     },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; productionOrderNo: string; articleNo: string; description: string }) =>
+      apiFetch(`/kiosk/product-setups/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
+      setEditSetup(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setups', machine.id] }),
   })
 
   function handleCreate() {
@@ -553,31 +571,49 @@ function SetupList({
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {setups.map(s => (
-            <button
-              key={s.id}
-              onClick={() => onSelect(s)}
-              className="flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
-            >
-              <p className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug">
-                {s.productionOrderNo ?? '—'}
-              </p>
-              {s.articleNo && (
-                <p className="text-xs text-gray-500 truncate">{s.articleNo}</p>
-              )}
-              {s.description && (
-                <p className="text-xs text-gray-400 truncate">{s.description}</p>
-              )}
-              <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
-                  {s.totalSteps} {s.totalSteps === 1 ? 'stap' : 'stappen'}
-                </span>
-                {s.stepsOnMachine > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
-                    {s.stepsOnMachine} hier
-                  </span>
+            <div key={s.id} className="relative group">
+              <button
+                onClick={() => onSelect(s)}
+                className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
+              >
+                <p className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug pr-10">
+                  {s.productionOrderNo ?? '—'}
+                </p>
+                {s.articleNo && (
+                  <p className="text-xs text-gray-500 truncate">{s.articleNo}</p>
                 )}
+                {s.description && (
+                  <p className="text-xs text-gray-400 truncate">{s.description}</p>
+                )}
+                <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-medium">
+                    {s.totalSteps} {s.totalSteps === 1 ? 'stap' : 'stappen'}
+                  </span>
+                  {s.stepsOnMachine > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                      {s.stepsOnMachine} hier
+                    </span>
+                  )}
+                </div>
+              </button>
+              {/* Acties op hover */}
+              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={e => { e.stopPropagation(); setEditSetup(s); setEditOrder(s.productionOrderNo ?? ''); setEditArticle(s.articleNo ?? ''); setEditDescription(s.description ?? '') }}
+                  className="p-1.5 rounded-lg bg-white shadow-sm border border-gray-200 text-gray-400 hover:text-teal-600 hover:border-teal-300 transition-colors"
+                  title="Bewerken"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); if (confirm(`Setup "${s.productionOrderNo}" verwijderen? Alle stappen en bestanden gaan verloren.`)) deleteMutation.mutate(s.id) }}
+                  className="p-1.5 rounded-lg bg-white shadow-sm border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 transition-colors"
+                  title="Verwijderen"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -703,6 +739,60 @@ function SetupList({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit setup modal */}
+      {editSetup && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditSetup(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-bold text-lg text-gray-800">Setup bewerken</h2>
+              <button onClick={() => setEditSetup(null)} className="p-1 rounded hover:bg-gray-100"><X size={18} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Productieorder <span className="text-red-500">*</span></label>
+                <input
+                  autoFocus
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                  value={editOrder}
+                  onChange={e => setEditOrder(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Artikel</label>
+                <input
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                  value={editArticle}
+                  onChange={e => setEditArticle(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Omschrijving</label>
+                <input
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setEditSetup(null)}
+                  className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Annuleren
+                </button>
+                <button
+                  disabled={!editOrder.trim() || updateMutation.isPending}
+                  onClick={() => updateMutation.mutate({ id: editSetup.id, productionOrderNo: editOrder.trim(), articleNo: editArticle.trim(), description: editDescription.trim() })}
+                  className="flex-1 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  {updateMutation.isPending ? 'Opslaan…' : 'Opslaan'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
