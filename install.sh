@@ -25,7 +25,7 @@ echo ""
 
 # ── Stap 1: Controles ────────────────────────────────────────
 
-echo -e "${BOLD}[1/5] Systeem controleren...${RESET}"
+echo -e "${BOLD}[1/4] Systeem controleren...${RESET}"
 
 if ! command -v docker &>/dev/null; then
   fail "Docker niet gevonden. Installeer Docker eerst:\n    curl -fsSL https://get.docker.com | sh\n    sudo usermod -aG docker \$USER\n  Log daarna uit en weer in."
@@ -44,7 +44,7 @@ ok "Docker en Docker Compose beschikbaar"
 # ── Stap 2: .env aanmaken ────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}[2/5] Configuratie aanmaken...${RESET}"
+echo -e "${BOLD}[2/4] Configuratie aanmaken...${RESET}"
 
 if [ ! -f .env ]; then
   cp .env.example .env
@@ -66,71 +66,10 @@ else
   ok ".env bestaat al — wordt niet overschreven"
 fi
 
-# ── Stap 3: WinTool netwerkshare (optioneel) ─────────────────
+# ── Stap 3: Bouwen en starten ────────────────────────────────
 
 echo ""
-echo -e "${BOLD}[3/5] WinTool netwerkshare configureren...${RESET}"
-echo "  De WinTool gereedschapsdatabase kan worden gekoppeld via een"
-echo "  gedeeld netwerkpad (bijv. een Windows share op het netwerk)."
-echo ""
-read -rp "  WinTool share nu configureren? (j/n): " CONFIGURE_WINTOOL
-
-if [[ "$CONFIGURE_WINTOOL" =~ ^[jJ]$ ]]; then
-  echo ""
-  read -rp "  Lokaal mount-pad (bijv. /mnt/wintool): " MOUNT_PATH
-  read -rp "  Netwerkpad naar share (bijv. //192.168.1.10/wintool): " SHARE_PATH
-  read -rp "  Gebruikersnaam voor de share: " SHARE_USER
-  read -rsp "  Wachtwoord voor de share: " SHARE_PASS
-  echo ""
-
-  # Maak mount-map aan
-  sudo mkdir -p "$MOUNT_PATH"
-
-  # Sla credentials op
-  sudo bash -c "cat > /etc/wintool-creds << EOF
-username=${SHARE_USER}
-password=${SHARE_PASS}
-EOF"
-  sudo chmod 600 /etc/wintool-creds
-  info "Credentials opgeslagen in /etc/wintool-creds"
-
-  # Voeg toe aan /etc/fstab (alleen als nog niet aanwezig)
-  FSTAB_ENTRY="${SHARE_PATH}  ${MOUNT_PATH}  cifs  credentials=/etc/wintool-creds,ro,iocharset=utf8  0  0"
-  if ! grep -qF "$MOUNT_PATH" /etc/fstab; then
-    echo "$FSTAB_ENTRY" | sudo tee -a /etc/fstab > /dev/null
-    info "Mount toegevoegd aan /etc/fstab"
-  fi
-
-  # Installeer cifs-utils indien nodig
-  if ! command -v mount.cifs &>/dev/null; then
-    info "cifs-utils installeren..."
-    sudo apt install cifs-utils -y -q
-  fi
-
-  # Mount de share
-  if sudo mount "$MOUNT_PATH" 2>/dev/null; then
-    ok "Share gemount op ${MOUNT_PATH}"
-  else
-    warn "Mount mislukt — controleer het netwerkpad en de inloggegevens."
-    warn "Je kunt dit later opnieuw proberen met: sudo mount ${MOUNT_PATH}"
-  fi
-
-  # Voeg volume toe aan docker-compose.yml als dat nog niet bestaat
-  if ! grep -q "/wintool" docker-compose.yml; then
-    # Voeg volume mount toe na de uploads regel in de backend service
-    sed -i "s|      - uploads:/app/uploads|      - uploads:/app/uploads\n      - ${MOUNT_PATH}:/wintool:ro|" docker-compose.yml
-    info "docker-compose.yml bijgewerkt met WinTool volume"
-  fi
-
-  ok "WinTool share geconfigureerd"
-else
-  info "WinTool share overgeslagen — later in te stellen via Admin → Dashboard"
-fi
-
-# ── Stap 4: Bouwen en starten ────────────────────────────────
-
-echo ""
-echo -e "${BOLD}[4/5] Docker images bouwen en starten...${RESET}"
+echo -e "${BOLD}[3/4] Docker images bouwen en starten...${RESET}"
 echo "  (eerste keer duurt dit 3-5 minuten)"
 echo ""
 
@@ -138,10 +77,10 @@ docker compose up --build -d
 
 ok "Containers gestart"
 
-# ── Stap 5: Wachten en credentials tonen ─────────────────────
+# ── Stap 4: Wachten en credentials tonen ─────────────────────
 
 echo ""
-echo -e "${BOLD}[5/5] Wachten tot MES klaar is...${RESET}"
+echo -e "${BOLD}[4/4] Wachten tot MES klaar is...${RESET}"
 
 MAX_WAIT=120
 ELAPSED=0
