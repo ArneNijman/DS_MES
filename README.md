@@ -6,24 +6,38 @@ Een event-driven MES dat als operationele intelligentielaag bovenop Microsoft Bu
 
 ---
 
-## Architectuur — twee machines
+## Architectuur — twee onderdelen
 
 De installatie bestaat uit twee onderdelen die op **aparte machines** draaien:
 
 ```
-┌──────────────────────────────────┐     ┌──────────────────────────────────┐
-│  Linux server (Ubuntu/Debian)    │     │  Windows PC bij CNC-machines     │
-│                                  │     │                                  │
-│  Docker Compose:                 │◄────│  cnc-agent/                      │
-│  • Frontend  (React + Nginx)     │     │  • cnc-agent.js                  │
-│  • Backend   (Fastify + Node)    │     │  • install-scheduler.ps1         │
-│  • PostgreSQL 16                 │     │  • run.bat                       │
-│  • Redis 7                       │     │                                  │
-│                                  │     │  Vereist: Node.js 22 + TNCremo   │
-└──────────────────────────────────┘     └──────────────────────────────────┘
+  CNC-machines (Heidenhain)              Windows PC (ergens in het netwerk)
+  ┌─────────────┐                        ┌──────────────────────────────────┐
+  │ BF 3200     │◄──── TNCcmd.exe ──────│  cnc-agent/                      │
+  │ FPT Ronin   │                        │  • haalt TOOL.T op per machine   │
+  │ ...         │                        │  • synchroniseert WinTool (.db)  │
+  └─────────────┘                        │  • stuurt data naar MES backend  │
+                                         └────────────────┬─────────────────┘
+                                                          │ HTTP naar poort 8080
+                                                          ▼
+                                         ┌──────────────────────────────────┐
+                                         │  Linux server (Ubuntu/Debian)    │
+                                         │                                  │
+                                         │  Docker Compose:                 │
+                                         │  • Frontend  (React + Nginx)     │
+                                         │  • Backend   (Fastify + Node)    │
+                                         │  • PostgreSQL 16                 │
+                                         │  • Redis 7                       │
+                                         └──────────────────────────────────┘
 ```
 
-> **Let op:** de bestanden in `cnc-agent/` (`.ps1`, `.bat`) zijn **uitsluitend voor de Windows PC** en hoeven niet op de Linux server te staan. Op de Linux server draait alleen Docker.
+**Hoe het werkt:**
+- De CNC agent draait op **één Windows PC** — dit hoeft niet de server te zijn en ook niet de pc naast de machine. Elke Windows PC met netwerktoegang tot de CNC-machines en de MES-server volstaat.
+- De agent verbindt **altijd vanuit Windows naar de machines en de server** — de server hoeft de Windows PC niet te kunnen bereiken.
+- De CNC-machines zelf krijgen geen software geïnstalleerd.
+- Wil je redundantie? De agent kan op meerdere Windows PCs draaien — zie [`cnc-agent\README.md`](cnc-agent/README.md).
+
+> De bestanden in `cnc-agent/` zijn **uitsluitend voor de Windows PC**. Op de Linux server draait alleen Docker.
 
 ---
 
@@ -100,9 +114,9 @@ Data (database, uploads) blijft altijd behouden.
 
 ---
 
-## CNC Agent instellen — Windows PC bij de machines
+## CNC Agent instellen — Windows PC
 
-De CNC agent draait op de **Windows PC** die verbinding heeft met de Heidenhain CNC-machines. Hij haalt automatisch de gereedschapstabel op en stuurt die naar het MES.
+De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-machine afzonderlijk. Die PC hoeft alleen **netwerkbereik** te hebben naar de CNC-machines (ping werkt) en naar de MES-server (poort 8080). De agent haalt de gereedschapstabellen op via TNCcmd.exe en stuurt ze naar het MES.
 
 **Stap 1** — Installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
 
