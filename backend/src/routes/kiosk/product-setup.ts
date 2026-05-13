@@ -57,8 +57,10 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   // ── Product-setups opzoeken (gefilterd op machine) ────────────────────────
 
   fastify.get('/kiosk/product-setups', auth, async (req) => {
-    const { machineId, search } = req.query as { machineId?: string; search?: string }
-    const isNoneMachine = machineId === 'none'
+    const { machineId: rawMachineId, search } = req.query as { machineId?: string; search?: string }
+    const isNoneMachine = rawMachineId === 'none'
+    // Strip de 'none' sentinel zodat hij nooit als UUID in SQL belandt
+    const machineId = isNoneMachine ? undefined : rawMachineId
 
     // Subquery: stap-aantallen per setup
     const baseQuery = fastify.db
@@ -73,17 +75,17 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         totalSteps:        sql<number>`(
           SELECT COUNT(*)::int FROM product_setup_steps s WHERE s.setup_id = ${productSetups.id}
         )`,
-        stepsOnMachine:    machineId
-          ? isNoneMachine
+        stepsOnMachine:    isNoneMachine
+          ? sql<number>`(
+              SELECT COUNT(*)::int FROM product_setup_steps s
+              WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
+            )`
+          : machineId
             ? sql<number>`(
-                SELECT COUNT(*)::int FROM product_setup_steps s
-                WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
-              )`
-            : sql<number>`(
                 SELECT COUNT(*)::int FROM product_setup_steps s
                 WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
               )`
-          : sql<number>`0`,
+            : sql<number>`0`,
       })
       .from(productSetups)
 
@@ -91,29 +93,31 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       eq(productSetups.setupType, 'product') as unknown as ReturnType<typeof eq>,
     ]
 
-    if (machineId) {
+    if (isNoneMachine) {
       conditions.push(
-        isNoneMachine
-          ? sql`(
-              EXISTS (
-                SELECT 1 FROM product_setup_steps s
-                WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
-              )
-              OR NOT EXISTS (
-                SELECT 1 FROM product_setup_steps s
-                WHERE s.setup_id = ${productSetups.id}
-              )
-            )` as unknown as ReturnType<typeof eq>
-          : sql`(
-              EXISTS (
-                SELECT 1 FROM product_setup_steps s
-                WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
-              )
-              OR NOT EXISTS (
-                SELECT 1 FROM product_setup_steps s
-                WHERE s.setup_id = ${productSetups.id}
-              )
-            )` as unknown as ReturnType<typeof eq>,
+        sql`(
+          EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id}
+          )
+        )` as unknown as ReturnType<typeof eq>,
+      )
+    } else if (machineId) {
+      conditions.push(
+        sql`(
+          EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id}
+          )
+        )` as unknown as ReturnType<typeof eq>,
       )
     }
 
