@@ -35,7 +35,7 @@ De installatie bestaat uit twee onderdelen die op **aparte machines** draaien:
 - De CNC agent draait op **één Windows PC** — dit hoeft niet de server te zijn en ook niet de pc naast de machine. Elke Windows PC met netwerktoegang tot de CNC-machines en de MES-server volstaat.
 - De agent verbindt **altijd vanuit Windows naar de machines en de server** — de server hoeft de Windows PC niet te kunnen bereiken.
 - De CNC-machines zelf krijgen geen software geïnstalleerd.
-- Wil je redundantie? De agent kan op meerdere Windows PCs draaien — zie [`cnc-agent\README.md`](cnc-agent/README.md).
+- **Redundantie:** de agent kan op meerdere Windows PCs tegelijk draaien. Als één PC uitvalt, neemt een andere het automatisch over. De backend probeert de agents op volgorde; syncs zijn altijd veilig omdat alles via upserts werkt. Zie [`cnc-agent\README.md`](cnc-agent/README.md) voor de configuratie.
 
 > De bestanden in `cnc-agent/` zijn **uitsluitend voor de Windows PC**. Op de Linux server draait alleen Docker.
 
