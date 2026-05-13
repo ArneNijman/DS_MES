@@ -4,8 +4,8 @@ set -euo pipefail
 # ═══════════════════════════════════════════════════════════════
 #  Factory Assistant MES — Backup script
 #  Gebruik: ./backup.sh
-#  Automatisch via cron (elke dag om 02:00):
-#    0 2 * * * cd /pad/naar/DS_MES && ./backup.sh >> backups/backup.log 2>&1
+#  Automatisch via cron (elke zondag om 02:00):
+#    0 2 * * 0 cd /pad/naar/DS_MES && ./backup.sh >> backups/backup.log 2>&1
 # ═══════════════════════════════════════════════════════════════
 
 BOLD='\033[1m'

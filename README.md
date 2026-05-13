@@ -126,12 +126,14 @@ Slaat de database en uploads op in `backups/` op de server. Backups ouder dan 7 
 gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes
 ```
 
-Automatische dagelijkse back-up via cron (optioneel):
+Automatische wekelijkse back-up via cron (optioneel, elke zondag om 02:00):
 ```bash
 crontab -e
 # Voeg toe:
-0 2 * * * cd /pad/naar/DS_MES && ./backup.sh >> backups/backup.log 2>&1
+0 2 * * 0 cd /pad/naar/DS_MES && ./backup.sh >> backups/backup.log 2>&1
 ```
+
+`update.sh` maakt automatisch een back-up vóórdat de update wordt uitgevoerd.
 
 ---
 

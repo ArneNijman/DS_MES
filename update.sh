@@ -25,23 +25,30 @@ if [ ! -f docker-compose.yml ]; then
   fail "Voer dit script uit vanuit de DS_MES map:\n    cd DS_MES && ./update.sh"
 fi
 
-# ── Stap 1: Laatste code ophalen ─────────────────────────────
+# ── Stap 1: Back-up maken ────────────────────────────────────
 
-echo -e "${BOLD}[1/3] Laatste code ophalen...${RESET}"
+echo -e "${BOLD}[1/4] Back-up maken vóór update...${RESET}"
+bash backup.sh
+ok "Back-up gemaakt"
+
+# ── Stap 2: Laatste code ophalen ─────────────────────────────
+
+echo ""
+echo -e "${BOLD}[2/4] Laatste code ophalen...${RESET}"
 git pull origin main
 ok "Code bijgewerkt"
 
 # ── Stap 2: Images herbouwen ─────────────────────────────────
 
 echo ""
-echo -e "${BOLD}[2/3] Docker images herbouwen...${RESET}"
+echo -e "${BOLD}[3/4] Docker images herbouwen...${RESET}"
 docker compose build
 ok "Images herbouwd"
 
 # ── Stap 3: Herstarten ───────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}[3/3] Herstarten...${RESET}"
+echo -e "${BOLD}[4/4] Herstarten...${RESET}"
 docker compose up -d
 ok "Containers herstarten (database en uploads blijven behouden — volumes worden nooit verwijderd)"
 
