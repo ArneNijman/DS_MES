@@ -108,15 +108,9 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       )
     } else if (machineId) {
       conditions.push(
-        sql`(
-          EXISTS (
-            SELECT 1 FROM product_setup_steps s
-            WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
-          )
-          OR NOT EXISTS (
-            SELECT 1 FROM product_setup_steps s
-            WHERE s.setup_id = ${productSetups.id}
-          )
+        sql`EXISTS (
+          SELECT 1 FROM product_setup_steps s
+          WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
         )` as unknown as ReturnType<typeof eq>,
       )
     }
