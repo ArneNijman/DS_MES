@@ -83,7 +83,7 @@ chmod +x install.sh
 
 Het script begeleidt je door de rest:
 - Secrets worden automatisch gegenereerd
-- WinTool netwerkshare configureren (optioneel, ook later te doen via Admin)
+- WinTool sync instellen via `WINTOOL_DB_PATH` in de cnc-agent `.env` (optioneel)
 - Docker images bouwen en starten
 - Admin-inloggegevens worden aan het einde getoond
 
