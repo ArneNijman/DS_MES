@@ -706,6 +706,12 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
                       ? <TextInput value={form.afmeting} onChange={(v) => set('afmeting', v)} placeholder="bijv. 150 mm" />
                       : <ReadonlyField value={form.afmeting} />}
                   </div>
+                  {tool?.voorraadId && isEdit && (
+                    <div>
+                      <FieldLabel>FileMaker ID</FieldLabel>
+                      <ReadonlyField value={tool.voorraadId} />
+                    </div>
+                  )}
                   <div>
                     <FieldLabel>Serie (laatste 5)</FieldLabel>
                     {canEdit
@@ -1754,6 +1760,9 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
               >
                 <div className="flex items-start justify-between gap-1 flex-wrap">
                   <span className="text-xs font-mono text-gray-400">{t.toolId}</span>
+                  {t.voorraadId && (
+                    <span className="text-xs text-gray-400">· {t.voorraadId}</span>
+                  )}
                   <div className="flex items-center gap-1">
                     {t.afgekeurd && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Afgekeurd</span>
