@@ -727,7 +727,7 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                       >
                         <option value="">— Kies locatie —</option>
-                        {['Constructie', 'Kwaliteit', 'Logistiek', 'Productie engineer', 'Verspaning', 'Montage'].map((loc) => (
+                        {['3200', '4200', 'Bankwerkers', 'CMM', 'conventioneel werkplaats', 'Dino 1', 'Dino 2', 'Draaibank', 'Fooke', 'Kantoor', 'Lasafdeling', 'LT-930', 'LT-960', 'Meetkamer', 'Poetshok', 'Ronin', 'Voorinsteller', 'Voorraad meetmiddelen', 'Werkplaats'].map((loc) => (
                           <option key={loc} value={loc}>{loc}</option>
                         ))}
                       </select>
@@ -1825,6 +1825,7 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
         </div>
       ) : (
         <DetailModal
+          key={modal === 'nieuw' ? 'new' : (modal as MeasuringTool).id}
           tool={modal === 'nieuw' ? null : modal}
           nextId={nextIdData?.toolId ?? 'MM-10001'}
           onSave={handleSave}
