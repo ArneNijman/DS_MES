@@ -7,7 +7,9 @@
 > **Wat u op de Windows PC doet — in drie stappen:**
 >
 > 1. **Node.js installeren** — download en installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
-> 2. **Map neerzetten** — kopieer de map `cnc-agent\` (uit de repo) naar de Windows PC, bijvoorbeeld naar `C:\DS_MES\cnc-agent\`
+> 2. **Map neerzetten** — zet de map `cnc-agent\` op de Windows PC via één van deze methodes:
+>    - *Optie A (aanbevolen):* installeer [Git voor Windows](https://git-scm.com/download/win) en voer uit: `git clone https://github.com/ArneNijman/DS_MES.git C:\DS_MES` — de agent staat dan op `C:\DS_MES\cnc-agent\`
+>    - *Optie B:* download de repo als ZIP via GitHub (knop **Code → Download ZIP**), pak uit en kopieer alleen de map `cnc-agent\` naar bijv. `C:\DS_MES\cnc-agent\`
 > 3. **Configureren** — maak een kopie van `.env.example`, noem die `.env`, en vul in:
 >    ```
 >    BACKEND_URL=http://<ip-van-de-linux-server>:8080

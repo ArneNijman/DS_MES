@@ -149,10 +149,17 @@ De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-
 **Stap 1** — Installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
 
 **Stap 2** — Zet de agent-map op de Windows PC:
-Kopieer de map `cnc-agent\` vanuit de repo naar de Windows PC, bijvoorbeeld naar:
+Kies één van de twee methodes:
+
+*Optie A — repo clonen op de Windows PC (aanbevolen):*
+Installeer [Git voor Windows](https://git-scm.com/download/win) en voer uit in Command Prompt:
 ```
-C:\DS_MES\cnc-agent\
+git clone https://github.com/ArneNijman/DS_MES.git C:\DS_MES
 ```
+De cnc-agent map staat dan op `C:\DS_MES\cnc-agent\`.
+
+*Optie B — alleen de map kopiëren:*
+Download de repo als ZIP via GitHub (knop **Code → Download ZIP**), pak het archief uit en kopieer alleen de map `cnc-agent\` naar de Windows PC, bijvoorbeeld naar `C:\DS_MES\cnc-agent\`.
 
 **Stap 3** — Maak het configuratiebestand aan:
 Ga naar de gekopieerde map (`C:\DS_MES\cnc-agent\`) en maak een kopie van `.env.example`:
