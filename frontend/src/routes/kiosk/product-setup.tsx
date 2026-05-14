@@ -102,6 +102,7 @@ interface Document {
   fileUrl:        string
   fileName:       string
   versionNote:    string | null
+  beschrijving:   string | null
   mimeType:       string | null
   rapportageType: string | null
   uploadedAt:     string
@@ -820,7 +821,7 @@ function SetupDetail({
   const [showBcStepPicker, setShowBcStepPicker] = useState(false)
   const [bcStepSearch, setBcStepSearch]         = useState('')
   const [showMachinePicker, setShowMachinePicker] = useState(false)
-  const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | null>(null)
+  const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | 'hypermill' | 'aanpak_frezen' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [selectedCadUrl, setSelectedCadUrl] = useState<string | null>(null)
   const [compareCadUrl, setCompareCadUrl]   = useState<string | null>(null)
@@ -1051,6 +1052,37 @@ function SetupDetail({
                   })()}
 
 
+                  {/* Hypermill & Aanpak frezen kaarten */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: 'hypermill',     label: 'Hypermill bestanden' },
+                      { key: 'aanpak_frezen', label: 'Aanpak frezen' },
+                    ] as const).map(({ key, label }) => {
+                      const count = setup.documents.filter(d => d.documentType === key).length
+                      const last  = setup.documents.filter(d => d.documentType === key)[0]
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setOpenPortal(key)}
+                          className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <FolderOpen size={16} className="text-gray-400" />
+                            <span className="text-xs font-semibold text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                              {count}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-gray-700">{label}</p>
+                          <p className="text-[10px] text-gray-400">
+                            {count === 0
+                              ? 'Nog niets toegevoegd'
+                              : `Laatste: ${new Date(last.uploadedAt).toLocaleDateString('nl-NL')}`}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+
                   {/* Actief CAD bestand indicator */}
                   {selectedCadUrl && viewableCad.length > 0 && (
                     <div className="text-[10px] text-gray-400 flex items-center gap-1">
@@ -1113,6 +1145,20 @@ function SetupDetail({
             setupId={setupId}
             onClose={() => setOpenPortal(null)}
             onShowOnModel={(features) => { setInspectionPoints(features); setOpenPortal(null) }}
+          />
+        )}
+        {openPortal === 'hypermill' && (
+          <HypermillModal
+            docs={setup.documents.filter(d => d.documentType === 'hypermill')}
+            setupId={setupId}
+            onClose={() => setOpenPortal(null)}
+          />
+        )}
+        {openPortal === 'aanpak_frezen' && (
+          <AanpakFrezenModal
+            docs={setup.documents.filter(d => d.documentType === 'aanpak_frezen')}
+            setupId={setupId}
+            onClose={() => setOpenPortal(null)}
           />
         )}
 
@@ -2672,6 +2718,388 @@ function MeetPortalModal({
         )}
       </div>
     </div>
+  )
+}
+
+// ── HypermillModal ────────────────────────────────────────────────────────────
+
+function HypermillModal({
+  docs, setupId, onClose,
+}: {
+  docs: Document[]
+  setupId: string
+  onClose: () => void
+}) {
+  const qc      = useQueryClient()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading]   = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+  const deleteDoc = useMutation({
+    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('documentType', 'hypermill')
+      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+    } catch (err) {
+      setUploadError(`Upload mislukt: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <FolderOpen size={16} className="text-gray-400" />
+            <p className="font-bold text-gray-800">Hypermill bestanden</p>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{docs.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+            >
+              <Upload size={13} />
+              {uploading ? 'Bezig…' : 'Uploaden'}
+            </button>
+            <input ref={fileRef} type="file" className="hidden" accept=".hmc,.hmr" onChange={handleUpload} />
+            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
+          </div>
+        </div>
+        {uploadError && (
+          <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">{uploadError}</div>
+        )}
+        <div className="flex-1 overflow-auto">
+          {docs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+              <FolderOpen size={36} className="mb-2" />
+              <p className="text-sm">Nog geen Hypermill bestanden toegevoegd</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {docs.map(doc => (
+                <li key={doc.id} className="flex items-center gap-3 px-5 py-3 group hover:bg-gray-50">
+                  <FileText size={16} className="text-gray-300 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
+                    </p>
+                  </div>
+                  <a
+                    href={doc.fileUrl}
+                    download={doc.fileName}
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 shrink-0"
+                    title="Openen in Hypermill"
+                  >
+                    <Download size={14} />
+                  </a>
+                  <button
+                    onClick={() => deleteDoc.mutate(doc.id)}
+                    className="p-1.5 rounded hover:bg-red-50 text-gray-200 hover:text-red-500 shrink-0 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AanpakFrezenModal ─────────────────────────────────────────────────────────
+
+function fileTypeInfo(fileName: string, mimeType: string | null): {
+  isImage: boolean
+  isPdf: boolean
+  bg: string
+  labelColor: string
+  label: string
+} {
+  if (mimeType?.startsWith('image/')) return { isImage: true,  isPdf: false, bg: '', labelColor: '', label: '' }
+  const ext = (fileName.split('.').pop() ?? '').toLowerCase()
+  if (ext === 'pdf' || mimeType === 'application/pdf')
+    return { isImage: false, isPdf: true,  bg: 'bg-red-50',     labelColor: 'text-red-500',    label: 'PDF' }
+  if (ext === 'doc'  || ext === 'docx')
+    return { isImage: false, isPdf: false, bg: 'bg-blue-50',    labelColor: 'text-blue-600',   label: ext.toUpperCase() }
+  if (ext === 'xls'  || ext === 'xlsx')
+    return { isImage: false, isPdf: false, bg: 'bg-green-50',   labelColor: 'text-green-600',  label: ext.toUpperCase() }
+  if (ext === 'ppt'  || ext === 'pptx')
+    return { isImage: false, isPdf: false, bg: 'bg-orange-50',  labelColor: 'text-orange-500', label: ext.toUpperCase() }
+  if (ext === 'zip'  || ext === 'rar' || ext === '7z')
+    return { isImage: false, isPdf: false, bg: 'bg-yellow-50',  labelColor: 'text-yellow-600', label: 'ZIP' }
+  return { isImage: false, isPdf: false,   bg: 'bg-gray-100',   labelColor: 'text-gray-500',   label: ext.toUpperCase() || 'FILE' }
+}
+
+function AanpakFrezenModal({
+  docs, setupId, onClose,
+}: {
+  docs: Document[]
+  setupId: string
+  onClose: () => void
+}) {
+  const qc      = useQueryClient()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading]     = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [lightbox, setLightbox]       = useState<{ doc: Document } | null>(null)
+  const [editBeschrijving, setEditBeschrijving] = useState('')
+
+  const deleteDoc = useMutation({
+    mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  const patchDoc = useMutation({
+    mutationFn: ({ docId, body }: { docId: string; body: { versionNote?: string | null; beschrijving?: string | null } }) =>
+      apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+  })
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('documentType', 'aanpak_frezen')
+      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+    } catch (err) {
+      setUploadError(`Upload mislukt: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  function openLightbox(doc: Document) {
+    setLightbox({ doc })
+    setEditBeschrijving(doc.beschrijving ?? '')
+  }
+
+  function saveBeschrijving() {
+    if (!lightbox) return
+    patchDoc.mutate({ docId: lightbox.doc.id, body: { beschrijving: editBeschrijving || null } })
+    setLightbox(prev => prev ? { doc: { ...prev.doc, beschrijving: editBeschrijving || null } } : null)
+  }
+
+  function saveVersionNote(docId: string, note: string) {
+    patchDoc.mutate({ docId, body: { versionNote: note || null } })
+  }
+
+  return (
+    <>
+      {/* Thumbnail grid modal */}
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+            <div className="flex items-center gap-2">
+              <FolderOpen size={16} className="text-gray-400" />
+              <p className="font-bold text-gray-800">Aanpak frezen</p>
+              <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{docs.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                <Upload size={13} />
+                {uploading ? 'Bezig…' : 'Uploaden'}
+              </button>
+              <input ref={fileRef} type="file" className="hidden" accept="*/*" onChange={handleUpload} />
+              <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
+            </div>
+          </div>
+
+          {uploadError && (
+            <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">{uploadError}</div>
+          )}
+
+          {/* Thumbnail grid */}
+          <div className="flex-1 overflow-auto p-4">
+            {docs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+                <FolderOpen size={36} className="mb-2" />
+                <p className="text-sm">Nog niets toegevoegd</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                {docs.map(doc => {
+                  const ft = fileTypeInfo(doc.fileName, doc.mimeType)
+                  return (
+                    <div key={doc.id} className="relative group flex flex-col gap-1.5">
+                      {/* Thumbnail */}
+                      <button
+                        onClick={() => openLightbox(doc)}
+                        className="w-full aspect-square rounded-xl overflow-hidden border border-gray-200 hover:border-teal-300 hover:shadow-md transition-all relative"
+                      >
+                        {ft.isImage ? (
+                          <img src={doc.fileUrl} alt={doc.fileName} className="w-full h-full object-cover" />
+                        ) : ft.isPdf ? (
+                          <div className="w-full h-full relative overflow-hidden bg-white">
+                            <iframe
+                              src={`${doc.fileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                              title={doc.fileName}
+                              style={{
+                                position: 'absolute', top: 0, left: 0,
+                                width: '800px', height: '800px',
+                                transform: 'scale(0.25)', transformOrigin: '0 0',
+                                border: 'none', pointerEvents: 'none',
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className={`w-full h-full flex flex-col items-center justify-center gap-2 ${ft.bg}`}>
+                            <FileText size={32} className={ft.labelColor} />
+                            <span className={`text-xs font-bold tracking-wide ${ft.labelColor}`}>{ft.label}</span>
+                            <span className="text-[10px] text-gray-400 px-2 text-center truncate w-full">{doc.fileName}</span>
+                          </div>
+                        )}
+                      </button>
+
+                      {/* Korte omschrijving */}
+                      <input
+                        type="text"
+                        defaultValue={doc.versionNote ?? ''}
+                        placeholder="Korte omschrijving…"
+                        onBlur={e => saveVersionNote(doc.id, e.target.value)}
+                        className="text-[11px] text-gray-600 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200 focus:border-teal-300 focus:outline-none bg-transparent w-full"
+                      />
+
+                      {/* Verwijder knop */}
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteDoc.mutate(doc.id) }}
+                        className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-gray-300 hover:text-red-500 hover:bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Lightbox — volledig scherm */}
+      {lightbox && (() => {
+        const ft = fileTypeInfo(lightbox.doc.fileName, lightbox.doc.mimeType)
+        return (
+          <div
+            className="fixed inset-0 bg-black z-[60] flex flex-col"
+            onClick={() => setLightbox(null)}
+          >
+            {/* Topbalk */}
+            <div
+              className="flex items-center justify-between px-5 py-3 bg-black/60 shrink-0"
+              onClick={e => e.stopPropagation()}
+            >
+              <p className="text-sm text-white/80 truncate">{lightbox.doc.fileName}</p>
+              <div className="flex items-center gap-2 shrink-0">
+                {!ft.isImage && (
+                  <a
+                    href={lightbox.doc.fileUrl}
+                    download={lightbox.doc.fileName}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <Download size={13} />
+                    Openen
+                  </a>
+                )}
+                <button
+                  onClick={e => { e.stopPropagation(); setLightbox(null) }}
+                  className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Inhoud */}
+            <div className="flex-1 min-h-0 flex" onClick={e => e.stopPropagation()}>
+              {/* Afbeelding of PDF of icoon */}
+              <div className="flex-1 min-w-0 flex items-center justify-center overflow-hidden">
+                {ft.isImage ? (
+                  <img
+                    src={lightbox.doc.fileUrl}
+                    alt={lightbox.doc.fileName}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : ft.isPdf ? (
+                  <iframe
+                    src={lightbox.doc.fileUrl}
+                    className="w-full h-full border-0"
+                    title={lightbox.doc.fileName}
+                  />
+                ) : (
+                  <div className={`flex flex-col items-center justify-center gap-4 w-64 h-64 rounded-2xl ${ft.bg}`}>
+                    <FileText size={64} className={ft.labelColor} />
+                    <span className={`text-xl font-bold ${ft.labelColor}`}>{ft.label}</span>
+                    <p className="text-sm text-gray-500 text-center px-4">{lightbox.doc.fileName}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Beschrijving panel */}
+              <div
+                  className="w-80 bg-white flex flex-col shrink-0 border-l border-gray-100"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="flex-1 overflow-auto p-5 flex flex-col gap-4">
+                    {lightbox.doc.versionNote && (
+                      <p className="text-base font-semibold text-gray-800">{lightbox.doc.versionNote}</p>
+                    )}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Uitgebreide beschrijving</label>
+                      <textarea
+                        value={editBeschrijving}
+                        onChange={e => setEditBeschrijving(e.target.value)}
+                        placeholder="Beschrijving toevoegen…"
+                        rows={8}
+                        className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-teal-400 resize-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="px-5 py-4 border-t border-gray-100 shrink-0 flex justify-end">
+                    <button
+                      onClick={saveBeschrijving}
+                      className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+                    >
+                      Opslaan
+                    </button>
+                  </div>
+                </div>
+            </div>
+          </div>
+        )
+      })()}
+    </>
   )
 }
 

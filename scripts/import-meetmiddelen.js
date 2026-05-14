@@ -4,10 +4,10 @@
 import fs from 'fs'
 
 // ── Configuratie ────────────────────────────────────────────────────────────
-const BACKEND_URL   = 'http://localhost:3000'    // of http://<server-ip>:8080 voor productie
+const BACKEND_URL   = 'http://localhost:3000/api'    // of http://<server-ip>:8080/api voor productie
 const ADMIN_USERNAME = 'admin'
-const ADMIN_PASSWORD = 'changeme'                // aanpassen naar het admin wachtwoord
-const FILE_PATH      = 'C:\\Users\\ArneNijman\\Documents\\FIlemaker export\\Kwaliteit\\Kwaliteit export.tab'
+const ADMIN_PASSWORD = '%vw84zQ6tObWrAmj'
+const FILE_PATH      = 'C:\\Users\\ArneNijman\\Documents\\FIlemaker export\\Kwaliteit\\meetmiddel export.tab'
 // ────────────────────────────────────────────────────────────────────────────
 
 function parseDate(ddmmyyyy) {
@@ -31,7 +31,7 @@ function calcInterval(kalDatumStr, vervalDatumStr) {
 }
 
 async function login() {
-  const res = await fetch(`${BACKEND_URL}/auth/login`, {
+  const res = await fetch(`${BACKEND_URL}/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),

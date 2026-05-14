@@ -242,13 +242,14 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     // Tekeningen & CAD-bestanden op product-niveau
     const documents = await fastify.db
       .select({
-        id:           productSetupDocuments.id,
-        documentType: productSetupDocuments.documentType,
-        fileUrl:      productSetupDocuments.fileUrl,
-        fileName:     productSetupDocuments.fileName,
-        versionNote:  productSetupDocuments.versionNote,
-        mimeType:     productSetupDocuments.mimeType,
-        uploadedAt:   productSetupDocuments.uploadedAt,
+        id:             productSetupDocuments.id,
+        documentType:   productSetupDocuments.documentType,
+        fileUrl:        productSetupDocuments.fileUrl,
+        fileName:       productSetupDocuments.fileName,
+        versionNote:    productSetupDocuments.versionNote,
+        beschrijving:   productSetupDocuments.beschrijving,
+        mimeType:       productSetupDocuments.mimeType,
+        uploadedAt:     productSetupDocuments.uploadedAt,
         uploadedByName: employees.name,
       })
       .from(productSetupDocuments)
@@ -1123,6 +1124,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         fileUrl:        productSetupDocuments.fileUrl,
         fileName:       productSetupDocuments.fileName,
         versionNote:    productSetupDocuments.versionNote,
+        beschrijving:   productSetupDocuments.beschrijving,
         mimeType:       productSetupDocuments.mimeType,
         rapportageType: productSetupDocuments.rapportageType,
         uploadedAt:     productSetupDocuments.uploadedAt,
@@ -1138,11 +1140,14 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
   fastify.patch('/kiosk/product-setups/documents/:docId', auth, async (req, reply) => {
     const { docId } = req.params as { docId: string }
-    const { versionNote } = req.body as { versionNote?: string | null }
+    const { versionNote, beschrijving } = req.body as { versionNote?: string | null; beschrijving?: string | null }
 
     const [updated] = await fastify.db
       .update(productSetupDocuments)
-      .set({ versionNote: versionNote?.trim() || null })
+      .set({
+        ...(versionNote  !== undefined && { versionNote:  versionNote?.trim()  || null }),
+        ...(beschrijving !== undefined && { beschrijving: beschrijving?.trim() || null }),
+      })
       .where(eq(productSetupDocuments.id, docId))
       .returning()
 

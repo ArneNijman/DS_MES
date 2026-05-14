@@ -565,6 +565,7 @@ export const productSetupDocuments = pgTable('product_setup_documents', {
   fileUrl:      text('file_url').notNull(),
   fileName:     text('file_name').notNull(),
   versionNote:   text('version_note'),
+  beschrijving:  text('beschrijving'),
   mimeType:      text('mime_type'),
   rapportageType: text('rapportage_type'),  // 'frezen' | 'controle' | 'eindmeting' | null
   uploadedBy:    uuid('uploaded_by').references(() => employees.id, { onDelete: 'set null' }),

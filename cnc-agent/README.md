@@ -1,5 +1,23 @@
 # CNC Agent — Dutch Shape MES
 
+> **Dit is de enige component die op de Windows PC geïnstalleerd wordt.**
+> De volledige MES-server (frontend, backend, database) draait op een aparte Linux server via Docker.
+> `install.sh` en Docker zijn uitsluitend bedoeld voor de Linux server — voer die **niet** uit op Windows.
+>
+> **Wat u op de Windows PC doet — in drie stappen:**
+>
+> 1. **Node.js installeren** — download en installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
+> 2. **Map neerzetten** — kopieer de map `cnc-agent\` (uit de repo) naar de Windows PC, bijvoorbeeld naar `C:\DS_MES\cnc-agent\`
+> 3. **Configureren** — maak een kopie van `.env.example`, noem die `.env`, en vul in:
+>    ```
+>    BACKEND_URL=http://<ip-van-de-linux-server>:8080
+>    ADMIN_USERNAME=admin
+>    ADMIN_PASSWORD="wachtwoord-uit-install.sh"
+>    TNCCMD_PATH=C:\Program Files (x86)\HEIDENHAIN\TNCremo\TNCcmd.exe
+>    ```
+>
+> Daarna dubbelklikken op `run.bat` om te testen, en `install-scheduler.ps1` uitvoeren (als Administrator) om de agent automatisch te laten starten bij Windows-opstart. Zie [Eerste installatie](#eerste-installatie) voor de volledige uitleg.
+
 Haalt automatisch TOOL.T bestanden op van Heidenhain CNC-machines via TNCcmd.exe
 en stuurt ze naar de MES backend. Detecteert ook wijzigingen in de WinTool database
 en synchroniseert deze automatisch. Biedt een HTTP server zodat de Sync-knop

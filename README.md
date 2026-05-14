@@ -139,13 +139,25 @@ crontab -e
 
 ## CNC Agent instellen — Windows PC
 
+> **Belangrijk — dit is een aparte, lichte installatie op de Windows PC.**
+> Op de Windows machine installeert u **uitsluitend de CNC agent** — u voert `install.sh` daar **niet** uit.
+> Geen Docker, geen database, geen Linux. Alleen Node.js + de map `cnc-agent\` uit de repo.
+> De volledige MES-server (Docker Compose) draait alleen op de Linux server.
+
 De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-machine afzonderlijk. Die PC hoeft alleen **netwerkbereik** te hebben naar de CNC-machines (ping werkt) en naar de MES-server (poort 8080). De agent haalt de gereedschapstabellen op via TNCcmd.exe en stuurt ze naar het MES.
 
 **Stap 1** — Installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
 
-**Stap 2** — Kopieer het configuratiebestand:
+**Stap 2** — Zet de agent-map op de Windows PC:
+Kopieer de map `cnc-agent\` vanuit de repo naar de Windows PC, bijvoorbeeld naar:
 ```
-cnc-agent\.env.example  →  cnc-agent\.env
+C:\DS_MES\cnc-agent\
+```
+
+**Stap 3** — Maak het configuratiebestand aan:
+Ga naar de gekopieerde map (`C:\DS_MES\cnc-agent\`) en maak een kopie van `.env.example`:
+```
+.env.example  →  .env
 ```
 Open `.env` in Kladblok en vul in:
 ```
@@ -155,14 +167,14 @@ ADMIN_PASSWORD=<wachtwoord uit de installatie>
 TNCCMD_PATH=C:\Program Files (x86)\HEIDENHAIN\TNCremo\TNCcmd.exe
 ```
 
-**Stap 2b** — WinTool koppelen *(optioneel)*:
+**Stap 3b** — WinTool koppelen *(optioneel)*:
 Vul ook `WINTOOL_DB_PATH=` in met het volledige pad naar het `.db` bestand op deze Windows PC, bijvoorbeeld:
 ```
 WINTOOL_DB_PATH=R:\Tooldatabase\Dutch-Shape_2025.db
 ```
 
-**Stap 3** — Test de verbinding:
-Dubbelklik `cnc-agent\run.bat`
+**Stap 4** — Test de verbinding:
+Dubbelklik `run.bat` in de cnc-agent map.
 Het venster toont de sync-voortgang per machine en sluit daarna af:
 ```
 📋  5 machine(s) gevonden, 5 met IP-adres
@@ -170,15 +182,15 @@ Het venster toont de sync-voortgang per machine en sluit daarna af:
 📊  Klaar: 5 geslaagd, 0 offline, 0 fout(en)
 ```
 
-**Stap 4** — Installeer als automatische achtergrondtaak:
-Open PowerShell als administrator en voer uit:
+**Stap 5** — Installeer als automatische achtergrondtaak:
+Open PowerShell als administrator, navigeer naar de cnc-agent map en voer uit:
 ```
-powershell -ExecutionPolicy Bypass -File cnc-agent\install-scheduler.ps1
+powershell -ExecutionPolicy Bypass -File install-scheduler.ps1
 ```
 
 De agent draait nu automatisch op de achtergrond en synchroniseert bij elke Windows-opstart en elke 30 minuten daarna.
 
-> **Volg voor de volledige installatie van de CNC agent het stappenplan in [`cnc-agent\README.md`](cnc-agent/README.md).**
+> **Volg voor de volledige installatie van de CNC agent het stappenplan in [`cnc-agent\README.md`](cnc-agent/README.md#eerste-installatie).**
 > Dat document bevat uitgebreide uitleg per stap, probleemoplossing, de werking van de Sync-knop in de kiosk en het instellen van meerdere agents voor redundantie.
 
 ---
@@ -187,7 +199,7 @@ De agent draait nu automatisch op de achtergrond en synchroniseert bij elke Wind
 
 De gereedschapsdatabase uit WinTool synchroniseert automatisch via de CNC agent.
 
-**Instellen:** Vul `WINTOOL_DB_PATH=` in de cnc-agent `.env` in met het volledige pad naar het `.db` bestand op de Windows PC (zie stap 2b hierboven). De agent detecteert wijzigingen automatisch en uploadt naar het MES.
+**Instellen:** Vul `WINTOOL_DB_PATH=` in de cnc-agent `.env` in met het volledige pad naar het `.db` bestand op de Windows PC (zie stap 3b hierboven). De agent detecteert wijzigingen automatisch en uploadt naar het MES.
 
 **Bibliotheek herladen:** Admin → CNC Machining → Bibliotheek → knop "Herlaad bibliotheek". Dit forceert een directe upload, ook als het bestand niet gewijzigd is.
 
