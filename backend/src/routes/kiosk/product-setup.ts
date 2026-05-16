@@ -265,6 +265,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         .filter(f => f.stepId === step.id)
         .map(f => ({
           ...f,
+          postprocessor: f.postprocessor ?? parseNcProgram(f.fileContent).postprocessor ?? null,
           toolCalls: toolCalls.filter(tc => tc.ncFileId === f.id),
         })),
       attachments: attachments.filter(a => a.stepId === step.id),

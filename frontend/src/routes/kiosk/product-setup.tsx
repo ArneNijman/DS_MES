@@ -1603,26 +1603,31 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             {/* Stuur naar machine */}
             {step.machineId && step.bewerkingNr != null && (() => {
               const selFile = step.ncFiles.find(f => f.id === selectedNcFileId)
-              const mismatch =
-                !!step.machinePostprocessor &&
-                !!selFile?.postprocessor &&
-                step.machinePostprocessor.toLowerCase() !== selFile.postprocessor.toLowerCase()
+              const filePp = selFile?.postprocessor ?? null
+              const machinePp = step.machinePostprocessor ?? null
+              const blocked = !!filePp && (!machinePp || machinePp.toLowerCase() !== filePp.toLowerCase())
               return (
                 <>
-                  {mismatch && (
+                  {filePp && (
                     <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700 w-full">
                       <AlertTriangle size={14} className="shrink-0 mt-0.5 text-orange-500" />
-                      <span>
-                        Dit .h bestand is voor <strong>{selFile!.postprocessor}</strong>, maar deze machine verwacht <strong>{step.machinePostprocessor}</strong>.
-                      </span>
+                      {machinePp && machinePp.toLowerCase() !== filePp.toLowerCase() ? (
+                        <span>
+                          Dit .h bestand is voor <strong>{filePp}</strong>, maar deze machine verwacht <strong>{machinePp}</strong>.
+                        </span>
+                      ) : (
+                        <span>
+                          Dit .h bestand is gegenereerd voor postprocessor <strong>{filePp}</strong>. Stel de postprocessor in op de machine (Admin → Machines) om te verifiëren.
+                        </span>
+                      )}
                     </div>
                   )}
                   <button
                     onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
-                    disabled={sendToMachine.isPending || mismatch}
+                    disabled={sendToMachine.isPending || blocked}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
-                      mismatch
+                      blocked
                         ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                         : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
                     )}

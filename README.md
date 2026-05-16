@@ -283,6 +283,37 @@ Het script geeft aan het einde een samenvatting:
 
 ---
 
+## Postprocessor-validatie (Product Setup)
+
+NC-programma's (.h bestanden) bevatten een regel die aangeeft voor welke machine/postprocessor ze zijn gegenereerd:
+
+```
+2 ; Postprocessor: 04-MTE_BF4200_iTNC530
+```
+
+Het MES leest deze regel automatisch uit bij het uploaden van een .h bestand en vergelijkt die met de postprocessor die op de machine is ingesteld.
+
+### Instellen per machine
+
+Admin → Machines → machine openen → **CNC configuratie** → veld **Postprocessor** invullen (bijv. `04-MTE_BF4200_iTNC530`) → Opslaan.
+
+Dit hoeft eenmalig per machine ingesteld te worden.
+
+### Meldingen in Product Setup
+
+In de CNC-tab van Product Setup, bij het geselecteerde .h bestand:
+
+| Situatie | Melding | Knop "Stuur naar machine" |
+|----------|---------|--------------------------|
+| .h bestand heeft geen postprocessor-regel | Geen melding | Actief |
+| .h bestand heeft postprocessor, machine heeft **geen** postprocessor ingesteld | Oranje waarschuwing: bestand is voor postprocessor X — stel in via Admin → Machines | Geblokkeerd |
+| .h bestand en machine hebben **dezelfde** postprocessor | Geen melding | Actief |
+| .h bestand en machine hebben een **andere** postprocessor | Oranje waarschuwing: bestand is voor X, machine verwacht Y | Geblokkeerd |
+
+Een geblokkeerde knop voorkomt dat een operator per ongeluk een NC-programma naar de verkeerde machine stuurt.
+
+---
+
 ## Projectstructuur
 
 ```
