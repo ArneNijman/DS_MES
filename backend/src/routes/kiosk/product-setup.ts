@@ -190,21 +190,22 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     const steps = await fastify.db
       .select({
-        id:              productSetupSteps.id,
-        setupId:         productSetupSteps.setupId,
-        stepNumber:      productSetupSteps.stepNumber,
-        bewerkingNr:     productSetupSteps.bewerkingNr,
-        stepName:        productSetupSteps.stepName,
-        machineId:       productSetupSteps.machineId,
-        machineName:     machines.name,
-        machinePhotoUrl: machines.photoUrl,
-        zeroX:           productSetupSteps.zeroX,
-        zeroY:           productSetupSteps.zeroY,
-        zeroZ:           productSetupSteps.zeroZ,
-        stepDescription: productSetupSteps.stepDescription,
-        opmerkingen:     productSetupSteps.opmerkingen,
-        createdAt:       productSetupSteps.createdAt,
-        updatedAt:       productSetupSteps.updatedAt,
+        id:                  productSetupSteps.id,
+        setupId:             productSetupSteps.setupId,
+        stepNumber:          productSetupSteps.stepNumber,
+        bewerkingNr:         productSetupSteps.bewerkingNr,
+        stepName:            productSetupSteps.stepName,
+        machineId:           productSetupSteps.machineId,
+        machineName:         machines.name,
+        machinePhotoUrl:     machines.photoUrl,
+        machinePostprocessor: machines.postprocessor,
+        zeroX:               productSetupSteps.zeroX,
+        zeroY:               productSetupSteps.zeroY,
+        zeroZ:               productSetupSteps.zeroZ,
+        stepDescription:     productSetupSteps.stepDescription,
+        opmerkingen:         productSetupSteps.opmerkingen,
+        createdAt:           productSetupSteps.createdAt,
+        updatedAt:           productSetupSteps.updatedAt,
       })
       .from(productSetupSteps)
       .leftJoin(machines, eq(machines.id, productSetupSteps.machineId))
@@ -413,7 +414,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         return reply.status(422).send({ error: 'Bestand is leeg' })
       }
 
-      const { programName, toolCalls, summary } = parseNcProgram(content)
+      const { programName, postprocessor, toolCalls, summary } = parseNcProgram(content)
 
       const [ncFile] = await fastify.db.transaction(async (tx) => {
         const [inserted] = await tx
@@ -422,6 +423,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
             stepId,
             fileName:      file.filename,
             programName:   programName ?? null,
+            postprocessor: postprocessor ?? null,
             fileContent:   content,
             toolCallCount: toolCalls.length,
           })

@@ -52,6 +52,7 @@ const machineSchema = z.object({
   cncNcVersion: z.string().optional().nullable(),
   cncPlcVersion: z.string().optional().nullable(),
   toolTableFormat: z.string().optional().nullable(),
+  postprocessor: z.string().optional().nullable(),
 })
 
 const maintenanceSchema = z.object({

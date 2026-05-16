@@ -41,6 +41,7 @@ interface MachineDetail extends Machine {
   cncNcVersion: string | null
   cncPlcVersion: string | null
   toolTableFormat: string | null
+  postprocessor: string | null
 }
 
 interface MaintenanceTask {
@@ -282,6 +283,7 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     cncNcVersion: initial.cncNcVersion ?? '',
     cncPlcVersion: initial.cncPlcVersion ?? '',
     toolTableFormat: initial.toolTableFormat ?? '',
+    postprocessor: initial.postprocessor ?? '',
   })
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
@@ -442,6 +444,15 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
                   <option value="3200">3200</option>
                   <option value="portaal">Portaal</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Postprocessor</label>
+                <input
+                  value={form.postprocessor}
+                  onChange={(e) => set('postprocessor', e.target.value)}
+                  placeholder="bijv. 04-MTE_BF4200_iTNC530"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
               </div>
             </div>
           </div>

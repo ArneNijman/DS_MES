@@ -4,7 +4,7 @@ import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check, Pencil,
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
-  Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send,
+  Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send, AlertTriangle,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -49,21 +49,22 @@ interface SetupSummary {
 }
 
 interface Step {
-  id:              string
-  setupId:         string
-  stepNumber:      number
-  bewerkingNr:     number | null
-  stepName:        string
-  machineId:       string | null
-  machineName:     string | null
-  machinePhotoUrl: string | null
-  zeroX:           string | null
-  zeroY:           string | null
-  zeroZ:           string | null
-  stepDescription: string | null
-  opmerkingen:     string | null
-  ncFiles:         NcFile[]
-  attachments:     Attachment[]
+  id:                   string
+  setupId:              string
+  stepNumber:           number
+  bewerkingNr:          number | null
+  stepName:             string
+  machineId:            string | null
+  machineName:          string | null
+  machinePhotoUrl:      string | null
+  machinePostprocessor: string | null
+  zeroX:                string | null
+  zeroY:                string | null
+  zeroZ:                string | null
+  stepDescription:      string | null
+  opmerkingen:          string | null
+  ncFiles:              NcFile[]
+  attachments:          Attachment[]
 }
 
 interface NcFile {
@@ -71,6 +72,7 @@ interface NcFile {
   stepId:        string
   fileName:      string
   programName:   string | null
+  postprocessor: string | null
   toolCallCount: number
   uploadedAt:    string
   toolCalls:     StoredToolCall[]
@@ -1599,17 +1601,39 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             )}
 
             {/* Stuur naar machine */}
-            {step.machineId && step.bewerkingNr != null && (
-              <button
-                onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
-                disabled={sendToMachine.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-                title="Stuur naar machine via TNCcmd"
-              >
-                <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
-                {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
-              </button>
-            )}
+            {step.machineId && step.bewerkingNr != null && (() => {
+              const selFile = step.ncFiles.find(f => f.id === selectedNcFileId)
+              const mismatch =
+                !!step.machinePostprocessor &&
+                !!selFile?.postprocessor &&
+                step.machinePostprocessor.toLowerCase() !== selFile.postprocessor.toLowerCase()
+              return (
+                <>
+                  {mismatch && (
+                    <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700 w-full">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5 text-orange-500" />
+                      <span>
+                        Dit .h bestand is voor <strong>{selFile!.postprocessor}</strong>, maar deze machine verwacht <strong>{step.machinePostprocessor}</strong>.
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
+                    disabled={sendToMachine.isPending || mismatch}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
+                      mismatch
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                    )}
+                    title="Stuur naar machine via TNCcmd"
+                  >
+                    <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
+                    {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
+                  </button>
+                </>
+              )
+            })()}
             {sendResult && (
               <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
                 {sendResult.ok ? '✓' : '✗'} {sendResult.msg}

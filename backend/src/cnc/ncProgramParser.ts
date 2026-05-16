@@ -29,9 +29,10 @@ export interface ParseSummary {
 }
 
 export interface ParsedNcProgram {
-  programName: string | null
-  toolCalls:   ParsedToolCall[]
-  summary:     ParseSummary
+  programName:   string | null
+  postprocessor: string | null
+  toolCalls:     ParsedToolCall[]
+  summary:       ParseSummary
 }
 
 const RE_BLOCK_NUM  = /^N?\d+\s+/i
@@ -52,7 +53,8 @@ function parseNum(val: string): number | null {
 export function parseNcProgram(content: string): ParsedNcProgram {
   const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
 
-  let programName: string | null = null
+  let programName:   string | null = null
+  let postprocessor: string | null = null
   const toolCalls: ParsedToolCall[] = []
   let skipped = 0
   let errors   = 0
@@ -72,6 +74,13 @@ export function parseNcProgram(content: string): ParsedNcProgram {
     const beginMatch = line.match(RE_BEGIN_PGM)
     if (beginMatch) {
       programName = beginMatch[1]
+      skipped++
+      continue
+    }
+
+    const ppMatch = line.match(/^;\s*Postprocessor:\s*(.+)/i)
+    if (ppMatch) {
+      postprocessor = ppMatch[1].trim()
       skipped++
       continue
     }
@@ -132,6 +141,7 @@ export function parseNcProgram(content: string): ParsedNcProgram {
 
   return {
     programName,
+    postprocessor,
     toolCalls,
     summary: { parsed: toolCalls.length, skipped, errors },
   }

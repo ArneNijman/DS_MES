@@ -100,6 +100,7 @@ export const machines = pgTable('machines', {
   cncNcVersion: text('cnc_nc_version'),
   cncPlcVersion: text('cnc_plc_version'),
   toolTableFormat: text('tool_table_format'),  // null = 'heidenhain', 'fooke'
+  postprocessor: text('postprocessor'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -541,6 +542,7 @@ export const productSetupNcFiles = pgTable('product_setup_nc_files', {
   stepId:        uuid('step_id').notNull().references(() => productSetupSteps.id, { onDelete: 'cascade' }),
   fileName:      text('file_name').notNull(),
   programName:   text('program_name'),
+  postprocessor: text('postprocessor'),
   fileContent:   text('file_content').notNull(),
   toolCallCount: integer('tool_call_count').notNull().default(0),
   uploadedAt:    timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
