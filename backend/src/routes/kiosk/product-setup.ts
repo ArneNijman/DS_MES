@@ -190,22 +190,23 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     const steps = await fastify.db
       .select({
-        id:                  productSetupSteps.id,
-        setupId:             productSetupSteps.setupId,
-        stepNumber:          productSetupSteps.stepNumber,
-        bewerkingNr:         productSetupSteps.bewerkingNr,
-        stepName:            productSetupSteps.stepName,
-        machineId:           productSetupSteps.machineId,
-        machineName:         machines.name,
-        machinePhotoUrl:     machines.photoUrl,
+        id:                   productSetupSteps.id,
+        setupId:              productSetupSteps.setupId,
+        stepNumber:           productSetupSteps.stepNumber,
+        bewerkingNr:          productSetupSteps.bewerkingNr,
+        stepName:             productSetupSteps.stepName,
+        machineId:            productSetupSteps.machineId,
+        machineName:          machines.name,
+        machinePhotoUrl:      machines.photoUrl,
         machinePostprocessor: machines.postprocessor,
-        zeroX:               productSetupSteps.zeroX,
-        zeroY:               productSetupSteps.zeroY,
-        zeroZ:               productSetupSteps.zeroZ,
-        stepDescription:     productSetupSteps.stepDescription,
-        opmerkingen:         productSetupSteps.opmerkingen,
-        createdAt:           productSetupSteps.createdAt,
-        updatedAt:           productSetupSteps.updatedAt,
+        zeroX:                productSetupSteps.zeroX,
+        zeroY:                productSetupSteps.zeroY,
+        zeroZ:                productSetupSteps.zeroZ,
+        stepDescription:      productSetupSteps.stepDescription,
+        opmerkingen:          productSetupSteps.opmerkingen,
+        checklistCompleted:   productSetupSteps.checklistCompleted,
+        createdAt:            productSetupSteps.createdAt,
+        updatedAt:            productSetupSteps.updatedAt,
       })
       .from(productSetupSteps)
       .leftJoin(machines, eq(machines.id, productSetupSteps.machineId))
@@ -347,27 +348,29 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.patch('/kiosk/product-setups/steps/:stepId', auth, async (req, reply) => {
     const { stepId } = req.params as { stepId: string }
     const body = req.body as {
-      stepName?:        string
-      bewerkingNr?:     number | null
-      machineId?:       string | null
-      zeroX?:           number | null
-      zeroY?:           number | null
-      zeroZ?:           number | null
-      stepDescription?: string | null
-      opmerkingen?:     string | null
+      stepName?:           string
+      bewerkingNr?:        number | null
+      machineId?:          string | null
+      zeroX?:              number | null
+      zeroY?:              number | null
+      zeroZ?:              number | null
+      stepDescription?:    string | null
+      opmerkingen?:        string | null
+      checklistCompleted?: boolean
     }
 
     const [updated] = await fastify.db
       .update(productSetupSteps)
       .set({
-        ...(body.stepName        !== undefined && { stepName:        body.stepName.trim() }),
-        ...(body.bewerkingNr     !== undefined && { bewerkingNr:     body.bewerkingNr ?? null }),
-        ...(body.machineId       !== undefined && { machineId:       body.machineId || null }),
-        ...(body.zeroX           !== undefined && { zeroX:           body.zeroX?.toString() ?? null }),
-        ...(body.zeroY           !== undefined && { zeroY:           body.zeroY?.toString() ?? null }),
-        ...(body.zeroZ           !== undefined && { zeroZ:           body.zeroZ?.toString() ?? null }),
-        ...(body.stepDescription !== undefined && { stepDescription: body.stepDescription || null }),
-        ...(body.opmerkingen     !== undefined && { opmerkingen:     body.opmerkingen || null }),
+        ...(body.stepName           !== undefined && { stepName:           body.stepName.trim() }),
+        ...(body.bewerkingNr        !== undefined && { bewerkingNr:        body.bewerkingNr ?? null }),
+        ...(body.machineId          !== undefined && { machineId:          body.machineId || null }),
+        ...(body.zeroX              !== undefined && { zeroX:              body.zeroX?.toString() ?? null }),
+        ...(body.zeroY              !== undefined && { zeroY:              body.zeroY?.toString() ?? null }),
+        ...(body.zeroZ              !== undefined && { zeroZ:              body.zeroZ?.toString() ?? null }),
+        ...(body.stepDescription    !== undefined && { stepDescription:    body.stepDescription || null }),
+        ...(body.opmerkingen        !== undefined && { opmerkingen:        body.opmerkingen || null }),
+        ...(body.checklistCompleted !== undefined && { checklistCompleted: body.checklistCompleted }),
         updatedAt: new Date(),
       })
       .where(eq(productSetupSteps.id, stepId))

@@ -5,6 +5,7 @@ import {
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
   Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send, AlertTriangle,
+  ClipboardCheck, CheckCircle2,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -63,6 +64,7 @@ interface Step {
   zeroZ:                string | null
   stepDescription:      string | null
   opmerkingen:          string | null
+  checklistCompleted:   boolean
   ncFiles:              NcFile[]
   attachments:          Attachment[]
 }
@@ -1443,6 +1445,16 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
   })
 
+  const CHECKLIST_ITEMS = [
+    'Alle tooling zit in de machine (groene bolletjes)',
+    'Nulpunt goed gezet',
+    'Correct programma geselecteerd',
+    'Correct programma ervoor gezet',
+    'Alle DL / DR uit tooltabel gehaald',
+  ]
+  const [checks, setChecks] = useState<boolean[]>(Array(5).fill(false))
+  const allChecked = checks.every(Boolean)
+
   const [showEditor, setShowEditor]         = useState(false)
   const [editorContent, setEditorContent]   = useState('')
   const [editorOriginal, setEditorOriginal] = useState('')
@@ -1501,8 +1513,8 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
 
   return (
     <div className="p-5 space-y-6 max-w-4xl">
-      {/* Nulpunt + Opmerkingen */}
-      <div className="flex gap-8 items-start">
+      {/* Nulpunt + Opmerkingen + Checklist */}
+      <div className="grid grid-cols-3 gap-6 items-start">
         <section>
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Nulpunt (Work Zero)</h3>
           <div className="flex gap-4">
@@ -1519,15 +1531,62 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             ))}
           </div>
         </section>
-        <section className="flex-1">
+        <section>
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Opmerkingen</h3>
           <textarea
             key={step.id}
-            className="w-full h-20 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 resize-none focus:outline-none focus:ring-1 focus:ring-teal-400"
+            className="w-full h-28 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 resize-none focus:outline-none focus:ring-1 focus:ring-teal-400"
             placeholder="Opmerkingen voor deze stap…"
             defaultValue={step.opmerkingen ?? ''}
             onBlur={e => patchStep.mutate({ opmerkingen: e.target.value.trim() || null })}
           />
+        </section>
+        <section>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <ClipboardCheck size={13} />
+            Checklist
+          </h3>
+          {step.checklistCompleted ? (
+            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 text-xs text-green-700 font-medium">
+                <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+                Checklist voltooid
+              </div>
+              <button
+                onClick={() => { patchStep.mutate({ checklistCompleted: false }); setChecks(Array(5).fill(false)) }}
+                className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
+              >
+                Opnieuw
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {CHECKLIST_ITEMS.map((item, i) => (
+                <label key={i} className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checks[i]}
+                    onChange={e => setChecks(c => c.map((v, j) => j === i ? e.target.checked : v))}
+                    className="mt-0.5 accent-teal-600"
+                  />
+                  <span className="text-xs text-gray-700 leading-snug">{item}</span>
+                </label>
+              ))}
+              <button
+                disabled={!allChecked || patchStep.isPending}
+                onClick={() => patchStep.mutate({ checklistCompleted: true })}
+                className={cn(
+                  'mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  allChecked
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                )}
+              >
+                <Check size={12} />
+                Bevestig checklist
+              </button>
+            </div>
+          )}
         </section>
       </div>
 
@@ -1564,70 +1623,66 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
           )
         })()}
 
-        {/* Importeer / Sync knop voor actief bestand */}
-        {selectedNcFileId && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {!validation ? (
-              <button
-                onClick={() => validate()}
-                disabled={validating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-              >
-                <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
-                Importeer samenstellingen
-              </button>
-            ) : (
-              <button
-                onClick={() => handleSyncAndValidate()}
-                disabled={syncStatus === 'syncing' || validating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-              >
-                <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
-                {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
-              </button>
-            )}
-            {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
-
-            {/* Bewerken */}
-            <button
-              onClick={openEditor}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
-            >
-              <FileText size={12} />
-              Bewerken
-            </button>
-            {editorError && (
-              <span className="text-xs text-red-500">✗ {editorError}</span>
-            )}
-
-            {/* Stuur naar machine */}
-            {step.machineId && step.bewerkingNr != null && (() => {
-              const selFile = step.ncFiles.find(f => f.id === selectedNcFileId)
-              const filePp = selFile?.postprocessor ?? null
-              const machinePp = step.machinePostprocessor ?? null
-              const blocked = !!filePp && (!machinePp || machinePp.toLowerCase() !== filePp.toLowerCase())
-              return (
-                <>
-                  {filePp && (
-                    <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700 w-full">
-                      <AlertTriangle size={14} className="shrink-0 mt-0.5 text-orange-500" />
-                      {machinePp && machinePp.toLowerCase() !== filePp.toLowerCase() ? (
-                        <span>
-                          Dit .h bestand is voor <strong>{filePp}</strong>, maar deze machine verwacht <strong>{machinePp}</strong>.
-                        </span>
-                      ) : (
-                        <span>
-                          Dit .h bestand is gegenereerd voor postprocessor <strong>{filePp}</strong>. Stel de postprocessor in op de machine (Admin → Machines) om te verifiëren.
-                        </span>
-                      )}
-                    </div>
+        {/* Knoppen voor actief bestand */}
+        {selectedNcFileId && (() => {
+          const selFile = step.ncFiles.find(f => f.id === selectedNcFileId)
+          const filePp = selFile?.postprocessor ?? null
+          const machinePp = step.machinePostprocessor ?? null
+          const ppBlocked = !!filePp && (!machinePp || machinePp.toLowerCase() !== filePp.toLowerCase())
+          const canSend = !!(step.machineId && step.bewerkingNr != null)
+          const sendBlocked = ppBlocked || !step.checklistCompleted
+          return (
+            <div className="space-y-2 mb-4">
+              {/* Postprocessor waarschuwing */}
+              {filePp && canSend && (
+                <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5 text-orange-500" />
+                  {machinePp && machinePp.toLowerCase() !== filePp.toLowerCase() ? (
+                    <span>Dit .h bestand is voor <strong>{filePp}</strong>, maar deze machine verwacht <strong>{machinePp}</strong>.</span>
+                  ) : (
+                    <span>Dit .h bestand is gegenereerd voor postprocessor <strong>{filePp}</strong>. Stel de postprocessor in op de machine (Admin → Machines) om te verifiëren.</span>
                   )}
+                </div>
+              )}
+              {/* Knoppenrij */}
+              <div className="flex flex-wrap items-center gap-2">
+                {!validation ? (
+                  <button
+                    onClick={() => validate()}
+                    disabled={validating}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
+                    Importeer samenstellingen
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSyncAndValidate()}
+                    disabled={syncStatus === 'syncing' || validating}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
+                    {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
+                  </button>
+                )}
+                {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
+
+                <button
+                  onClick={openEditor}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
+                >
+                  <FileText size={12} />
+                  Bewerken
+                </button>
+                {editorError && <span className="text-xs text-red-500">✗ {editorError}</span>}
+
+                {canSend && (
                   <button
                     onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
-                    disabled={sendToMachine.isPending || blocked}
+                    disabled={sendToMachine.isPending || sendBlocked}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
-                      blocked
+                      sendBlocked
                         ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                         : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
                     )}
@@ -1636,16 +1691,16 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                     <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
                     {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
                   </button>
-                </>
-              )
-            })()}
-            {sendResult && (
-              <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
-                {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
-              </span>
-            )}
-          </div>
-        )}
+                )}
+                {sendResult && (
+                  <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
+                    {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Tijdstempels */}
         {validation && (

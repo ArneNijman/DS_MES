@@ -531,10 +531,11 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   zeroX:           text('zero_x'),
   zeroY:           text('zero_y'),
   zeroZ:           text('zero_z'),
-  stepDescription: text('step_description'),
-  opmerkingen:     text('opmerkingen'),
-  createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:       timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  stepDescription:    text('step_description'),
+  opmerkingen:        text('opmerkingen'),
+  checklistCompleted: boolean('checklist_completed').default(false).notNull(),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const productSetupNcFiles = pgTable('product_setup_nc_files', {
