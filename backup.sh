@@ -19,7 +19,7 @@ fail() { echo -e "${RED}✗${RESET} $1"; exit 1; }
 
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
-KEEP_DAYS=7
+KEEP_MIN=5
 
 echo ""
 echo -e "${BOLD}════════════════════════════════${RESET}"
@@ -49,10 +49,17 @@ docker compose exec -T backend tar czf - /app/uploads \
   > "${BACKUP_DIR}/uploads_${TIMESTAMP}.tar.gz"
 ok "Uploads: backups/uploads_${TIMESTAMP}.tar.gz"
 
-# ── Opruimen (ouder dan KEEP_DAYS dagen) ─────────────────────
+# ── Opruimen (minimum KEEP_MIN bewaren, oudste verwijderen) ──
 
-find "$BACKUP_DIR" -name "db_*.sql.gz"        -mtime +${KEEP_DAYS} -delete
-find "$BACKUP_DIR" -name "uploads_*.tar.gz"   -mtime +${KEEP_DAYS} -delete
+DB_COUNT=$(ls -1 "${BACKUP_DIR}"/db_*.sql.gz 2>/dev/null | wc -l)
+if [ "$DB_COUNT" -gt "$KEEP_MIN" ]; then
+  ls -1t "${BACKUP_DIR}"/db_*.sql.gz | tail -n +$((KEEP_MIN + 1)) | xargs rm -f
+fi
+
+UL_COUNT=$(ls -1 "${BACKUP_DIR}"/uploads_*.tar.gz 2>/dev/null | wc -l)
+if [ "$UL_COUNT" -gt "$KEEP_MIN" ]; then
+  ls -1t "${BACKUP_DIR}"/uploads_*.tar.gz | tail -n +$((KEEP_MIN + 1)) | xargs rm -f
+fi
 
 # ── Samenvatting ─────────────────────────────────────────────
 
@@ -67,7 +74,7 @@ echo ""
 echo "  Map     : ${BACKUP_DIR}/"
 echo "  Database: db_${TIMESTAMP}.sql.gz  (${DB_SIZE})"
 echo "  Uploads : uploads_${TIMESTAMP}.tar.gz  (${UL_SIZE})"
-echo "  Bewaren : laatste ${KEEP_DAYS} dagen"
+echo "  Bewaren : minimaal ${KEEP_MIN} backups (oudste verwijderd boven dit aantal)"
 echo ""
 echo "  Terugzetten database:"
 echo "    gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes"

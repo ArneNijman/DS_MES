@@ -120,7 +120,7 @@ Data (database, uploads) blijft altijd behouden.
 ./backup.sh
 ```
 
-Slaat de database en uploads op in `backups/` op de server. Backups ouder dan 7 dagen worden automatisch verwijderd. Terugzetten:
+Slaat de database en uploads op in `backups/` op de server. Er worden altijd minimaal 5 backups bewaard; als er meer dan 5 zijn wordt de oudste automatisch verwijderd. Terugzetten:
 
 ```bash
 gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes
