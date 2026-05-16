@@ -212,6 +212,48 @@ De gereedschapsdatabase uit WinTool synchroniseert automatisch via de CNC agent.
 
 ---
 
+## Eenmalige import — meetmiddelen vanuit FileMaker
+
+Bij de eerste ingebruikname kunnen bestaande meetmiddelen uit FileMaker in één keer worden ingeladen via het script `scripts/import-meetmiddelen.js`. Het script leest een tab-gescheiden export uit FileMaker, maakt alle meetmiddelen aan via de API en koppelt de kalibratie-geschiedenis.
+
+### Stap 1 — FileMaker export maken
+
+Exporteer de meetmiddelen uit FileMaker als **tab-gescheiden tekstbestand** (`.tab`). Sla het op als:
+```
+C:\Users\<naam>\Documents\FIlemaker export\Kwaliteit\meetmiddel export.tab
+```
+(of een andere locatie — pas het pad aan in het script, zie stap 2)
+
+### Stap 2 — Script configureren
+
+Open `scripts/import-meetmiddelen.js` en pas de configuratie bovenin aan:
+
+```js
+const BACKEND_URL    = 'http://localhost:3000/api'   // dev, of http://<server-ip>:8080/api voor productie
+const ADMIN_USERNAME = 'admin'
+const ADMIN_PASSWORD = 'jouw-wachtwoord'             // wachtwoord uit install.sh
+const FILE_PATH      = 'C:\\pad\\naar\\meetmiddel export.tab'
+```
+
+### Stap 3 — Script uitvoeren
+
+Zorg dat de MES-server draait, dan uitvoeren vanaf de repo-root:
+
+```bash
+node scripts/import-meetmiddelen.js
+```
+
+Het script geeft aan het einde een samenvatting:
+```
+✓ 321 meetmiddelen aangemaakt
+✓ 612 kalibratie-records toegevoegd
+✗ 2 overgeslagen (geen artikelnaam én geen afmeting, of fout)
+```
+
+> **Let op:** dit script is bedoeld als eenmalige migratie. Meerdere keren draaien maakt duplicaten aan — voer het alleen uit op een lege (of verse) database.
+
+---
+
 ## Modules
 
 ### Kiosk — werkvloer touch-interface
