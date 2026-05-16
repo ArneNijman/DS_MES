@@ -1446,11 +1446,11 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   })
 
   const CHECKLIST_ITEMS = [
-    'Alle tooling zit in de machine (groene bolletjes)',
-    'Nulpunt goed gezet',
-    'Correct programma geselecteerd',
-    'Correct programma ervoor gezet',
-    'Alle DL / DR uit tooltabel gehaald',
+    'Alle tools uit tooltabel aanwezig in machine (groen)',
+    'Nulpunt (Work Zero) correct ingesteld',
+    'NC-programma in machine geladen',
+    'Juist NC-programma geselecteerd',
+    'DL / DR waarden op 0 in tooltabel',
   ]
   const [checks, setChecks] = useState<boolean[]>(Array(5).fill(false))
   const allChecked = checks.every(Boolean)
@@ -1514,8 +1514,8 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   return (
     <div className="p-5 space-y-6 max-w-4xl">
       {/* Nulpunt + Opmerkingen + Checklist */}
-      <div className="grid grid-cols-3 gap-6 items-start">
-        <section>
+      <div className="flex gap-8 items-start">
+        <section className="shrink-0">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Nulpunt (Work Zero)</h3>
           <div className="flex gap-4">
             {(['zeroX', 'zeroY', 'zeroZ'] as const).map(axis => (
@@ -1531,6 +1531,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             ))}
           </div>
         </section>
+        <div className="flex-1 grid gap-12 items-start" style={{ gridTemplateColumns: '1fr 200px' }}>
         <section>
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Opmerkingen</h3>
           <textarea
@@ -1588,6 +1589,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             </div>
           )}
         </section>
+        </div>
       </div>
 
       {/* NC bestanden */}
