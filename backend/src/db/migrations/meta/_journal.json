@@ -56,6 +56,7 @@
     { "idx": 51, "version": "7", "when": 1780700000000, "tag": "0051_aanpak_frezen_beschrijving",   "breakpoints": true },
     { "idx": 52, "version": "7", "when": 1780800000000, "tag": "0052_machine_postprocessor",        "breakpoints": true },
     { "idx": 53, "version": "7", "when": 1780900000000, "tag": "0053_nc_file_postprocessor",        "breakpoints": true },
-    { "idx": 54, "version": "7", "when": 1781000000000, "tag": "0054_step_checklist_completed",     "breakpoints": true }
+    { "idx": 54, "version": "7", "when": 1781000000000, "tag": "0054_step_checklist_completed",     "breakpoints": true },
+    { "idx": 55, "version": "7", "when": 1781100000000, "tag": "0055_role_module_permissions",      "breakpoints": true }
   ]
 }

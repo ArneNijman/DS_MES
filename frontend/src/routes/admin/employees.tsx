@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Key, Trash2, User, Plus, X } from 'lucide-react'
+import { Upload, Key, Trash2, User, Plus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import AdminSidebar from '@/components/AdminSidebar'
 import { apiFetch } from '@/lib/api'
+import { SIDEBAR_MODULES } from '@/lib/modules'
 
 interface Employee {
   id: string
@@ -15,14 +16,19 @@ interface Employee {
 }
 
 const ROLES = [
-  { value: 'employee',           label: 'Medewerker'         },
-  { value: 'werkvoorbereider',   label: 'Werkvoorbereider'   },
-  { value: 'productie_engineer', label: 'Productie engineer' },
-  { value: 'projectmanager',     label: 'Projectmanager'     },
-  { value: 'manager',            label: 'Manager'            },
-  { value: 'quality',            label: 'Kwaliteit'          },
-  { value: 'admin',              label: 'Beheerder'          },
+  { value: 'operator_lassen',     label: 'Operator lassen'     },
+  { value: 'operator_frezen',     label: 'Operator frezen'     },
+  { value: 'operator_assemblage', label: 'Operator assemblage' },
+  { value: 'cam',                 label: 'CAM'                 },
+  { value: 'productie_engineer',  label: 'Productie engineer'  },
+  { value: 'projectmanager',      label: 'Project manager'     },
+  { value: 'manager',             label: 'Manager'             },
+  { value: 'quality',             label: 'Kwaliteit'           },
+  { value: 'admin',               label: 'Beheerder'           },
 ]
+
+// Rollen waarvan module-toegang instelbaar is (admin = altijd alles)
+const CONFIGURABLE_ROLES = ROLES.filter(r => r.value !== 'admin')
 
 export default function AdminEmployees() {
   const qc = useQueryClient()
@@ -30,7 +36,8 @@ export default function AdminEmployees() {
   const [pinModal, setPinModal] = useState<{ id: string; name: string } | null>(null)
   const [pinValue, setPinValue] = useState('')
   const [createModal, setCreateModal] = useState(false)
-  const [newForm, setNewForm] = useState({ name: '', email: '', role: 'employee' })
+  const [newForm, setNewForm] = useState({ name: '', email: '', role: 'operator_frezen' })
+  const [openRoleKey, setOpenRoleKey] = useState<string | null>(null)
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const showFeedback = (id: string, msg: string) => {
@@ -74,8 +81,19 @@ export default function AdminEmployees() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-employees'] })
       setCreateModal(false)
-      setNewForm({ name: '', email: '', role: 'employee' })
+      setNewForm({ name: '', email: '', role: 'operator_frezen' })
     },
+  })
+
+  const { data: permissions = {} } = useQuery<Record<string, string[]>>({
+    queryKey: ['admin-role-permissions'],
+    queryFn: () => apiFetch('/admin/role-permissions'),
+  })
+
+  const savePermM = useMutation({
+    mutationFn: ({ role, modules }: { role: string; modules: string[] }) =>
+      apiFetch(`/admin/role-permissions/${role}`, { method: 'PUT', body: JSON.stringify({ modules }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-role-permissions'] }),
   })
 
   return (
@@ -255,6 +273,71 @@ export default function AdminEmployees() {
             </div>
           </div>
         )}
+
+        {/* Module-toegang per rol */}
+        <div className="mt-10">
+          <h2 className="text-lg font-semibold text-gray-800 mb-1">Module-toegang per rol</h2>
+          <p className="text-xs text-gray-400 mb-4">Stel in welke kiosk-modules elke rol mag zien. Beheerder heeft altijd toegang tot alles.</p>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm divide-y divide-gray-100">
+            {CONFIGURABLE_ROLES.map(r => {
+              const allowed = permissions[r.value] ?? []
+              const isOpen = openRoleKey === r.value
+              return (
+                <div key={r.value}>
+                  <button
+                    onClick={() => setOpenRoleKey(isOpen ? null : r.value)}
+                    className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {isOpen ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+                      <span className="text-sm font-medium text-gray-800">{r.label}</span>
+                    </div>
+                    <span className="text-xs text-gray-400">{allowed.length}/{SIDEBAR_MODULES.length} modules</span>
+                  </button>
+                  {isOpen && (
+                    <div className="px-5 pb-4">
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        {SIDEBAR_MODULES.map(m => {
+                          const checked = allowed.includes(m.key)
+                          return (
+                            <label key={m.key} className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = checked
+                                    ? allowed.filter(k => k !== m.key)
+                                    : [...allowed, m.key]
+                                  savePermM.mutate({ role: r.value, modules: next })
+                                }}
+                                className="accent-teal-600"
+                              />
+                              <span className="text-sm text-gray-700">{m.label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => savePermM.mutate({ role: r.value, modules: SIDEBAR_MODULES.map(m => m.key) as unknown as string[] })}
+                          className="text-xs px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors"
+                        >
+                          Alles aan
+                        </button>
+                        <button
+                          onClick={() => savePermM.mutate({ role: r.value, modules: [] })}
+                          className="text-xs px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors"
+                        >
+                          Alles uit
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {/* PIN modal */}
         {pinModal && (

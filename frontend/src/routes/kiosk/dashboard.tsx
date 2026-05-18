@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
+import { apiFetch } from '@/lib/api'
 import { MachinesContent } from '@/routes/admin/machines'
 import { NCRContent } from '@/routes/kiosk/ncr'
 import { MijnTakenContent, useMyTaskCount, type MyTaskNcr } from '@/routes/kiosk/mijn-meldingen'
@@ -24,12 +26,14 @@ type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' 
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
-  werkvoorbereider:    'Werkvoorbereider',
   manager:             'Manager',
   quality:             'Kwaliteit',
-  employee:            'Medewerker',
   productie_engineer:  'Productie engineer',
-  projectmanager:      'Projectmanager',
+  projectmanager:      'Project manager',
+  operator_lassen:     'Operator lassen',
+  operator_frezen:     'Operator frezen',
+  operator_assemblage: 'Operator assemblage',
+  cam:                 'CAM',
 }
 
 // ── Favicon badge via canvas ──────────────────────────────────────────────
@@ -128,6 +132,16 @@ export default function KioskDashboard() {
   const { verlopen, binnenkort } = useMeetmiddelenCounts()
   const prevCountRef = useRef<number | null>(null)
 
+  const { data: allowedModules } = useQuery<string[]>({
+    queryKey: ['role-permissions', user?.role],
+    queryFn: () => apiFetch<string[]>(`/kiosk/role-permissions/${user!.role}`),
+    enabled: !!user && user.role !== 'admin',
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const canSee = (key: string) =>
+    !user || user.role === 'admin' || (allowedModules?.includes(key) ?? false)
+
   useEffect(() => {
     const token = localStorage.getItem(EMPLOYEE_TOKEN_KEY)
     if (!token) { navigate('/kiosk'); return }
@@ -190,122 +204,99 @@ export default function KioskDashboard() {
 
         {/* Navigatie */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {/* Mijn taken */}
-          <NavBtn active={active === 'mijn_todo'} onClick={() => setActive('mijn_todo')}>
-            <ListTodo size={15} />
-            <span className="flex-1 text-left">Mijn taken</span>
-            {rood > 0 && (
-              <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                {rood > 9 ? '9+' : rood}
-              </span>
-            )}
-            {geel > 0 && (
-              <span className="text-xs bg-yellow-400 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                {geel > 9 ? '9+' : geel}
-              </span>
-            )}
-          </NavBtn>
+          {canSee('mijn_todo') && (
+            <NavBtn active={active === 'mijn_todo'} onClick={() => setActive('mijn_todo')}>
+              <ListTodo size={15} />
+              <span className="flex-1 text-left">Mijn taken</span>
+              {rood > 0 && <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{rood > 9 ? '9+' : rood}</span>}
+              {geel > 0 && <span className="text-xs bg-yellow-400 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{geel > 9 ? '9+' : geel}</span>}
+            </NavBtn>
+          )}
 
-          {/* Mijn meldingen */}
-          <NavBtn active={active === 'mijn_taken'} onClick={() => setActive('mijn_taken')}>
-            <CheckSquare size={15} />
-            <span className="flex-1 text-left">Mijn meldingen</span>
-            {myTaskCount > 0 && (
-              <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                {myTaskCount > 9 ? '9+' : myTaskCount}
-              </span>
-            )}
-          </NavBtn>
+          {canSee('mijn_taken') && (
+            <NavBtn active={active === 'mijn_taken'} onClick={() => setActive('mijn_taken')}>
+              <CheckSquare size={15} />
+              <span className="flex-1 text-left">Mijn meldingen</span>
+              {myTaskCount > 0 && <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{myTaskCount > 9 ? '9+' : myTaskCount}</span>}
+            </NavBtn>
+          )}
 
           {/* Kwaliteit melding — opent bij hover/klik, sluit na 500ms als muis weg is */}
-          <div
-            onMouseEnter={() => {
-              if (kwalCloseTimer.current) clearTimeout(kwalCloseTimer.current)
-              setKwalOpen(true)
-            }}
-            onMouseLeave={() => {
-              kwalCloseTimer.current = setTimeout(() => setKwalOpen(false), 500)
-            }}
-          >
-            <button
-              onClick={() => setKwalOpen((o) => !o)}
-              className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
-                KWAL_KEYS.includes(active)
-                  ? 'text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white',
-              )}
+          {(canSee('ncr') || canSee('preventief') || canSee('klantmelding')) && (
+            <div
+              onMouseEnter={() => { if (kwalCloseTimer.current) clearTimeout(kwalCloseTimer.current); setKwalOpen(true) }}
+              onMouseLeave={() => { kwalCloseTimer.current = setTimeout(() => setKwalOpen(false), 500) }}
             >
-              <span className="flex-1 text-left">Kwaliteit melding</span>
-              <ChevronDown
-                size={14}
-                className={cn('transition-transform duration-200', kwalOpen && 'rotate-180')}
-              />
-            </button>
+              <button
+                onClick={() => setKwalOpen((o) => !o)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
+                  KWAL_KEYS.includes(active) ? 'text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+                )}
+              >
+                <span className="flex-1 text-left">Kwaliteit melding</span>
+                <ChevronDown size={14} className={cn('transition-transform duration-200', kwalOpen && 'rotate-180')} />
+              </button>
+              {kwalOpen && (
+                <div className="space-y-0.5 pl-1">
+                  {canSee('ncr') && (
+                    <NavBtn active={active === 'ncr'} indent onClick={() => setActive('ncr')}>
+                      <ClipboardX size={14} /><span className="flex-1 text-left">NCR registratie</span>
+                    </NavBtn>
+                  )}
+                  {canSee('preventief') && (
+                    <NavBtn active={active === 'preventief'} indent onClick={() => setActive('preventief')}>
+                      <ShieldCheck size={14} /><span className="flex-1 text-left">Preventieve maatregelen</span>
+                    </NavBtn>
+                  )}
+                  {canSee('klantmelding') && (
+                    <NavBtn active={active === 'klantmelding'} indent onClick={() => setActive('klantmelding')}>
+                      <MessageSquare size={14} /><span className="flex-1 text-left">Klantmeldingen</span>
+                    </NavBtn>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
-            {kwalOpen && (
-              <div className="space-y-0.5 pl-1">
-                <NavBtn active={active === 'ncr'} indent onClick={() => setActive('ncr')}>
-                  <ClipboardX size={14} />
-                  <span className="flex-1 text-left">NCR registratie</span>
-                </NavBtn>
-                <NavBtn active={active === 'preventief'} indent onClick={() => setActive('preventief')}>
-                  <ShieldCheck size={14} />
-                  <span className="flex-1 text-left">Preventieve maatregelen</span>
-                </NavBtn>
-                <NavBtn active={active === 'klantmelding'} indent onClick={() => setActive('klantmelding')}>
-                  <MessageSquare size={14} />
-                  <span className="flex-1 text-left">Klantmeldingen</span>
-                </NavBtn>
-              </div>
-            )}
-          </div>
+          {canSee('machines') && (
+            <NavBtn active={active === 'machines'} onClick={() => setActive('machines')}>
+              <Wrench size={15} /><span className="flex-1 text-left">Machines</span>
+            </NavBtn>
+          )}
 
-          {/* Machines */}
-          <NavBtn active={active === 'machines'} onClick={() => setActive('machines')}>
-            <Wrench size={15} />
-            <span className="flex-1 text-left">Machines</span>
-          </NavBtn>
+          {canSee('meetmiddelen') && (
+            <NavBtn active={active === 'meetmiddelen'} onClick={() => setActive('meetmiddelen')}>
+              <Gauge size={15} />
+              <span className="flex-1 text-left">Meetmiddelen</span>
+              {verlopen > 0 && <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{verlopen > 9 ? '9+' : verlopen}</span>}
+              {binnenkort > 0 && <span className="text-xs bg-orange-400 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{binnenkort > 9 ? '9+' : binnenkort}</span>}
+            </NavBtn>
+          )}
 
-          {/* Meetmiddelen */}
-          <NavBtn active={active === 'meetmiddelen'} onClick={() => setActive('meetmiddelen')}>
-            <Gauge size={15} />
-            <span className="flex-1 text-left">Meetmiddelen</span>
-            {verlopen > 0 && (
-              <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                {verlopen > 9 ? '9+' : verlopen}
-              </span>
-            )}
-            {binnenkort > 0 && (
-              <span className="text-xs bg-orange-400 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                {binnenkort > 9 ? '9+' : binnenkort}
-              </span>
-            )}
-          </NavBtn>
+          {canSee('cnc_machining') && (
+            <NavBtn active={active === 'cnc_machining'} onClick={() => setActive('cnc_machining')}>
+              <Cpu size={15} /><span className="flex-1 text-left">CNC Machining</span>
+            </NavBtn>
+          )}
 
-          {/* CNC Machining */}
-          <NavBtn active={active === 'cnc_machining'} onClick={() => setActive('cnc_machining')}>
-            <Cpu size={15} />
-            <span className="flex-1 text-left">CNC Machining</span>
-          </NavBtn>
+          {canSee('tooling') && (
+            <NavBtn active={active === 'tooling'} onClick={() => setActive('tooling')}>
+              <Package size={15} /><span className="flex-1 text-left">Tooling beheer</span>
+            </NavBtn>
+          )}
 
-          {/* Tooling beheer */}
-          <NavBtn active={active === 'tooling'} onClick={() => setActive('tooling')}>
-            <Package size={15} />
-            <span className="flex-1 text-left">Tooling beheer</span>
-          </NavBtn>
+          {canSee('product_setup') && (
+            <NavBtn active={active === 'product_setup'} onClick={() => setActive('product_setup')}>
+              <Layers size={15} /><span className="flex-1 text-left">Product Setup</span>
+            </NavBtn>
+          )}
 
-          {/* Product Setup */}
-          <NavBtn active={active === 'product_setup'} onClick={() => setActive('product_setup')}>
-            <Layers size={15} />
-            <span className="flex-1 text-left">Product Setup</span>
-          </NavBtn>
-
-          {/* Meet Setup */}
-          <NavBtn active={active === 'meet_setup'} onClick={() => setActive('meet_setup')}>
-            <Ruler size={15} />
-            <span className="flex-1 text-left">Meet Setup</span>
-          </NavBtn>
+          {canSee('meet_setup') && (
+            <NavBtn active={active === 'meet_setup'} onClick={() => setActive('meet_setup')}>
+              <Ruler size={15} /><span className="flex-1 text-left">Meet Setup</span>
+            </NavBtn>
+          )}
         </nav>
 
         {/* Gebruikersinfo + uitloggen onderaan */}

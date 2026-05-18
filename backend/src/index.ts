@@ -29,6 +29,7 @@ import { productSetupRoutes } from './routes/kiosk/product-setup.js'
 import { meetSetupRoutes } from './routes/kiosk/meet-setup.js'
 import { kioskCadRoutes } from './routes/kiosk/cad.js'
 import { bcLookupRoutes } from './routes/kiosk/bc-lookup.js'
+import { rolePermissionRoutes } from './routes/role-permissions.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
 import { validateEncryptionKey } from './utils/crypto.js'
@@ -82,6 +83,7 @@ async function main() {
   await fastify.register(meetSetupRoutes, { prefix: '/api' })
   await fastify.register(kioskCadRoutes, { prefix: '/api' })
   await fastify.register(bcLookupRoutes, { prefix: '/api' })
+  await fastify.register(rolePermissionRoutes, { prefix: '/api' })
 
   // Graceful shutdown
   const shutdown = async () => {

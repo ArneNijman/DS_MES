@@ -10,6 +10,7 @@ import {
   integer,
   numeric,
   doublePrecision,
+  primaryKey,
 } from 'drizzle-orm/pg-core'
 
 export const employees = pgTable('employees', {
@@ -21,7 +22,7 @@ export const employees = pgTable('employees', {
   isClockedIn: boolean('is_clocked_in').default(false).notNull(),
   clockedInAt: timestamp('clocked_in_at', { withTimezone: true }),
   pinHash: text('pin_hash'),
-  role: text('role').default('employee').notNull(),
+  role: text('role').default('operator_frezen').notNull(),
   bcData: jsonb('bc_data'),
   syncedAt: timestamp('synced_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -719,3 +720,13 @@ export const productSetupOverdrachtPhotos = pgTable('product_setup_overdracht_ph
   fileName:     text('file_name').notNull(),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+
+// ── Rol-module toegang ───────────────────────────────────────────────────────
+
+export const roleModulePermissions = pgTable('role_module_permissions', {
+  role:      text('role').notNull(),
+  moduleKey: text('module_key').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.role, t.moduleKey] }),
+}))
