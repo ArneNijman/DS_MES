@@ -29,7 +29,7 @@ const INTERVAL_MIN     = parseInt(process.env.SYNC_INTERVAL_MIN         ?? '30',
 const TIMEOUT_MS       = parseInt(process.env.TNCCMD_TIMEOUT_MS         ?? '30000', 10)
 const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099', 10)
 const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
-const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '30000', 10)
+const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '10000', 10)
 const STATE_POLL_ENABLED = (process.env.CNC_STATE_POLL_ENABLED ?? 'true') === 'true'
 
 if (!USERNAME || !PASSWORD) {
