@@ -1826,6 +1826,7 @@ const CNC_RUN_STATUS: Record<string, { label: string; color: string }> = {
   completed:   { label: 'Afgerond',    color: 'bg-green-100 text-green-700' },
   interrupted: { label: 'Onderbroken', color: 'bg-orange-100 text-orange-700' },
   error:       { label: 'Fout',        color: 'bg-red-100 text-red-700' },
+  stopped:     { label: 'Gestopt',     color: 'bg-gray-100 text-gray-600' },
 }
 
 function formatCncTime(iso: string): string {
@@ -2245,10 +2246,15 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {cncRuns.map((run) => {
-                      const sc = CNC_RUN_STATUS[run.status] ?? { label: run.status, color: 'bg-gray-100 text-gray-600' }
+                      const sc        = CNC_RUN_STATUS[run.status] ?? { label: run.status, color: 'bg-gray-100 text-gray-600' }
+                      const shortName = run.programName.split(/[\\/]/).pop() ?? run.programName
+                      const fullPath  = shortName !== run.programName ? run.programName : null
                       return (
                         <tr key={run.id} className="hover:bg-gray-50">
-                          <td className="py-2.5 pr-4 font-mono text-xs text-gray-800">{run.programName}</td>
+                          <td className="py-2.5 pr-4">
+                            <p className="font-mono text-xs font-medium text-gray-800">{shortName}</p>
+                            {fullPath && <p className="text-xs text-gray-400 truncate max-w-[260px]">{fullPath}</p>}
+                          </td>
                           <td className="py-2.5 pr-4 text-xs text-gray-600 whitespace-nowrap">{formatCncTime(run.startedAt)}</td>
                           <td className="py-2.5 pr-4 text-xs text-gray-600">{formatDuration(run.durationSeconds)}</td>
                           <td className="py-2.5">

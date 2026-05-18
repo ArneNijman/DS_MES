@@ -85,7 +85,7 @@ const programRunSchema = z.object({
   programName: z.string(),
   startedAt:   z.string(),
   endedAt:     z.string().optional().nullable(),
-  status:      z.enum(['running', 'completed', 'interrupted']).default('running'),
+  status:      z.enum(['running', 'completed', 'interrupted', 'error', 'stopped']).default('running'),
 })
 
 export async function cncEventsRoutes(fastify: FastifyInstance) {
