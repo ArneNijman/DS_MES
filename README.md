@@ -254,6 +254,86 @@ Het script geeft aan het einde een samenvatting:
 
 ---
 
+## Eenmalige import — NCR-registraties vanuit FileMaker
+
+Bij de eerste ingebruikname kunnen bestaande NCR-records uit FileMaker in één keer worden ingeladen via het script `scripts/import-ncr.js`. Originele `Afwijking_ID` waarden (format `NCR_XXXXXX`) blijven behouden zodat het MES automatisch doorloopt met het eerstvolgende vrije nummer.
+
+Het script is idempotent: meerdere keren uitvoeren is veilig. Elk record wordt bijgewerkt als het al bestaat (`ON CONFLICT DO UPDATE`).
+
+### Stap 1 — FileMaker export maken
+
+Exporteer de NCR-tabel uit FileMaker als **tab-gescheiden tekstbestand** (`.tab`), **zonder headerrij**.
+
+De kolommen moeten in deze volgorde staan (exact, 18 kolommen):
+
+| Kolom | FileMaker veldnaam | MES veld |
+|-------|--------------------|----------|
+| 0 | `Afwijking_ID` | `ncrId` (bijv. `NCR_100218`) |
+| 1 | `ProductieOrder` | `productionOrder` |
+| 2 | `ItemRef` | `itemRef` |
+| 3 | `ItemNaam` | `itemName` |
+| 4 | `AfwijkingOmschrijving` | `description` |
+| 5 | `TypeFout` | `faultCode` |
+| 6 | `VeroorzaaktDoor_ID` | `causingDepartment` |
+| 7 | `AangemaaktDoor_ID` | `writtenByName` |
+| 8 | `Status` | `status` |
+| 9 | `Oplossing` | `solution` |
+| 10 | `Dispositie` | `dispositionType` |
+| 11 | `KorteOmschrijving` | `shortDescription` |
+| 12 | `OorzaakCode` | `causeCode` |
+| 13 | `Afdeling uitschrijver` | `writtenByDepartment` |
+| 14 | `DatumAangemaakt` | `createdAt` (formaat `D-M-YYYY`) |
+| 15 | `DatumUitgevoerd` | datum statuslog (formaat `D-M-YYYY`) |
+| 16 | `MailPE` | `peEmail` |
+| 17 | `UitgevoerdDoor` | `changedByName` in statuslog |
+
+De `Status`-waarden worden automatisch genormaliseerd:
+
+| FileMaker | MES |
+|-----------|-----|
+| `Open` of leeg | `open` |
+| `In behandeling` | `in_behandeling` |
+| `In uitvoering` | `in_uitvoering` |
+| `Gereed` | `gereed` |
+| `Gesloten` | `gesloten` |
+| `Vervallen` | `vervallen` |
+
+Voor afgesloten NCR's (`gesloten` of `vervallen`) met een `DatumUitgevoerd` maakt het script automatisch een statuslog-entry aan — inclusief de naam uit `UitgevoerdDoor` en de exacte afsluitdatum.
+
+### Stap 2 — Script configureren
+
+Open `scripts/import-ncr.js` en pas de drie regels bovenin aan:
+
+```js
+const BACKEND_URL    = 'http://localhost:3000/api'    // dev, of http://<server-ip>:8080/api voor productie
+const ADMIN_PASSWORD = 'jouw-wachtwoord'              // wachtwoord uit install.sh
+const FILE_PATH      = 'C:\\pad\\naar\\NCR_export.tab'
+```
+
+### Stap 3 — Script uitvoeren
+
+Zorg dat de MES-server draait. Voer uit vanaf de repo-root op Windows:
+
+```bash
+node scripts/import-ncr.js
+```
+
+Verwachte uitvoer:
+```
+207 records gelezen, 1 overgeslagen (geen NCR_-ID)
+Inloggen...
+Ingelogd.
+
+✓ 207 NCR-records verwerkt (ingevoegd of bijgewerkt)
+✓ 163 statuslog-entries aangemaakt
+```
+
+Het script slaat regels zonder geldig `NCR_`-prefix automatisch over (lege regels, koptekst). Meerdere keren uitvoeren is veilig — bestaande records worden bijgewerkt, geen duplicaten.
+
+> **Na de import** loopt de nummering automatisch door: de volgende handmatig aangemaakte NCR krijgt het nummer dat volgt op het hoogste geïmporteerde ID.
+
+---
+
 ## Modules
 
 ### Kiosk — werkvloer touch-interface
@@ -265,6 +345,7 @@ Het script geeft aan het einde een samenvatting:
 | Meet Setup | Beschikbaar |
 | Tooling bibliotheek | Beschikbaar |
 | NCR-registraties | Beschikbaar |
+| NCR Statistieken | Beschikbaar |
 | Preventieve maatregelen | Beschikbaar |
 | Klantmeldingen | Beschikbaar |
 | Meetmiddelen + kalibratie | Beschikbaar |
