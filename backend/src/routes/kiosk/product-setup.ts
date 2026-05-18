@@ -992,6 +992,225 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     }
   })
 
+  // ── Tool calls valideren voor alle NC-bestanden van een stap ────────────────
+
+  fastify.get('/kiosk/product-setups/steps/:stepId/validate-all', auth, async (req, reply) => {
+    const { stepId } = req.params as { stepId: string }
+
+    const [stepRow] = await fastify.db
+      .select({ machineId: productSetupSteps.machineId, machineName: machines.name })
+      .from(productSetupSteps)
+      .leftJoin(machines, eq(machines.id, productSetupSteps.machineId))
+      .where(eq(productSetupSteps.id, stepId))
+      .limit(1)
+
+    if (!stepRow) return reply.status(404).send({ error: 'Stap niet gevonden' })
+
+    const machineId   = stepRow.machineId ?? null
+    const machineName = stepRow.machineName ?? null
+
+    const ncFiles = await fastify.db
+      .select({ id: productSetupNcFiles.id, fileName: productSetupNcFiles.fileName, programName: productSetupNcFiles.programName })
+      .from(productSetupNcFiles)
+      .where(eq(productSetupNcFiles.stepId, stepId))
+
+    ncFiles.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' }))
+
+    if (ncFiles.length === 0) return { files: [], aggregate: { total: 0, present: 0, missing: 0 }, machineId, machineName, lastSyncAt: null, validatedAt: new Date().toISOString() }
+
+    const ncFileIds = ncFiles.map(f => f.id)
+    const allCalls = await fastify.db
+      .select()
+      .from(productSetupToolCalls)
+      .where(inArray(productSetupToolCalls.ncFileId, ncFileIds))
+      .orderBy(asc(productSetupToolCalls.sequence))
+
+    const callsByFile = new Map<string, typeof allCalls>()
+    for (const f of ncFiles) callsByFile.set(f.id, [])
+    for (const tc of allCalls) callsByFile.get(tc.ncFileId)?.push(tc)
+
+    if (!machineId) {
+      const files = ncFiles.map(f => {
+        const calls = callsByFile.get(f.id) ?? []
+        return {
+          ncFileId: f.id, fileName: f.fileName, programName: f.programName,
+          summary: { total: calls.length, present: 0, missing: 0 },
+          toolCalls: calls.map(tc => ({ sequence: tc.sequence, toolNumber: tc.toolNumber, toolName: tc.toolName, axis: tc.axis, spindleSpeed: tc.spindleSpeed, status: 'onbekend' as const })),
+          validatedAt: new Date().toISOString(),
+        }
+      })
+      return { files, aggregate: { total: allCalls.length, present: 0, missing: 0 }, machineId: null, machineName: null, lastSyncAt: null, validatedAt: new Date().toISOString() }
+    }
+
+    const magazineEntries = await fastify.db.select().from(cncToolEntries).where(eq(cncToolEntries.machineId, machineId))
+    const magazineByNumber = new Map(magazineEntries.filter(e => e.toolNumber != null).map(e => [e.toolNumber!, e]))
+    const magazineByName   = new Map(magazineEntries.filter(e => e.name).map(e => [e.name!.toLowerCase(), e]))
+
+    const allPresentNames = new Set<string>()
+    const allMissingNames = new Set<string>()
+    for (const tc of allCalls) {
+      if (tc.toolNumber === 0) continue
+      const entry = tc.toolNumber != null ? magazineByNumber.get(tc.toolNumber) : tc.toolName ? magazineByName.get(tc.toolName.toLowerCase()) : undefined
+      if (entry) { if (entry.name) allPresentNames.add(entry.name) }
+      else        { if (tc.toolName) allMissingNames.add(tc.toolName) }
+    }
+
+    type AssemblyRow2 = {
+      assemblyId: string; ncName: string; toolLength: number | null; presetDiameter: number | null
+      componentItemId: string | null; componentName: string | null; componentComment: string | null
+      componentCategory: string | null; reach: number | null; componentOrderingCode: string | null
+      componentManufacturer: string | null; componentPhotoUrl: string | null
+      componentWisselplaatPhotoUrl: string | null; componentSchroefOrderingCode: string | null
+      componentSchroefPhotoUrl: string | null; position: number | null
+      holderItemId: string | null; holderName: string | null; holderComment: string | null
+      holderOrderingCode: string | null; holderManufacturer: string | null; holderPhotoUrl: string | null
+      holderWisselplaatPhotoUrl: string | null; holderSchroefOrderingCode: string | null; holderSchroefPhotoUrl: string | null
+      toolItemId: string | null; toolItemName: string | null; toolComment: string | null
+      toolCategory: string | null; toolOrderingCode: string | null; toolManufacturer: string | null
+      toolPhotoUrl: string | null; toolWisselplaatPhotoUrl: string | null
+      toolSchroefOrderingCode: string | null; toolSchroefPhotoUrl: string | null
+    }
+    type AssemblyComponent2 = { itemId: string | null; type: string; name: string; comment: string | null; category: string | null; reach: number | null; orderingCode: string | null; manufacturer: string | null; photoUrl: string | null; wisselplaatPhotoUrl: string | null; schroefOrderingCode: string | null; schroefPhotoUrl: string | null }
+    type AssemblyEntry2 = { id: string; ncName: string; toolLength: number | null; presetDiameter: number | null; components: AssemblyComponent2[] }
+
+    function buildMap2(rows: AssemblyRow2[]): Map<string, AssemblyEntry2> {
+      const grouped = new Map<string, AssemblyRow2[]>()
+      for (const row of rows) { if (!grouped.has(row.ncName)) grouped.set(row.ncName, []); grouped.get(row.ncName)!.push(row) }
+      const map = new Map<string, AssemblyEntry2>()
+      for (const [ncName, group] of grouped) {
+        const first = group[0]
+        const comps: AssemblyComponent2[] = []
+        if (first.holderItemId && first.holderName) comps.push({ itemId: first.holderItemId, type: 'holder', name: first.holderName, comment: first.holderComment, category: null, reach: null, orderingCode: first.holderOrderingCode, manufacturer: first.holderManufacturer, photoUrl: first.holderPhotoUrl, wisselplaatPhotoUrl: first.holderWisselplaatPhotoUrl, schroefOrderingCode: first.holderSchroefOrderingCode, schroefPhotoUrl: first.holderSchroefPhotoUrl })
+        for (const row of group) { if (row.componentItemId && row.componentName) comps.push({ itemId: row.componentItemId, type: 'extension', name: row.componentName, comment: row.componentComment, category: row.componentCategory, reach: row.reach, orderingCode: row.componentOrderingCode, manufacturer: row.componentManufacturer, photoUrl: row.componentPhotoUrl, wisselplaatPhotoUrl: row.componentWisselplaatPhotoUrl, schroefOrderingCode: row.componentSchroefOrderingCode, schroefPhotoUrl: row.componentSchroefPhotoUrl }) }
+        if (first.toolItemId && first.toolItemName) comps.push({ itemId: first.toolItemId, type: 'tool', name: first.toolItemName, comment: first.toolComment, category: first.toolCategory, reach: null, orderingCode: first.toolOrderingCode, manufacturer: first.toolManufacturer, photoUrl: first.toolPhotoUrl, wisselplaatPhotoUrl: first.toolWisselplaatPhotoUrl, schroefOrderingCode: first.toolSchroefOrderingCode, schroefPhotoUrl: first.toolSchroefPhotoUrl })
+        map.set(ncName, { id: first.assemblyId, ncName, toolLength: first.toolLength, presetDiameter: first.presetDiameter, components: comps })
+      }
+      return map
+    }
+
+    async function fetchRows2(names: string[]): Promise<AssemblyRow2[]> {
+      return fastify.db.execute(sql`
+        SELECT
+          a.id AS "assemblyId", a.nc_name AS "ncName", a.tool_length AS "toolLength", a.preset_diameter AS "presetDiameter",
+          ci.id AS "componentItemId", ci.name AS "componentName", ci.comment AS "componentComment", ci.item_category AS "componentCategory",
+          c.reach AS "reach", ci.ordering_code AS "componentOrderingCode", ci.manufacturer AS "componentManufacturer",
+          ci.photo_url AS "componentPhotoUrl", ci.wisselplaat_photo_url AS "componentWisselplaatPhotoUrl",
+          ci.schroef_ordering_code AS "componentSchroefOrderingCode", ci.schroef_photo_url AS "componentSchroefPhotoUrl",
+          c.position AS "position",
+          hi.id AS "holderItemId", hi.name AS "holderName", hi.comment AS "holderComment",
+          hi.ordering_code AS "holderOrderingCode", hi.manufacturer AS "holderManufacturer",
+          hi.photo_url AS "holderPhotoUrl", hi.wisselplaat_photo_url AS "holderWisselplaatPhotoUrl",
+          hi.schroef_ordering_code AS "holderSchroefOrderingCode", hi.schroef_photo_url AS "holderSchroefPhotoUrl",
+          ti.id AS "toolItemId", ti.name AS "toolItemName", ti.comment AS "toolComment", ti.item_category AS "toolCategory",
+          ti.ordering_code AS "toolOrderingCode", ti.manufacturer AS "toolManufacturer",
+          ti.photo_url AS "toolPhotoUrl", ti.wisselplaat_photo_url AS "toolWisselplaatPhotoUrl",
+          ti.schroef_ordering_code AS "toolSchroefOrderingCode", ti.schroef_photo_url AS "toolSchroefPhotoUrl"
+        FROM tool_library_assemblies a
+        LEFT JOIN tool_library_assembly_components c ON c.assembly_id = a.id
+        LEFT JOIN tool_library_items ci ON ci.id = c.item_id
+        LEFT JOIN tool_library_items hi ON hi.id = a.holder_item_id
+        LEFT JOIN tool_library_items ti ON ti.id = a.tool_item_id
+        WHERE a.nc_name IN (${sql.join(names.map(n => sql`${n}`), sql`, `)})
+        ORDER BY a.nc_name, c.position
+      `) as unknown as AssemblyRow2[]
+    }
+
+    const presentNamesArr = [...allPresentNames]
+    const missingNamesArr = [...allMissingNames]
+    let assemblyMap2      = new Map<string, AssemblyEntry2>()
+    let missingAssemblyMap2 = new Map<string, AssemblyEntry2>()
+    if (presentNamesArr.length > 0) assemblyMap2      = buildMap2(await fetchRows2(presentNamesArr))
+    if (missingNamesArr.length > 0) missingAssemblyMap2 = buildMap2(await fetchRows2(missingNamesArr))
+
+    type MachineInstanceRow2 = { machineName: string; machineId: string; toolNumber: number; ncName: string }
+    let machineInstances2: MachineInstanceRow2[] = []
+    if (missingNamesArr.length > 0) {
+      machineInstances2 = await fastify.db.execute(sql`
+        SELECT m.name AS "machineName", m.id AS "machineId", e.tool_number AS "toolNumber", e.name AS "ncName"
+        FROM cnc_tool_entries e
+        JOIN machines m ON m.id = e.machine_id
+        WHERE e.name IN (${sql.join(missingNamesArr.map(n => sql`${n}`), sql`, `)})
+          AND e.machine_id != ${machineId}
+      `) as MachineInstanceRow2[]
+    }
+    const machineInstancesByName2 = new Map<string, { machineId: string; machineName: string; toolNumber: number; count: number }[]>()
+    for (const row of machineInstances2) {
+      if (!machineInstancesByName2.has(row.ncName)) machineInstancesByName2.set(row.ncName, [])
+      const list = machineInstancesByName2.get(row.ncName)!
+      const ex = list.find(x => x.machineId === row.machineId)
+      if (ex) ex.count++; else list.push({ machineId: row.machineId, machineName: row.machineName, toolNumber: row.toolNumber, count: 1 })
+    }
+
+    type StockRow2 = { ncName: string; itemId: string; itemName: string; itemType: string; locId: string; locationCode: string; quantity: number }
+    let stockRows2: StockRow2[] = []
+    if (missingNamesArr.length > 0) {
+      stockRows2 = await fastify.db.execute(sql`
+        SELECT a.nc_name AS "ncName", li.id AS "itemId", li.name AS "itemName", li.item_type AS "itemType",
+               sl.id AS "locId", sl.location_code AS "locationCode", sl.quantity AS "quantity"
+        FROM tool_library_assemblies a
+        JOIN tool_library_items li ON li.id = a.tool_item_id OR li.id = a.holder_item_id
+        JOIN tooling_articles ta ON ta.source_item_id = li.id
+        JOIN tooling_stock_locations sl ON sl.article_id = ta.id
+        WHERE a.nc_name IN (${sql.join(missingNamesArr.map(n => sql`${n}`), sql`, `)}) AND sl.quantity > 0
+        UNION ALL
+        SELECT a.nc_name AS "ncName", li.id AS "itemId", li.name AS "itemName", li.item_type AS "itemType",
+               sl.id AS "locId", sl.location_code AS "locationCode", sl.quantity AS "quantity"
+        FROM tool_library_assemblies a
+        JOIN tool_library_assembly_components c ON c.assembly_id = a.id
+        JOIN tool_library_items li ON li.id = c.item_id
+        JOIN tooling_articles ta ON ta.source_item_id = li.id
+        JOIN tooling_stock_locations sl ON sl.article_id = ta.id
+        WHERE a.nc_name IN (${sql.join(missingNamesArr.map(n => sql`${n}`), sql`, `)}) AND sl.quantity > 0
+      `) as StockRow2[]
+    }
+    const stockByName2 = new Map<string, { itemId: string; itemName: string; itemType: string; locations: { locId: string; locationCode: string; quantity: number }[] }[]>()
+    for (const row of stockRows2) {
+      if (!stockByName2.has(row.ncName)) stockByName2.set(row.ncName, [])
+      const list = stockByName2.get(row.ncName)!
+      let item = list.find(x => x.itemId === row.itemId)
+      if (!item) { item = { itemId: row.itemId, itemName: row.itemName, itemType: row.itemType, locations: [] }; list.push(item) }
+      if (!item.locations.find(l => l.locId === row.locId)) item.locations.push({ locId: row.locId, locationCode: row.locationCode, quantity: row.quantity })
+    }
+
+    let aggPresent = 0, aggMissing = 0, aggTotal = 0
+
+    const files = ncFiles.map(f => {
+      const calls = callsByFile.get(f.id) ?? []
+      let present = 0, missing = 0
+      const resultCalls = calls.map(tc => {
+        if (tc.toolNumber === 0) return { sequence: tc.sequence, toolNumber: tc.toolNumber, toolName: tc.toolName, axis: tc.axis, spindleSpeed: tc.spindleSpeed, status: 'onbekend' as const }
+        const entry = tc.toolNumber != null ? magazineByNumber.get(tc.toolNumber) : tc.toolName ? magazineByName.get(tc.toolName.toLowerCase()) : undefined
+        if (entry) {
+          present++
+          return { sequence: tc.sequence, toolNumber: tc.toolNumber, toolName: tc.toolName, axis: tc.axis, spindleSpeed: tc.spindleSpeed, status: 'aanwezig' as const, magazineEntry: { toolNumber: entry.toolNumber, name: entry.name, doc: entry.doc, l: entry.l, r: entry.r, dl: entry.dl, dr: entry.dr, time2: entry.time2, curTime: entry.curTime, locked: entry.locked }, assembly: entry.name ? (assemblyMap2.get(entry.name) ?? null) : null }
+        } else {
+          missing++
+          const name = tc.toolName ?? null
+          return { sequence: tc.sequence, toolNumber: tc.toolNumber, toolName: tc.toolName, axis: tc.axis, spindleSpeed: tc.spindleSpeed, status: 'ontbreekt' as const, assembly: name ? (missingAssemblyMap2.get(name) ?? null) : null, inOtherMachines: name ? (machineInstancesByName2.get(name) ?? []) : [], componentsInStock: name ? (stockByName2.get(name) ?? []) : [] }
+        }
+      })
+      const uniqueTools = new Set(calls.filter(tc => tc.toolNumber !== 0).map(tc => tc.toolNumber != null ? `T${tc.toolNumber}` : `N:${tc.toolName}`)).size
+      aggPresent += present; aggMissing += missing; aggTotal += uniqueTools
+      return { ncFileId: f.id, fileName: f.fileName, programName: f.programName, summary: { total: uniqueTools, present, missing }, toolCalls: resultCalls, validatedAt: new Date().toISOString() }
+    })
+
+    const [lastSync] = await fastify.db
+      .select({ completedAt: cncSyncLogs.completedAt })
+      .from(cncSyncLogs)
+      .where(and(eq(cncSyncLogs.machineId, machineId), eq(cncSyncLogs.status, 'success')))
+      .orderBy(desc(cncSyncLogs.completedAt))
+      .limit(1)
+
+    return {
+      files,
+      aggregate: { total: aggTotal, present: aggPresent, missing: aggMissing },
+      machineId,
+      machineName,
+      lastSyncAt: lastSync?.completedAt?.toISOString() ?? null,
+      validatedAt: new Date().toISOString(),
+    }
+  })
+
   // ── NC bestand hernoemen ─────────────────────────────────────────────────
 
   fastify.patch('/kiosk/product-setups/nc-files/:ncFileId', auth, async (req, reply) => {

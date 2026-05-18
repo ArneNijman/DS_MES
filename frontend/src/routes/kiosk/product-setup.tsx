@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense } from 'react'
+import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check, Pencil,
@@ -211,6 +211,24 @@ interface ValidationResult {
   toolCalls:   ValidationToolCall[]
   lastSyncAt:  string | null
   validatedAt: string | null
+}
+
+interface FileValidationResult {
+  ncFileId:    string
+  fileName:    string
+  programName: string | null
+  summary:     { total: number; present: number; missing: number }
+  toolCalls:   ValidationToolCall[]
+  validatedAt: string
+}
+
+interface StepValidationResult {
+  files:       FileValidationResult[]
+  aggregate:   { total: number; present: number; missing: number }
+  machineId:   string | null
+  machineName: string | null
+  lastSyncAt:  string | null
+  validatedAt: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1422,7 +1440,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const [selectedNcFileId, setSelectedNcFileId] = useState<string | null>(
     step.ncFiles.length > 0 ? step.ncFiles[step.ncFiles.length - 1].id : null
   )
-  const [openTcSeq, setOpenTcSeq]     = useState<number | null>(null)
+  const [openTcKey, setOpenTcKey]     = useState<string | null>(null)
   const [showNcPortal, setShowNcPortal] = useState(false)
   const [syncStatus, setSyncStatus]   = useState<'idle' | 'syncing' | 'error'>('idle')
   const [syncError, setSyncError]     = useState<string | null>(null)
@@ -1490,7 +1508,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      qc.invalidateQueries({ queryKey: ['nc-validate', selectedNcFileId] })
+      qc.invalidateQueries({ queryKey: ['step-validate-all', step.id] })
       setEditorOriginal(editorContent)
       setEditorConfirm(null)
       setShowEditor(false)
@@ -1505,9 +1523,9 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
     onError:   (err: any) => setSendResult({ ok: false, msg: err.message ?? 'Versturen mislukt' }),
   })
 
-  const { data: validation, isFetching: validating, refetch: validate } = useQuery<ValidationResult>({
-    queryKey: ['nc-validate', selectedNcFileId],
-    queryFn:  () => apiFetch(`/kiosk/product-setups/nc-files/${selectedNcFileId}/validate`),
+  const { data: stepValidation, isFetching: validating, refetch: validate } = useQuery<StepValidationResult>({
+    queryKey: ['step-validate-all', step.id],
+    queryFn:  () => apiFetch(`/kiosk/product-setups/steps/${step.id}/validate-all`) as Promise<StepValidationResult>,
     enabled:  false,
   })
 
@@ -1625,13 +1643,13 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
           )
         })()}
 
-        {/* Knoppen voor actief bestand */}
-        {selectedNcFileId && (() => {
-          const selFile = step.ncFiles.find(f => f.id === selectedNcFileId)
+        {/* Knoppen */}
+        {step.ncFiles.length > 0 && (() => {
+          const selFile = selectedNcFileId ? step.ncFiles.find(f => f.id === selectedNcFileId) : null
           const filePp = selFile?.postprocessor ?? null
           const machinePp = step.machinePostprocessor ?? null
           const ppBlocked = !!filePp && (!machinePp || machinePp.toLowerCase() !== filePp.toLowerCase())
-          const canSend = !!(step.machineId && step.bewerkingNr != null)
+          const canSend = !!(step.machineId && step.bewerkingNr != null && selectedNcFileId)
           const sendBlocked = ppBlocked || !step.checklistCompleted
           return (
             <div className="space-y-2 mb-4">
@@ -1648,7 +1666,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
               )}
               {/* Knoppenrij */}
               <div className="flex flex-wrap items-center gap-2">
-                {!validation ? (
+                {!stepValidation ? (
                   <button
                     onClick={() => validate()}
                     disabled={validating}
@@ -1669,35 +1687,39 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                 )}
                 {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
 
-                <button
-                  onClick={openEditor}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
-                >
-                  <FileText size={12} />
-                  Bewerken
-                </button>
-                {editorError && <span className="text-xs text-red-500">✗ {editorError}</span>}
+                {selectedNcFileId && (
+                  <>
+                    <button
+                      onClick={openEditor}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
+                    >
+                      <FileText size={12} />
+                      Bewerken
+                    </button>
+                    {editorError && <span className="text-xs text-red-500">✗ {editorError}</span>}
 
-                {canSend && (
-                  <button
-                    onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
-                    disabled={sendToMachine.isPending || sendBlocked}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
-                      sendBlocked
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                    {canSend && (
+                      <button
+                        onClick={() => { setSendResult(null); sendToMachine.mutate(selectedNcFileId) }}
+                        disabled={sendToMachine.isPending || sendBlocked}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
+                          sendBlocked
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                        )}
+                        title="Stuur naar machine via TNCcmd"
+                      >
+                        <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
+                        {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
+                      </button>
                     )}
-                    title="Stuur naar machine via TNCcmd"
-                  >
-                    <Send size={12} className={sendToMachine.isPending ? 'animate-pulse' : ''} />
-                    {sendToMachine.isPending ? 'Versturen…' : 'Stuur naar machine'}
-                  </button>
-                )}
-                {sendResult && (
-                  <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
-                    {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
-                  </span>
+                    {sendResult && (
+                      <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
+                        {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1705,19 +1727,17 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
         })()}
 
         {/* Tijdstempels */}
-        {validation && (
+        {stepValidation && (
           <div className="flex gap-4 mb-2 text-[11px] text-gray-400">
-            {validation.validatedAt && (
-              <span>
-                Gevalideerd: <span className="font-medium text-gray-500">
-                  {new Date(validation.validatedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
-                </span>
+            <span>
+              Gevalideerd: <span className="font-medium text-gray-500">
+                {new Date(stepValidation.validatedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
               </span>
-            )}
-            {validation.lastSyncAt ? (
+            </span>
+            {stepValidation.lastSyncAt ? (
               <span>
                 Laatste sync: <span className="font-medium text-gray-500">
-                  {new Date(validation.lastSyncAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
+                  {new Date(stepValidation.lastSyncAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
                 </span>
               </span>
             ) : (
@@ -1835,15 +1855,15 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
         )}
 
         {/* Validatietabel */}
-        {validation && (
+        {stepValidation && (
           <div>
             {/* Summary */}
             <div className="flex items-center gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
               <div className="text-sm font-medium text-gray-700">
-                {validation.programName && <span className="mr-2 text-gray-500">{validation.programName}</span>}
-                Validatie: <span className="text-green-600">{validation.summary.present} in machine</span>
-                {validation.summary.missing > 0 && <span className="text-orange-600"> · {validation.summary.missing} opbouwen</span>}
-                <span className="text-gray-400"> van {validation.summary.total}</span>
+                Validatie: <span className="text-green-600">{stepValidation.aggregate.present} in machine</span>
+                {stepValidation.aggregate.missing > 0 && <span className="text-orange-600"> · {stepValidation.aggregate.missing} opbouwen</span>}
+                <span className="text-gray-400"> van {stepValidation.aggregate.total}</span>
+                <span className="ml-2 text-xs font-normal text-gray-400">({stepValidation.files.length} bestanden)</span>
               </div>
             </div>
 
@@ -1867,52 +1887,69 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {validation.toolCalls.map(tc => {
-                    const me = tc.magazineEntry
-                    return (
-                      <tr key={tc.sequence} className={cn('group', tc.status === 'ontbreekt' && 'bg-red-50/40')}>
-                        <td className="px-2 py-2">
-                          <div className={cn('w-2 h-2 rounded-full', me
-                            ? lifeDotColor(me.time2, me.curTime)
-                            : tc.status === 'ontbreekt' ? 'bg-red-300' : 'bg-gray-200'
-                          )} />
-                        </td>
-                        <td className="px-3 py-2 font-mono font-medium text-gray-800">
-                          {me ? `T${me.toolNumber}` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {me?.name ?? tc.toolName ?? '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-500">{me?.doc ?? '—'}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.l ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
-                        <td className={cn('px-3 py-2 text-right font-mono', (() => {
-                          const t2 = me?.time2 ? parseFloat(me.time2) : 0
-                          const ct = me?.curTime ? parseFloat(me.curTime) : 0
-                          return t2 > 0 && ct >= t2 ? 'text-red-600 font-semibold' : 'text-gray-600'
-                        })())}>{fmtTime(me?.curTime ?? null)}</td>
-                        <td className="px-3 py-2">
-                          <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
-                        </td>
-                        <td className="px-3 py-2">
-                          {me ? (me.locked
-                            ? <Lock size={13} className="text-gray-500" />
-                            : <Unlock size={13} className="text-gray-300" />
-                          ) : null}
-                        </td>
-                        <td className="px-2 py-2">
-                          <button
-                            onClick={() => setOpenTcSeq(tc.sequence)}
-                            className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 transition-colors"
-                          >
-                            <Info size={13} />
-                          </button>
+                  {stepValidation.files.map(fileResult => (
+                    <Fragment key={fileResult.ncFileId}>
+                      {/* Bestandsheader */}
+                      <tr>
+                        <td colSpan={12} className="bg-gray-100 px-3 py-1.5 border-t-2 border-gray-300">
+                          <span className="font-semibold font-mono text-gray-700 text-xs">{fileResult.fileName}</span>
+                          <span className="ml-3 text-[11px] font-normal text-gray-500">
+                            {fileResult.summary.present}/{fileResult.summary.total} aanwezig
+                            {fileResult.summary.missing > 0 && (
+                              <span className="ml-1.5 text-red-600 font-medium">{fileResult.summary.missing} opbouwen</span>
+                            )}
+                          </span>
                         </td>
                       </tr>
-                    )
-                  })}
+                      {fileResult.toolCalls.map(tc => {
+                        const me = tc.magazineEntry
+                        const tcKey = `${fileResult.ncFileId}:${tc.sequence}`
+                        return (
+                          <tr key={tcKey} className={cn('group', tc.status === 'ontbreekt' && 'bg-red-50/40')}>
+                            <td className="px-2 py-2">
+                              <div className={cn('w-2 h-2 rounded-full', me
+                                ? lifeDotColor(me.time2, me.curTime)
+                                : tc.status === 'ontbreekt' ? 'bg-red-300' : 'bg-gray-200'
+                              )} />
+                            </td>
+                            <td className="px-3 py-2 font-mono font-medium text-gray-800">
+                              {me ? `T${me.toolNumber}` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {me?.name ?? tc.toolName ?? '—'}
+                            </td>
+                            <td className="px-3 py-2 text-gray-500">{me?.doc ?? '—'}</td>
+                            <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.l ?? null)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dl ?? null)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmt(me?.dr ?? null)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600 font-mono">{fmtTime(me?.time2 ?? null)}</td>
+                            <td className={cn('px-3 py-2 text-right font-mono', (() => {
+                              const t2 = me?.time2 ? parseFloat(me.time2) : 0
+                              const ct = me?.curTime ? parseFloat(me.curTime) : 0
+                              return t2 > 0 && ct >= t2 ? 'text-red-600 font-semibold' : 'text-gray-600'
+                            })())}>{fmtTime(me?.curTime ?? null)}</td>
+                            <td className="px-3 py-2">
+                              <LifeBarMini time2={me?.time2 ?? null} curTime={me?.curTime ?? null} />
+                            </td>
+                            <td className="px-3 py-2">
+                              {me ? (me.locked
+                                ? <Lock size={13} className="text-gray-500" />
+                                : <Unlock size={13} className="text-gray-300" />
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-2">
+                              <button
+                                onClick={() => setOpenTcKey(tcKey)}
+                                className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 transition-colors"
+                              >
+                                <Info size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1921,9 +1958,12 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
       </section>
 
       {/* Tool detail modal */}
-      {openTcSeq !== null && validation && (() => {
-        const tc = validation.toolCalls.find(t => t.sequence === openTcSeq)
-        return tc ? <ToolDetailModal tc={tc} onClose={() => setOpenTcSeq(null)} /> : null
+      {openTcKey !== null && stepValidation && (() => {
+        const [fileId, seqStr] = openTcKey.split(':')
+        const seq = parseInt(seqStr)
+        const fileResult = stepValidation.files.find(f => f.ncFileId === fileId)
+        const tc = fileResult?.toolCalls.find(t => t.sequence === seq)
+        return tc ? <ToolDetailModal tc={tc} onClose={() => setOpenTcKey(null)} /> : null
       })()}
     </div>
   )
@@ -2214,27 +2254,35 @@ function NcFilePortalModal({
     },
   })
 
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
     setUploading(true); setUploadError(null)
+    let lastId: string | null = null
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await apiFetch<{ ncFileId: string }>(`/kiosk/product-setups/steps/${stepId}/nc-files`, {
-        method: 'POST', body: fd,
-      })
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) setUploadProgress(`${i + 1}/${files.length}`)
+        const fd = new FormData()
+        fd.append('file', files[i])
+        const res = await apiFetch<{ ncFileId: string }>(`/kiosk/product-setups/steps/${stepId}/nc-files`, {
+          method: 'POST', body: fd,
+        })
+        lastId = res.ncFileId
+      }
       await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      onSelect(res.ncFileId)
+      if (lastId) onSelect(lastId)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
     } finally {
       setUploading(false)
+      setUploadProgress(null)
       e.target.value = ''
     }
   }
 
-  const sorted = [...files].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+  const sorted = [...files].sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' }))
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
@@ -2253,9 +2301,9 @@ function NcFilePortalModal({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
             >
               <Upload size={13} />
-              {uploading ? 'Bezig…' : 'Uploaden'}
+              {uploading ? (uploadProgress ? `${uploadProgress} bezig…` : 'Bezig…') : 'Uploaden'}
             </button>
-            <input ref={fileRef} type="file" accept=".h" className="hidden" onChange={handleUpload} />
+            <input ref={fileRef} type="file" accept=".h" multiple className="hidden" onChange={handleUpload} />
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
           </div>
         </div>
