@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, ChevronRight, AlertTriangle, Clock, Wrench, Zap, Settings, Paperclip, X, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronRight, AlertTriangle, Clock, Wrench, Zap, Settings, Paperclip, X, Download, Activity, Cpu } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import AdminSidebar from '@/components/AdminSidebar'
@@ -1767,10 +1767,85 @@ function FacturenTab({ machineId }: { machineId: string }) {
   )
 }
 
+// ── CNC Event helpers ──────────────────────────────────────────────────────
+
+interface CncMachineEvent {
+  id: string
+  machineId: string
+  eventType: string
+  eventData: Record<string, unknown> | null
+  programName: string | null
+  occurredAt: string
+  createdAt: string
+}
+
+interface CncProgramRun {
+  id: string
+  machineId: string
+  programName: string
+  startedAt: string
+  endedAt: string | null
+  durationSeconds: number | null
+  status: string
+  createdAt: string
+}
+
+const CNC_EVENT_CONFIG: Record<string, { label: string; color: string }> = {
+  TOOL_CHANGED:        { label: 'Gereedschapwissel', color: 'bg-orange-100 text-orange-700' },
+  PROGRAM_STARTED:     { label: 'Programma Start',   color: 'bg-teal-100 text-teal-700' },
+  PROGRAM_STOPPED:     { label: 'Programma Stop',    color: 'bg-gray-100 text-gray-600' },
+  PROGRAM_INTERRUPTED: { label: 'Onderbroken',       color: 'bg-gray-100 text-gray-600' },
+  ALARM_TRIGGERED:     { label: 'Alarm',             color: 'bg-red-100 text-red-700' },
+  ALARM_CLEARED:       { label: 'Alarm opgeheven',   color: 'bg-green-100 text-green-700' },
+  MACHINE_ONLINE:      { label: 'Online',            color: 'bg-blue-100 text-blue-700' },
+  MACHINE_OFFLINE:     { label: 'Offline',           color: 'bg-gray-100 text-gray-500' },
+}
+
+const CNC_RUN_STATUS: Record<string, { label: string; color: string }> = {
+  running:     { label: 'Actief',      color: 'bg-teal-100 text-teal-700' },
+  completed:   { label: 'Afgerond',    color: 'bg-green-100 text-green-700' },
+  interrupted: { label: 'Onderbroken', color: 'bg-orange-100 text-orange-700' },
+  error:       { label: 'Fout',        color: 'bg-red-100 text-red-700' },
+}
+
+function formatCncTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  const time = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+  if (sameDay) return time
+  const date = d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })
+  return `${date} ${time}`
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return '—'
+  if (seconds < 60) return `${seconds}s`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return `${h}u ${m}m`
+  return `${m}m`
+}
+
+function formatCncEventDetail(ev: CncMachineEvent): string {
+  const d = ev.eventData
+  if (ev.eventType === 'TOOL_CHANGED' && d) {
+    return `T${d.from ?? '?'} → T${d.to ?? '?'}`
+  }
+  if (ev.eventType === 'PROGRAM_STARTED' && ev.programName) {
+    return ev.programName
+  }
+  if (ev.eventType === 'ALARM_TRIGGERED' && d?.message) {
+    return String(d.message)
+  }
+  return ''
+}
+
 // ── Machine detail panel ───────────────────────────────────────────────────
 
 function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string; onEdit: () => void; onDelete: () => void }) {
-  const [subTab, setSubTab] = useState<'gegevens' | 'onderhoud' | 'storingen' | 'service' | 'documenten' | 'facturen'>('gegevens')
+  const [subTab, setSubTab] = useState<'gegevens' | 'onderhoud' | 'storingen' | 'cnc_events' | 'cnc_runs' | 'service' | 'documenten' | 'facturen'>('gegevens')
+  const [eventTypeFilter, setEventTypeFilter] = useState<string | null>(null)
   const [maintenanceModal, setMaintenanceModal] = useState<Partial<MaintenanceTask> | null>(null)
   const [breakdownModal, setBreakdownModal] = useState<Partial<Breakdown> | null>(null)
   const [taskPortal, setTaskPortal] = useState<MaintenanceTask | null>(null)
@@ -1792,6 +1867,20 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     queryKey: ['machine-breakdowns', machineId],
     queryFn: () => apiFetch(`/admin/machines/${machineId}/breakdowns`),
     enabled: subTab === 'storingen',
+  })
+
+  const { data: cncEvents = [] } = useQuery<CncMachineEvent[]>({
+    queryKey: ['cnc-events', machineId, eventTypeFilter],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-events?limit=100${eventTypeFilter ? `&eventType=${eventTypeFilter}` : ''}`) as Promise<CncMachineEvent[]>,
+    enabled: subTab === 'cnc_events',
+    refetchInterval: subTab === 'cnc_events' ? 15_000 : false,
+  })
+
+  const { data: cncRuns = [] } = useQuery<CncProgramRun[]>({
+    queryKey: ['cnc-runs', machineId],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-program-runs?limit=50`) as Promise<CncProgramRun[]>,
+    enabled: subTab === 'cnc_runs',
+    refetchInterval: subTab === 'cnc_runs' ? 15_000 : false,
   })
 
   const saveMaintenance = useMutation({
@@ -1872,17 +1961,28 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex gap-1 px-6 pt-3 border-b border-gray-100">
-        {(['gegevens', 'onderhoud', 'storingen', 'service', 'documenten', 'facturen'] as const).map((t) => (
+      <div className="flex gap-1 px-6 pt-3 border-b border-gray-100 flex-wrap">
+        {([
+          { key: 'gegevens',  label: 'Gegevens' },
+          { key: 'onderhoud', label: 'Onderhoud' },
+          { key: 'storingen', label: 'Storingen' },
+          ...(machine.category === 'Freesmachine' ? [
+            { key: 'cnc_events', label: 'CNC Events' },
+            { key: 'cnc_runs',   label: 'Programma Runs' },
+          ] : []),
+          { key: 'service',   label: 'Service' },
+          { key: 'documenten',label: 'Documenten' },
+          { key: 'facturen',  label: 'Facturen' },
+        ] as { key: typeof subTab; label: string }[]).map(({ key, label }) => (
           <button
-            key={t}
-            onClick={() => setSubTab(t)}
+            key={key}
+            onClick={() => setSubTab(key)}
             className={cn(
-              'px-3 py-2 text-sm capitalize transition-colors border-b-2 -mb-px',
-              subTab === t ? 'border-teal-500 text-teal-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700',
+              'px-3 py-2 text-sm transition-colors border-b-2 -mb-px whitespace-nowrap',
+              subTab === key ? 'border-teal-500 text-teal-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700',
             )}
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {label}
           </button>
         ))}
       </div>
@@ -2036,6 +2136,100 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                     </div>
                   )
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {subTab === 'cnc_events' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Activity size={15} className="text-teal-500" /> CNC Events
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {([
+                { key: null,                label: 'Alle' },
+                { key: 'TOOL_CHANGED',      label: 'Gereedschapwissel' },
+                { key: 'PROGRAM_STARTED',   label: 'Programma start' },
+                { key: 'PROGRAM_STOPPED',   label: 'Programma stop' },
+                { key: 'ALARM_TRIGGERED',   label: 'Alarm' },
+                { key: 'MACHINE_ONLINE',    label: 'Online' },
+                { key: 'MACHINE_OFFLINE',   label: 'Offline' },
+              ] as { key: string | null; label: string }[]).map(({ key, label }) => (
+                <button
+                  key={key ?? 'all'}
+                  onClick={() => setEventTypeFilter(key)}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                    eventTypeFilter === key
+                      ? 'bg-teal-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {cncEvents.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-12">Nog geen events ontvangen</p>
+            ) : (
+              <div className="space-y-1.5">
+                {cncEvents.map((ev) => {
+                  const cfg = CNC_EVENT_CONFIG[ev.eventType] ?? { label: ev.eventType, color: 'bg-gray-100 text-gray-600' }
+                  const detail = formatCncEventDetail(ev)
+                  return (
+                    <div key={ev.id} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:bg-gray-50">
+                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-0.5', cfg.color)}>{cfg.label}</span>
+                      <div className="flex-1 min-w-0">
+                        {detail && <p className="text-sm text-gray-700">{detail}</p>}
+                        {ev.programName && <p className="text-xs text-gray-400 mt-0.5">Programma: {ev.programName}</p>}
+                      </div>
+                      <span className="text-xs text-gray-400 shrink-0 mt-0.5">{formatCncTime(ev.occurredAt)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {subTab === 'cnc_runs' && (
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Cpu size={15} className="text-teal-500" />
+              <h3 className="text-sm font-semibold text-gray-700">Programma Runs</h3>
+            </div>
+            {cncRuns.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-12">Nog geen programma-runs ontvangen</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 border-b border-gray-100">
+                      <th className="text-left pb-2 font-medium">Programma</th>
+                      <th className="text-left pb-2 font-medium">Gestart</th>
+                      <th className="text-left pb-2 font-medium">Duur</th>
+                      <th className="text-left pb-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {cncRuns.map((run) => {
+                      const sc = CNC_RUN_STATUS[run.status] ?? { label: run.status, color: 'bg-gray-100 text-gray-600' }
+                      return (
+                        <tr key={run.id} className="hover:bg-gray-50">
+                          <td className="py-2.5 pr-4 font-mono text-xs text-gray-800">{run.programName}</td>
+                          <td className="py-2.5 pr-4 text-xs text-gray-600 whitespace-nowrap">{formatCncTime(run.startedAt)}</td>
+                          <td className="py-2.5 pr-4 text-xs text-gray-600">{formatDuration(run.durationSeconds)}</td>
+                          <td className="py-2.5">
+                            <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', sc.color)}>{sc.label}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

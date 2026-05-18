@@ -29,6 +29,8 @@ const INTERVAL_MIN     = parseInt(process.env.SYNC_INTERVAL_MIN         ?? '30',
 const TIMEOUT_MS       = parseInt(process.env.TNCCMD_TIMEOUT_MS         ?? '30000', 10)
 const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099', 10)
 const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
+const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '10000', 10)
+const STATE_POLL_ENABLED = (process.env.CNC_STATE_POLL_ENABLED ?? 'true') === 'true'
 
 if (!USERNAME || !PASSWORD) {
   console.error('❌  ADMIN_USERNAME en ADMIN_PASSWORD zijn verplicht in .env')
@@ -189,6 +191,163 @@ async function syncWintoolIfChanged({ force = false } = {}) {
   return result
 }
 
+// ── Machine state polling ─────────────────────────────────────────────────────
+//
+// Elke STATE_POLL_MS seconden wordt de status van elke Freesmachine gepolled.
+// Uit de vergelijking van vorige vs. huidige staat worden events gegenereerd
+// en naar de backend gepost. Programma-runs worden bijgehouden via cnc-program-runs.
+//
+// NOOT: readMachineState() gebruikt TNCcmd of LSV2 — te implementeren bij
+//       netwerktoegang. Nu als placeholder die een lege staat retourneert.
+
+/** @type {Map<string, { online: boolean; program: string|null; tool: number|null; alarm: boolean }>} */
+const machineState = new Map()
+
+/**
+ * Leest de huidige staat van een machine via TNCcmd / LSV2.
+ * Retourneert null als de machine niet bereikbaar is.
+ *
+ * TODO: implementeren bij netwerktoegang.
+ * Benodigde waarden:
+ *   - online:  machine bereikbaar (ping / connect)
+ *   - program: actieve NC-bestandsnaam (of null als stilstand)
+ *   - tool:    actief gereedschapsnummer (integer of null)
+ *   - alarm:   alarmstatus (boolean)
+ */
+async function readMachineState(machine) {  // eslint-disable-line no-unused-vars
+  // Placeholder — retourneert null zodat we offline behandelen
+  // Vervang dit door de echte TNCcmd/LSV2-aanroep:
+  //
+  //   const result = await runTncCmd(machine.cncIpAddress, 'READ_STATUS')
+  //   return { online: true, program: result.program ?? null, tool: result.tool ?? null, alarm: result.alarm ?? false }
+  //
+  return null
+}
+
+/** Vergelijkt vorige en huidige staat en retourneert gegenereerde events. */
+function diffState(prev, curr, machineOnline) {
+  const events = []
+  const now = new Date().toISOString()
+
+  if (!prev && machineOnline) {
+    // Eerste keer gezien als online
+    events.push({ eventType: 'MACHINE_ONLINE', occurredAt: now })
+  } else if (prev && !machineOnline) {
+    events.push({ eventType: 'MACHINE_OFFLINE', occurredAt: now })
+    return events
+  } else if (!machineOnline) {
+    return events
+  }
+
+  if (!prev) return events
+
+  // Online → offline
+  if (prev.online && !curr.online) {
+    events.push({ eventType: 'MACHINE_OFFLINE', occurredAt: now })
+    return events
+  }
+  // Offline → online
+  if (!prev.online && curr.online) {
+    events.push({ eventType: 'MACHINE_ONLINE', occurredAt: now })
+  }
+
+  // Programmawissel
+  if (prev.program !== curr.program) {
+    if (!prev.program && curr.program) {
+      events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program, occurredAt: now })
+    } else if (prev.program && !curr.program) {
+      events.push({ eventType: 'PROGRAM_STOPPED', programName: prev.program, occurredAt: now })
+    }
+  }
+
+  // Gereedschapwissel
+  if (curr.tool !== null && prev.tool !== null && prev.tool !== curr.tool) {
+    events.push({
+      eventType:  'TOOL_CHANGED',
+      eventData:  { from: prev.tool, to: curr.tool },
+      programName: curr.program ?? null,
+      occurredAt: now,
+    })
+  }
+
+  // Alarm
+  if (!prev.alarm && curr.alarm) {
+    events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
+  } else if (prev.alarm && !curr.alarm) {
+    events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
+  }
+
+  return events
+}
+
+async function pollMachineState(machine) {
+  const prev = machineState.get(machine.id) ?? null
+
+  let curr = null
+  let online = false
+  try {
+    curr = await readMachineState(machine)
+    online = curr !== null
+  } catch {
+    online = false
+  }
+
+  const state = online
+    ? { online: true, program: curr.program ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false }
+    : { online: false, program: null, tool: null, alarm: false }
+
+  const events = diffState(prev, state, online)
+  machineState.set(machine.id, state)
+
+  if (!events.length) return
+
+  try {
+    await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-events`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body:    JSON.stringify({ events }),
+    })
+
+    // Programma-run beheren
+    const startEv = events.find(e => e.eventType === 'PROGRAM_STARTED')
+    const stopEv  = events.find(e => e.eventType === 'PROGRAM_STOPPED')
+
+    if (startEv) {
+      await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ programName: startEv.programName, startedAt: startEv.occurredAt, status: 'running' }),
+      })
+    }
+    if (stopEv) {
+      await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ programName: stopEv.programName, startedAt: stopEv.occurredAt, endedAt: stopEv.occurredAt, status: 'completed' }),
+      })
+    }
+  } catch (err) {
+    console.error(`   ❌  Events posten mislukt voor ${machine.name}: ${err.message}`)
+  }
+}
+
+let statePollInProgress = false
+
+async function pollAllMachineStates() {
+  if (statePollInProgress) return
+  statePollInProgress = true
+  try {
+    await authenticate()
+    const machines = await getCncMachines()
+    const freesmachines = machines.filter(m => m.cncIpAddress && m.category === 'Freesmachine')
+    await Promise.allSettled(freesmachines.map(m => pollMachineState(m)))
+  } catch (err) {
+    console.error(`❌  State poll mislukt: ${err.message}`)
+  } finally {
+    statePollInProgress = false
+  }
+}
+
 // ── Hoofd sync loop ───────────────────────────────────────────────────────────
 
 async function syncAll() {
@@ -341,4 +500,10 @@ if (runOnce) {
 
   await syncAllGuarded()
   setInterval(syncAllGuarded, INTERVAL_MIN * 60 * 1000)
+
+  if (STATE_POLL_ENABLED) {
+    console.log(`📡  State polling actief — interval: ${STATE_POLL_MS / 1000}s`)
+    await pollAllMachineStates()
+    setInterval(pollAllMachineStates, STATE_POLL_MS)
+  }
 }
