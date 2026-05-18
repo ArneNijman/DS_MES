@@ -196,12 +196,32 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
 
   const points = data?.data ?? []
 
-  // Bereken delta per dag (verhoging t.o.v. vorige meting)
-  const deltas = points.map((p, i) => ({
-    date:  p.date.slice(5),  // MM-DD
-    uren:  i === 0 ? 0 : Math.max(0, +(p.value - points[i - 1].value).toFixed(1)),
+  // Delta per dag
+  const dailyDeltas = points.map((p, i) => ({
+    date:  p.date,
+    delta: i === 0 ? 0 : Math.max(0, +(p.value - points[i - 1].value).toFixed(1)),
     totaal: +p.value.toFixed(1),
   }))
+
+  // Aggregeer per week als periode > 14 dagen
+  function isoWeek(dateStr: string): string {
+    const d = new Date(dateStr)
+    const jan4 = new Date(d.getFullYear(), 0, 4)
+    const week = Math.ceil(((d.getTime() - jan4.getTime()) / 86_400_000 + jan4.getDay() + 1) / 7)
+    return `W${week}`
+  }
+
+  const deltas = days > 14
+    ? Object.values(
+        dailyDeltas.reduce<Record<string, { date: string; uren: number; totaal: number }>>((acc, p) => {
+          const w = isoWeek(p.date)
+          if (!acc[w]) acc[w] = { date: w, uren: 0, totaal: p.totaal }
+          acc[w].uren    = +(acc[w].uren + p.delta).toFixed(1)
+          acc[w].totaal  = p.totaal
+          return acc
+        }, {})
+      )
+    : dailyDeltas.map(p => ({ date: p.date.slice(5), uren: p.delta, totaal: p.totaal }))
 
   if (!deltas.length) return (
     <p className="text-xs text-gray-400 text-center py-6">Nog geen spindeluren ontvangen</p>
