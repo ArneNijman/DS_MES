@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, X } from 'lucide-react'
+import { BarChart3, X, ChevronRight } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -29,9 +29,38 @@ interface NcrStats {
   beschikbareJaren: number[]
 }
 
+interface DrillNcr {
+  id: string
+  ncrId: string
+  productionOrder: string | null
+  itemRef: string | null
+  itemName: string | null
+  shortDescription: string | null
+  status: string
+  writtenByName: string | null
+  createdAt: string
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const PIE_COLORS = ['#0d9488', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#f97316', '#ec4899', '#14b8a6']
+
+const STATUS_BADGE: Record<string, string> = {
+  open:           'bg-blue-100 text-blue-700',
+  in_behandeling: 'bg-amber-100 text-amber-700',
+  in_uitvoering:  'bg-teal-100 text-teal-700',
+  gereed:         'bg-green-100 text-green-700',
+  gesloten:       'bg-gray-200 text-gray-600',
+  vervallen:      'bg-gray-100 text-gray-400',
+}
+const STATUS_LABEL: Record<string, string> = {
+  open:           'Open',
+  in_behandeling: 'In behandeling',
+  in_uitvoering:  'In uitvoering',
+  gereed:         'Gereed',
+  gesloten:       'Gesloten',
+  vervallen:      'Vervallen',
+}
 
 function toPareto(data: { name: string; count: number }[]) {
   const sorted = [...data].sort((a, b) => b.count - a.count)
@@ -138,11 +167,102 @@ function ParetoChart({ data, color = '#0d9488' }: { data: ParetoItem[]; color?: 
   )
 }
 
+// ── Drill-down modal ──────────────────────────────────────────────────────
+
+function DrillDownModal({
+  causingDepartment,
+  faultCode,
+  onClose,
+}: {
+  causingDepartment: string
+  faultCode: string
+  onClose: () => void
+}) {
+  const params = new URLSearchParams({ causingDepartment, faultCode })
+  const { data: ncrs = [], isLoading } = useQuery<DrillNcr[]>({
+    queryKey: ['ncr-drill', causingDepartment, faultCode],
+    queryFn:  () => apiFetch(`/kiosk/ncr?${params}`),
+    staleTime: 30_000,
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[85vh]">
+
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Drill-down</p>
+            <h3 className="font-semibold text-gray-800 text-sm">
+              {causingDepartment} <span className="text-gray-400">×</span> {faultCode}
+            </h3>
+          </div>
+          <div className="flex items-center gap-3">
+            {!isLoading && (
+              <span className="text-xs text-gray-400">{ncrs.length} NCR{ncrs.length !== 1 ? "'s" : ''}</span>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Lijst */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {isLoading && (
+            <p className="text-sm text-gray-400 text-center py-8">Laden…</p>
+          )}
+          {!isLoading && ncrs.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-8">Geen NCR's gevonden</p>
+          )}
+          {ncrs.map((ncr) => (
+            <div
+              key={ncr.id}
+              className="bg-gray-50 rounded-xl border border-gray-200 px-4 py-3 flex items-start gap-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-mono text-xs font-bold text-gray-700">{ncr.ncrId}</span>
+                  <span className={cn(
+                    'text-xs px-1.5 py-0.5 rounded-full font-medium',
+                    STATUS_BADGE[ncr.status] ?? 'bg-gray-100 text-gray-500',
+                  )}>
+                    {STATUS_LABEL[ncr.status] ?? ncr.status}
+                  </span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {new Date(ncr.createdAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </div>
+                {ncr.shortDescription && (
+                  <p className="text-sm text-gray-700 truncate">{ncr.shortDescription}</p>
+                )}
+                <div className="flex gap-3 mt-1 flex-wrap">
+                  {ncr.productionOrder && (
+                    <span className="text-xs text-gray-500"><span className="text-gray-400">Order </span>{ncr.productionOrder}</span>
+                  )}
+                  {ncr.itemRef && (
+                    <span className="text-xs text-gray-500"><span className="text-gray-400">Ref </span>{ncr.itemRef}</span>
+                  )}
+                  {ncr.writtenByName && (
+                    <span className="text-xs text-gray-500"><span className="text-gray-400">Door </span>{ncr.writtenByName}</span>
+                  )}
+                </div>
+              </div>
+              <ChevronRight size={14} className="text-gray-300 shrink-0 mt-1" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Hoofdcomponent ─────────────────────────────────────────────────────────
 
 export function NcrStatistiekenContent() {
   const [year,         setYear]         = useState<number | null>(null)
   const [selectedDept, setSelectedDept] = useState<string | null>(null)
+  const [drillCombi,   setDrillCombi]   = useState<{ causingDepartment: string; faultCode: string } | null>(null)
 
   const params = new URLSearchParams()
   if (year)         params.set('year',              String(year))
@@ -170,8 +290,10 @@ export function NcrStatistiekenContent() {
   const faultPareto = toPareto(stats.perFaultCode.map((d) => ({ name: d.faultCode,  count: d.count })))
   const causePareto = toPareto(stats.perCauseCode.map((d) => ({ name: d.causeCode,  count: d.count })))
   const topCombiData = stats.topCombinaties.map((d) => ({
-    name:  `${d.causingDepartment} — ${d.faultCode}`,
-    count: d.count,
+    name:              `${d.causingDepartment} — ${d.faultCode}`,
+    count:             d.count,
+    causingDepartment: d.causingDepartment,
+    faultCode:         d.faultCode,
   }))
 
   const deptBarHeight = Math.max(160, stats.perAfdeling.length * 36 + 20)
@@ -354,7 +476,13 @@ export function NcrStatistiekenContent() {
                     tick={{ fontSize: 10 }}
                   />
                   <Tooltip formatter={(v: number) => [v, 'Afwijkingen']} />
-                  <Bar dataKey="count" fill="#8b5cf6" radius={[0, 3, 3, 0]} />
+                  <Bar
+                    dataKey="count"
+                    fill="#8b5cf6"
+                    radius={[0, 3, 3, 0]}
+                    cursor="pointer"
+                    onClick={(d: any) => setDrillCombi({ causingDepartment: d.causingDepartment, faultCode: d.faultCode })}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -394,6 +522,15 @@ export function NcrStatistiekenContent() {
         </div>
 
       </div>
+
+      {/* Drill-down modal */}
+      {drillCombi && (
+        <DrillDownModal
+          causingDepartment={drillCombi.causingDepartment}
+          faultCode={drillCombi.faultCode}
+          onClose={() => setDrillCombi(null)}
+        />
+      )}
     </div>
   )
 }

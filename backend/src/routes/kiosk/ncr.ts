@@ -116,12 +116,22 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
     return ncr
   })
 
-  // GET alle NCR's
-  fastify.get('/kiosk/ncr', auth, async () => {
-    return fastify.db
-      .select()
-      .from(ncrRegistrations)
-      .orderBy(desc(ncrRegistrations.createdAt))
+  // GET alle NCR's — optioneel gefilterd op causingDepartment en/of faultCode
+  fastify.get('/kiosk/ncr', auth, async (req) => {
+    const q = req.query as { causingDepartment?: string; faultCode?: string }
+    const base = fastify.db.select().from(ncrRegistrations).$dynamic()
+    if (q.causingDepartment && q.faultCode) {
+      return base
+        .where(and(eq(ncrRegistrations.causingDepartment, q.causingDepartment), eq(ncrRegistrations.faultCode, q.faultCode)))
+        .orderBy(desc(ncrRegistrations.createdAt))
+    }
+    if (q.causingDepartment) {
+      return base.where(eq(ncrRegistrations.causingDepartment, q.causingDepartment)).orderBy(desc(ncrRegistrations.createdAt))
+    }
+    if (q.faultCode) {
+      return base.where(eq(ncrRegistrations.faultCode, q.faultCode)).orderBy(desc(ncrRegistrations.createdAt))
+    }
+    return base.orderBy(desc(ncrRegistrations.createdAt))
   })
 
   // POST aanmaken
