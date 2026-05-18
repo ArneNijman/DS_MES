@@ -319,6 +319,14 @@ function ReportField({ label, value }: { label: string; value: string | null | u
   )
 }
 
+interface StatusLogEntry {
+  id: string
+  fromStatus: string | null
+  toStatus: string
+  changedByName: string | null
+  createdAt: string
+}
+
 function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClose: () => void }) {
   const { data: attachments = [] } = useQuery<NcrAttachment[]>({
     queryKey: ['ncr-attachments', ncr.id],
@@ -329,6 +337,11 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
     queryKey: ['kiosk-employees'],
     queryFn: () => apiFetch('/kiosk/employees', { skipAuth: true } as never),
     staleTime: 5 * 60 * 1000,
+  })
+  const { data: statusLog = [] } = useQuery<StatusLogEntry[]>({
+    queryKey: ['ncr-status-log', ncr.id],
+    queryFn: () => apiFetch(`/kiosk/ncr/${ncr.id}/status-log`),
+    enabled: !!ncr.id,
   })
   const assignedName = employeeList.find((e) => e.id === ncr.assignedToId)?.name
 
@@ -432,6 +445,32 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
             </div>
           )}
         </section>
+
+        {/* Statuslog */}
+        {statusLog.length > 0 && (
+          <section className="mb-8 pt-6 border-t border-gray-200">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Statushistorie</h2>
+            <div className="space-y-1.5">
+              {[...statusLog].reverse().map((entry) => {
+                const from = STATUS_OPTIONS.find((s) => s.value === entry.fromStatus)?.label ?? entry.fromStatus
+                const to   = STATUS_OPTIONS.find((s) => s.value === entry.toStatus)?.label  ?? entry.toStatus
+                return (
+                  <div key={entry.id} className="flex items-center gap-3 text-sm text-gray-700">
+                    <span className="text-gray-400 text-xs shrink-0">{formatDate(entry.createdAt)}</span>
+                    <span className="text-gray-300">·</span>
+                    <span>
+                      {from ? <><span className="text-gray-400">{from}</span><span className="mx-1.5 text-gray-300">→</span></> : null}
+                      <span className={cn('font-medium', colMeta(entry.toStatus).badge.split(' ')[1])}>{to}</span>
+                    </span>
+                    {entry.changedByName && (
+                      <><span className="text-gray-300">·</span><span className="text-gray-500 text-xs">{entry.changedByName}</span></>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Oplossing */}
         <section className="mb-8 pt-6 border-t border-gray-200">
@@ -539,6 +578,7 @@ function NcrForm({ initial = {}, onSave, onClose, onStartPreventief, loading }: 
   const [tab, setTab] = useState<Tab>('afwijking')
   const [showReport, setShowReport] = useState(false)
   const [showResolvedByPicker, setShowResolvedByPicker] = useState(false)
+  const [showPePicker, setShowPePicker] = useState(false)
   const [form, setForm] = useState({
     productionOrder:    initial.productionOrder    ?? '',
     itemRef:            initial.itemRef            ?? '',
@@ -809,25 +849,46 @@ function NcrForm({ initial = {}, onSave, onClose, onStartPreventief, loading }: 
 
                   <div className="border-t border-gray-100 pt-5">
                     <FieldLabel>Verantwoordelijke (PE / PM)</FieldLabel>
-                    {peEmployees.length === 0 ? (
-                      <p className="text-xs text-gray-400 italic">
-                        Geen medewerkers met rol Productie engineer of Projectmanager gevonden
-                      </p>
-                    ) : (
-                      <select
-                        value={form.assignedToId}
-                        disabled={isLocked}
-                        onChange={isLocked ? undefined : (e) => set('assignedToId', e.target.value)}
-                        className={cn(
-                          'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white',
-                          isLocked && 'bg-gray-50 text-gray-500 cursor-default',
-                        )}
-                      >
-                        <option value="">— Selecteer —</option>
-                        {peEmployees.map((e) => (
-                          <option key={e.id} value={e.id}>{e.name}</option>
-                        ))}
-                      </select>
+                    {(() => {
+                      const selected = peEmployees.find((e) => e.id === form.assignedToId)
+                      return (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isLocked}
+                            onClick={() => !isLocked && setShowPePicker(true)}
+                            className={cn(
+                              'flex-1 text-left px-3 py-2 border border-gray-200 rounded-lg text-sm transition-colors',
+                              isLocked
+                                ? 'bg-gray-50 text-gray-500 cursor-default'
+                                : selected
+                                  ? 'bg-teal-50 border-teal-300 text-teal-800 hover:bg-teal-100'
+                                  : 'bg-white text-gray-400 hover:bg-gray-50',
+                            )}
+                          >
+                            {selected ? selected.name : '— Selecteer —'}
+                          </button>
+                          {selected && !isLocked && (
+                            <button
+                              type="button"
+                              onClick={() => set('assignedToId', '')}
+                              className="p-1.5 text-gray-400 hover:text-red-500 rounded"
+                              title="Verwijder koppeling"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()}
+                    {showPePicker && (
+                      <EmployeePickerModal
+                        employees={peEmployees}
+                        selected={form.assignedToId || null}
+                        title="Selecteer Verantwoordelijke (PE / PM)"
+                        onSelect={(emp) => { set('assignedToId', emp.id); setShowPePicker(false) }}
+                        onClose={() => setShowPePicker(false)}
+                      />
                     )}
                   </div>
 
@@ -868,32 +929,36 @@ function NcrForm({ initial = {}, onSave, onClose, onStartPreventief, loading }: 
                   </div>
 
                   {/* Status log */}
-                  {isEdit && statusLog.length > 0 && (
+                  {isEdit && (
                     <div className="border-t border-gray-100 pt-5">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Status log</p>
-                      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 max-h-64 overflow-y-auto space-y-3">
-                        {statusLog.map((entry) => {
-                          const { date, week } = formatLogDate(entry.createdAt)
-                          return (
-                            <div key={entry.id} className="flex items-start gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-1.5 shrink-0" />
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {entry.fromStatus && (
-                                    <>
-                                      <span className="text-xs px-1 py-0.5 rounded bg-white border border-gray-200 text-gray-500">{entry.fromStatus}</span>
-                                      <span className="text-gray-300 text-xs">→</span>
-                                    </>
-                                  )}
-                                  <span className="text-xs px-1 py-0.5 rounded bg-teal-100 text-teal-700 font-medium">{entry.toStatus}</span>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Statushistorie</p>
+                      {statusLog.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">Geen statuswijzigingen geregistreerd</p>
+                      ) : (
+                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 max-h-64 overflow-y-auto space-y-3">
+                          {statusLog.map((entry) => {
+                            const { date, week } = formatLogDate(entry.createdAt)
+                            return (
+                              <div key={entry.id} className="flex items-start gap-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-1.5 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {entry.fromStatus && (
+                                      <>
+                                        <span className="text-xs px-1 py-0.5 rounded bg-white border border-gray-200 text-gray-500">{entry.fromStatus}</span>
+                                        <span className="text-gray-300 text-xs">→</span>
+                                      </>
+                                    )}
+                                    <span className="text-xs px-1 py-0.5 rounded bg-teal-100 text-teal-700 font-medium">{entry.toStatus}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">{entry.changedByName ?? 'Onbekend'}</p>
+                                  <p className="text-xs text-gray-400">{date} · {week}</p>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-0.5">{entry.changedByName ?? 'Onbekend'}</p>
-                                <p className="text-xs text-gray-400">{date} · {week}</p>
                               </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

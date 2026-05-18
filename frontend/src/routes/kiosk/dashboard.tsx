@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3 } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { MachinesContent } from '@/routes/admin/machines'
@@ -15,6 +15,7 @@ import { CncMachiningContent } from '@/routes/admin/cnc-machining'
 import { ToolingContent } from '@/routes/kiosk/tooling'
 import { ProductSetupContent } from '@/routes/kiosk/product-setup'
 import { MeetSetupContent } from '@/routes/kiosk/meet-setup'
+import { NcrStatistiekenContent } from '@/routes/kiosk/ncr-statistieken'
 import { cn } from '@/lib/utils'
 
 interface UserInfo {
@@ -22,7 +23,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -124,7 +125,7 @@ export default function KioskDashboard() {
   const [pendingNcr, setPendingNcr] = useState<MyTaskNcr | null>(null)
   const [pendingPreventief, setPendingPreventief] = useState<Record<string, unknown> | null>(null)
   const [pendingToolId, setPendingToolId] = useState<string | null>(null)
-  const KWAL_KEYS: NavKey[] = ['ncr', 'preventief', 'klantmelding']
+  const KWAL_KEYS: NavKey[] = ['ncr', 'preventief', 'klantmelding', 'ncr_statistieken']
   const [kwalOpen, setKwalOpen] = useState(false)
   const kwalCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -223,7 +224,7 @@ export default function KioskDashboard() {
           )}
 
           {/* Kwaliteit melding — opent bij hover/klik, sluit na 500ms als muis weg is */}
-          {(canSee('ncr') || canSee('preventief') || canSee('klantmelding')) && (
+          {(canSee('ncr') || canSee('preventief') || canSee('klantmelding') || canSee('ncr_statistieken')) && (
             <div
               onMouseEnter={() => { if (kwalCloseTimer.current) clearTimeout(kwalCloseTimer.current); setKwalOpen(true) }}
               onMouseLeave={() => { kwalCloseTimer.current = setTimeout(() => setKwalOpen(false), 500) }}
@@ -253,6 +254,11 @@ export default function KioskDashboard() {
                   {canSee('klantmelding') && (
                     <NavBtn active={active === 'klantmelding'} indent onClick={() => setActive('klantmelding')}>
                       <MessageSquare size={14} /><span className="flex-1 text-left">Klantmeldingen</span>
+                    </NavBtn>
+                  )}
+                  {canSee('ncr_statistieken') && (
+                    <NavBtn active={active === 'ncr_statistieken'} indent onClick={() => setActive('ncr_statistieken')}>
+                      <BarChart3 size={14} /><span className="flex-1 text-left">NCR Statistieken</span>
                     </NavBtn>
                   )}
                 </div>
@@ -333,7 +339,8 @@ export default function KioskDashboard() {
         {active === 'cnc_machining'  && <CncMachiningContent />}
         {active === 'tooling'        && <ToolingContent />}
         {active === 'product_setup'  && <ProductSetupContent />}
-        {active === 'meet_setup'     && <MeetSetupContent />}
+        {active === 'meet_setup'        && <MeetSetupContent />}
+        {active === 'ncr_statistieken'  && <NcrStatistiekenContent />}
       </div>
     </div>
   )
