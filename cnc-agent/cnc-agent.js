@@ -130,6 +130,18 @@ async function syncToolTable(machine) {
 
     const result = await res.json()
     console.log(`   ✅  ${result.toolsCount} tools geladen voor ${name}`)
+
+    // Spindeluren uitlezen en opslaan (read-only via LSV2)
+    const spindleHours = await readSpindleHours(machine).catch(() => null)
+    if (spindleHours !== null) {
+      await fetch(`${BACKEND_URL}/api/admin/machines/${id}/cnc-metrics`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ spindleHours }),
+      }).catch(err => console.error(`   ⚠️   Spindeluren opslaan mislukt: ${err.message}`))
+      console.log(`   🔄  Spindeluren: ${spindleHours}u`)
+    }
+
     return { ok: true, toolsCount: result.toolsCount }
 
   } catch (err) {
@@ -235,6 +247,18 @@ async function readMachineState(machine) {  // eslint-disable-line no-unused-var
   //     spindleRunning: result.spindleRunning ?? null,
   //   }
   //
+  return null
+}
+
+/**
+ * Leest het totaal aantal spindeluren van de machine.
+ * Retourneert null als niet beschikbaar.
+ *
+ * TODO: implementeren bij netwerktoegang via LSV2:
+ *   const hours = await lsv2.readOperatingTime(machine.cncIpAddress, 'SPINDLE')
+ *   return hours  // getal in uren (bijv. 4283.5)
+ */
+async function readSpindleHours(machine) {  // eslint-disable-line no-unused-vars
   return null
 }
 

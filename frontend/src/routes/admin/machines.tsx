@@ -42,6 +42,7 @@ interface MachineDetail extends Machine {
   cncPlcVersion: string | null
   toolTableFormat: string | null
   postprocessor: string | null
+  spindleHours: string | null
 }
 
 interface MaintenanceTask {
@@ -2061,6 +2062,7 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                   {infoRow('Spindel interface', machine.cncSpindleInterface)}
                   {infoRow('NC versie', machine.cncNcVersion)}
                   {infoRow('PLC versie', machine.cncPlcVersion)}
+                  {machine.spindleHours != null && infoRow('Spindeluren', `${Number(machine.spindleHours).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} u`)}
                 </div>
               </div>
             )}

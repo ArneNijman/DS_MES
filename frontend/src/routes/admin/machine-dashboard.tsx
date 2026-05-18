@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowLeft } from 'lucide-react'
+import { Activity, ArrowLeft, Clock } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import AdminSidebar from '@/components/AdminSidebar'
@@ -182,6 +183,57 @@ function RecentDowntimeTable({ data }: { data: DashboardData }) {
   )
 }
 
+// ── Spindle hours chart ────────────────────────────────────────────────────
+
+interface MetricPoint { date: string; value: number }
+
+function SpindleChart({ machineId, machineName, days }: { machineId: string; machineName: string; days: number }) {
+  const { data } = useQuery<{ data: MetricPoint[] }>({
+    queryKey: ['cnc-metrics', machineId, days],
+    queryFn:  () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&days=${days}`) as Promise<{ data: MetricPoint[] }>,
+    staleTime: 5 * 60_000,
+  })
+
+  const points = data?.data ?? []
+
+  // Bereken delta per dag (verhoging t.o.v. vorige meting)
+  const deltas = points.map((p, i) => ({
+    date:  p.date.slice(5),  // MM-DD
+    uren:  i === 0 ? 0 : Math.max(0, +(p.value - points[i - 1].value).toFixed(1)),
+    totaal: +p.value.toFixed(1),
+  }))
+
+  if (!deltas.length) return (
+    <p className="text-xs text-gray-400 text-center py-6">Nog geen spindeluren ontvangen</p>
+  )
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-gray-700">{machineName}</p>
+        {points.length > 0 && (
+          <p className="text-xs text-gray-400">
+            Huidig totaal: <span className="font-semibold text-gray-700">{Number(points[points.length - 1].value).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} u</span>
+          </p>
+        )}
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={deltas} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+          <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} unit="u" width={32} />
+          <Tooltip
+            formatter={(v: number) => [`${v}u`, 'Spindeluren']}
+            labelFormatter={(l) => `${l}`}
+            contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+          />
+          <Line type="monotone" dataKey="uren" stroke="#0d9488" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
@@ -276,6 +328,17 @@ export function MachineDashboardContent() {
             <div className="bg-white rounded-xl border border-gray-100 p-4">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Recente stilstand</h2>
               <RecentDowntimeTable data={data} />
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-100 p-4 mt-5">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Clock size={13} /> Spindeluren per dag
+              </h2>
+              <div className="space-y-6">
+                {data.machines.map(m => (
+                  <SpindleChart key={m.id} machineId={m.id} machineName={m.name} days={days} />
+                ))}
+              </div>
             </div>
           </>
         )}
