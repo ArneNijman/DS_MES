@@ -182,7 +182,7 @@ function RecentDowntimeTable({ data }: { data: DashboardData }) {
   )
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────
+// ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
   { value: 1,  label: 'Vandaag' },
@@ -190,9 +190,8 @@ const PERIOD_OPTIONS = [
   { value: 30, label: '30 dagen' },
 ]
 
-export default function MachineDashboard() {
+export function MachineDashboardContent() {
   const [days, setDays] = useState(7)
-  const navigate = useNavigate()
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ['machine-downtime-all', days],
@@ -204,95 +203,108 @@ export default function MachineDashboard() {
   const ongoingCount  = data?.machines.filter(m => m.ongoingPeriod).length ?? 0
 
   return (
-    <div className="flex min-h-screen">
-      <AdminSidebar />
-      <main className="flex-1 bg-gray-50 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="max-w-5xl mx-auto px-6 py-6">
 
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
-            <button
-              onClick={() => navigate('/admin/machines')}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-white rounded-lg transition-colors"
-            >
-              <ArrowLeft size={16} />
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                <Activity size={18} className="text-red-500" /> Machine Dashboard
-              </h1>
-              <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
-            </div>
+        {/* Header */}
+        <div className="mb-5">
+          <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Activity size={17} className="text-red-500" /> Machine Dashboard
+          </h1>
+          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
+        </div>
+
+        {/* Periode filter + samenvatting */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex gap-1.5">
+            {PERIOD_OPTIONS.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setDays(value)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  days === value ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            {ongoingCount > 0 && (
+              <span className="flex items-center gap-1.5 text-red-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                {ongoingCount} lopende stilstand{ongoingCount > 1 ? 'en' : ''}
+              </span>
+            )}
+            {totalDowntime > 0 && (
+              <span>Totaal: {formatDuration(totalDowntime)} stilstand</span>
+            )}
+          </div>
+        </div>
 
-          {/* Periode filter + samenvatting */}
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex gap-1.5">
-              {PERIOD_OPTIONS.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setDays(value)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                    days === value ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
-                  )}
-                >
-                  {label}
-                </button>
+        {isLoading ? (
+          <p className="text-sm text-gray-400 text-center py-16">Laden...</p>
+        ) : !data?.machines.length ? (
+          <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
+            <Activity size={32} className="text-gray-200 mx-auto mb-3" />
+            <p className="text-sm text-gray-400">Geen Freesmachines gevonden</p>
+          </div>
+        ) : (
+          <>
+            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Beschikbaarheid</h2>
+              <div className="space-y-1">
+                {data.machines
+                  .sort((a, b) => a.availabilityPct - b.availabilityPct)
+                  .map(m => <AvailabilityBar key={m.id} machine={m} />)
+                }
+              </div>
+            </div>
+
+            <div className="flex gap-4 mb-5 text-xs text-gray-500">
+              {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map(type => (
+                <span key={type} className="flex items-center gap-1.5">
+                  <span className={cn('w-2.5 h-2.5 rounded-sm', DOWNTIME_COLOR[type])} />
+                  {DOWNTIME_LABEL[type]}
+                </span>
               ))}
             </div>
-            <div className="flex items-center gap-4 text-xs text-gray-500">
-              {ongoingCount > 0 && (
-                <span className="flex items-center gap-1.5 text-red-600 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  {ongoingCount} lopende stilstand{ongoingCount > 1 ? 'en' : ''}
-                </span>
-              )}
-              {totalDowntime > 0 && (
-                <span>Totaal: {formatDuration(totalDowntime)} stilstand</span>
-              )}
+
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Recente stilstand</h2>
+              <RecentDowntimeTable data={data} />
             </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Admin page wrapper ─────────────────────────────────────────────────────
+
+export default function MachineDashboard() {
+  const navigate = useNavigate()
+
+  return (
+    <div className="flex min-h-screen">
+      <AdminSidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-3 bg-white">
+          <button
+            onClick={() => navigate('/admin/machines')}
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">Machine Dashboard</h1>
+            <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
           </div>
-
-          {isLoading ? (
-            <p className="text-sm text-gray-400 text-center py-16">Laden...</p>
-          ) : !data?.machines.length ? (
-            <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-              <Activity size={32} className="text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-400">Geen Freesmachines gevonden</p>
-            </div>
-          ) : (
-            <>
-              {/* Beschikbaarheid bars */}
-              <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Beschikbaarheid</h2>
-                <div className="space-y-1">
-                  {data.machines
-                    .sort((a, b) => a.availabilityPct - b.availabilityPct)
-                    .map(m => <AvailabilityBar key={m.id} machine={m} />)
-                  }
-                </div>
-              </div>
-
-              {/* Legenda */}
-              <div className="flex gap-4 mb-5 text-xs text-gray-500">
-                {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map(type => (
-                  <span key={type} className="flex items-center gap-1.5">
-                    <span className={cn('w-2.5 h-2.5 rounded-sm', DOWNTIME_COLOR[type])} />
-                    {DOWNTIME_LABEL[type]}
-                  </span>
-                ))}
-              </div>
-
-              {/* Recente downtime */}
-              <div className="bg-white rounded-xl border border-gray-100 p-4">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Recente stilstand</h2>
-                <RecentDowntimeTable data={data} />
-              </div>
-            </>
-          )}
         </div>
-      </main>
+        <MachineDashboardContent />
+      </div>
     </div>
   )
 }

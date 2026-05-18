@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3 } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3, Activity } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { MachinesContent } from '@/routes/admin/machines'
@@ -16,6 +16,7 @@ import { ToolingContent } from '@/routes/kiosk/tooling'
 import { ProductSetupContent } from '@/routes/kiosk/product-setup'
 import { MeetSetupContent } from '@/routes/kiosk/meet-setup'
 import { NcrStatistiekenContent } from '@/routes/kiosk/ncr-statistieken'
+import { MachineDashboardContent } from '@/routes/admin/machine-dashboard'
 import { cn } from '@/lib/utils'
 
 interface UserInfo {
@@ -23,7 +24,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup' | 'machine_dashboard'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -272,6 +273,13 @@ export default function KioskDashboard() {
             </NavBtn>
           )}
 
+          {canSee('machine_dashboard') && (
+            <NavBtn active={active === 'machine_dashboard'} onClick={() => setActive('machine_dashboard')}>
+              <Activity size={15} /><span className="flex-1 text-left">Machine Dashboard</span>
+              {/* Lopende stilstand indicator */}
+            </NavBtn>
+          )}
+
           {canSee('meetmiddelen') && (
             <NavBtn active={active === 'meetmiddelen'} onClick={() => setActive('meetmiddelen')}>
               <Gauge size={15} />
@@ -340,7 +348,8 @@ export default function KioskDashboard() {
         {active === 'tooling'        && <ToolingContent />}
         {active === 'product_setup'  && <ProductSetupContent />}
         {active === 'meet_setup'        && <MeetSetupContent />}
-        {active === 'ncr_statistieken'  && <NcrStatistiekenContent />}
+        {active === 'ncr_statistieken'   && <NcrStatistiekenContent />}
+        {active === 'machine_dashboard'  && <MachineDashboardContent />}
       </div>
     </div>
   )
