@@ -25,6 +25,10 @@ en stuurt ze naar de MES backend. Detecteert ook wijzigingen in de WinTool datab
 en synchroniseert deze automatisch. Biedt een HTTP server zodat de Sync-knop
 in de MES kiosk een directe sync kan triggeren.
 
+Bewaakt daarnaast continu de machinestatus via LSV2 (elke 10 seconden): programmastart/-stop,
+alarmen, online/offline. Die events worden opgeslagen als CNC Events en omgezet naar automatische
+stilstandsperioden in het Machine Dashboard.
+
 ---
 
 ## Inhoudsopgave
@@ -35,8 +39,9 @@ in de MES kiosk een directe sync kan triggeren.
 4. [Handmatig starten](#handmatig-starten)
 5. [Sync-knop in de kiosk](#sync-knop-in-de-kiosk)
 6. [WinTool synchronisatie](#wintool-synchronisatie)
-7. [Hoe werkt de sync?](#hoe-werkt-de-sync)
-8. [Probleemoplossing](#probleemoplossing)
+7. [CNC Events & machinestatus](#cnc-events--machinestatus)
+8. [Hoe werkt de sync?](#hoe-werkt-de-sync)
+9. [Probleemoplossing](#probleemoplossing)
 
 ---
 
@@ -95,6 +100,9 @@ SYNC_INTERVAL_MIN=30                    ← automatische sync elke 30 minuten
 AGENT_PORT=3099                         ← HTTP poort voor de Sync-knop in de kiosk
 
 WINTOOL_DB_PATH=R:\Arne\tooldatabase\Dutch-Shape_2025.db   ← pad naar WinTool .db bestand (optioneel)
+
+CNC_STATE_POLL_ENABLED=true           ← continu machinestatus bewaken (Freesmachines)
+CNC_STATE_POLL_INTERVAL_MS=10000      ← polling interval in ms (standaard 10 seconden)
 ```
 
 Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de server.
@@ -253,6 +261,58 @@ Bij een geforceerde sync wordt het bestand altijd geüpload, ook als het niet ge
 
 ---
 
+## CNC Events & machinestatus
+
+Naast de periodieke TOOL.T sync bewaakt de agent **continu** de machinestatus via LSV2 (lees-protocol van Heidenhain, ingebouwd in TNCremo — geen extra software nodig).
+
+### Wat wordt bewaakt
+
+Elke `CNC_STATE_POLL_INTERVAL_MS` milliseconden (standaard 10 seconden) leest de agent per Freesmachine:
+
+| Signaal | CNC Event |
+|---------|-----------|
+| Machine niet bereikbaar | `MACHINE_OFFLINE` |
+| Machine weer bereikbaar | `MACHINE_ONLINE` |
+| Programma gestart | `PROGRAM_STARTED` |
+| Programma gestopt | `PROGRAM_STOPPED` |
+| Alarm actief | `ALARM_TRIGGERED` |
+| Alarm gewist | `ALARM_CLEARED` |
+
+### Automatische stilstandsdetectie
+
+De MES backend berekent op basis van deze events automatisch stilstandsperioden:
+
+| Type | Kleur | Detectie |
+|------|-------|---------|
+| **Offline** | Grijs | MACHINE_OFFLINE → MACHINE_ONLINE |
+| **Alarmstilstand** | Rood | ALARM_TRIGGERED → ALARM_CLEARED |
+| **Stilstand** | Amber | PROGRAM_STOPPED → PROGRAM_STARTED (gap > 30 min) |
+
+Deze perioden zijn zichtbaar in:
+- **Machine Detail** (Admin > Machines > Downtime tab) — historisch per machine
+- **Machine Dashboard** (Admin > Machine Dashboard, kiosk) — beschikbaarheid % per Freesmachine
+
+### Spindeluren
+
+Tijdens elke TOOL.T sync (elke 30 minuten) leest de agent ook de **spindeluren** van de machine via LSV2 (`R_OT_SPINDEL_TIME`). Dit is een cumulatieve teller die de backend opslaat als historisch datapunt. Het Machine Dashboard toont de dagelijkse/wekelijkse spindel-inzet als lijndiagram.
+
+### Backoff voor offline machines
+
+Als een machine niet reageert, verdubbelt de agent het polling-interval per poging (10s → 20s → 40s → … → max 5 minuten). Zodra de machine weer reageert, reset het interval terug naar 10 seconden.
+
+### Configuratie
+
+In `.env`:
+
+```
+CNC_STATE_POLL_ENABLED=true           ← zet op false om state polling uit te schakelen
+CNC_STATE_POLL_INTERVAL_MS=10000      ← polling interval in milliseconden (standaard 10s)
+```
+
+State polling werkt alleen voor machines met categorie **Freesmachine** en een geldig IP-adres in het MES.
+
+---
+
 ## Hoe werkt de sync?
 
 Voor elke CNC-machine die een IP-adres heeft in het MES:
@@ -284,3 +344,6 @@ De overige machines worden gewoon gesynchroniseerd.
 | Machine offline | Netwerk/machine uit | Controleer of de machine aan staat en bereikbaar is op het netwerk |
 | `WinTool bestand niet gevonden` | Verkeerd pad of share niet gemount | Controleer `WINTOOL_DB_PATH` in `.env`; zorg dat de netwerkschijf gemount is |
 | `WinTool ongewijzigd` | Bestand niet aangepast | Normaal gedrag — agent slaat sync over. Gebruik `/sync-wintool` om te forceren |
+| Geen CNC Events in dashboard | State polling uitgeschakeld of geen Freesmachines | Controleer `CNC_STATE_POLL_ENABLED=true` in `.env`; zorg dat machines categorie "Freesmachine" hebben |
+| Machine toont altijd "offline" | IP-adres fout of machine niet bereikbaar | Ping het IP-adres van de machine vanuit de Windows PC |
+| Spindeluren worden niet bijgewerkt | LSV2 leesfout of machine offline | Spindeluren worden alleen gelezen bij een succesvolle TOOL.T sync |

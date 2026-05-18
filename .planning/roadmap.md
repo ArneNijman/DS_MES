@@ -174,6 +174,45 @@
 
 ---
 
+## ✅ CNC Agent monitoring + Machine Dashboard
+
+**Afgerond:** 2026-05-18
+
+### CNC Agent — State polling
+- Continu machinestatus bewaken via LSV2 (elke 10 seconden per Freesmachine)
+- Events: `MACHINE_OFFLINE/ONLINE`, `ALARM_TRIGGERED/CLEARED`, `PROGRAM_STARTED/STOPPED`, `SPINDLE_OFF/ON`
+- Exponential backoff voor offline machines (10s → 20s → … → max 5 min, reset bij reconnect)
+- Spindeluren lezen tijdens TOOL.T sync (`R_OT_SPINDEL_TIME` via LSV2)
+
+### Backend
+- `cnc_machine_events` tabel — event-stroom per machine
+- `cnc_program_runs` tabel — programma-uitvoeringen met status en duur
+- `cnc_machine_metrics` tabel — historische metrics tijdreeks (spindle_hours)
+- `machines.spindle_hours` kolom (cumulatief, numeric)
+- `deriveDowntimePeriods()` — pure functie: event-stroom → stilstandsperioden (geen extra DB-tabel)
+- `GET /admin/machines/:id/cnc-downtime` — downtime-perioden + samenvatting per machine
+- `GET /admin/cnc-downtime/all` — beschikbaarheid % voor alle Freesmachines
+- `GET/POST /admin/machines/:id/cnc-metrics` — spindeluren opslaan en ophalen
+
+### Frontend — Machine Detail (Downtime tab)
+- Tab "Downtime" per Freesmachine in Admin > Machines
+- 4 samenvattingkaartjes: offline / alarmstilstand / stilstand / wachttijd (minuten)
+- Tabel met perioden, pulserende badge voor lopende perioden
+- Drempelwaarde stilstand: 30 minuten
+
+### Frontend — Machine Dashboard (nieuw)
+- Admin > Machine Dashboard + kiosk (via `MachineDashboardContent`)
+- Beschikbaarheids-bars per Freesmachine met type-uitsplitsing
+- Periode-filter: Vandaag · 7 dagen · Maand · Kwartaal · Jaar
+- Gecombineerde downtime-tabel alle machines
+- Spindeluren lijndiagram per machine (dag of ISO-week)
+
+### Migraties
+- `0050`–`0057` — CNC events schema (cnc_machine_events, cnc_program_runs)
+- `0058_spindle_hours.sql` — spindle_hours kolom + cnc_machine_metrics tabel
+
+---
+
 ## 🚧 Fase 10: Meetmiddelen & Kalibratie (uitbreiding)
 
 **Status:** Gedeeltelijk — basis live, uitbreidingen gepland
@@ -199,13 +238,11 @@
 
 ---
 
-## ⬜ Fase 12: Stilstandregistratie
+## ✅ Fase 12: Stilstandregistratie (automatisch)
 
-**Status:** Not started (lagere prioriteit)
+**Status:** Geïmplementeerd als automatische event-stream derivatie (zie CNC Agent monitoring hierboven)
 
-**Scope (gepland):**
-- Registratie van ongeplande stilstand per machine
-- Oorzaakcategorieën, duur, koppeling aan NCR
+Handmatige registratie (oorzaakcategorieën, koppeling aan NCR) is optioneel als toekomstige uitbreiding.
 
 ---
 
@@ -234,7 +271,8 @@
 | — | Product Setup uitbr. + Demonteren + multi-format parser | ✅ Complete | 2026-04-30 |
 | — | NCR verbeteringen — Human Factor | ✅ Complete | mei 2026 |
 | — | Meetmiddelen uitbr. + Machine cat. + Meet Setup | ✅ Complete | 2026-05-11 |
+| — | CNC Agent monitoring + Machine Dashboard | ✅ Complete | 2026-05-18 |
 | 10 | Meetmiddelen & Kalibratie (uitbreiding) | 🚧 In progress | — |
 | 11 | CoC-Generatie | ⬜ Not started | — |
-| 12 | Stilstandregistratie | ⬜ Not started | — |
+| 12 | Stilstandregistratie (automatisch) | ✅ Complete | 2026-05-18 |
 | 13 | BC Webhooks | ⬜ Not started | — |

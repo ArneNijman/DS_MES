@@ -28,7 +28,8 @@ Een event-driven Manufacturing Execution System (MES) dat als **operationele int
 | NCR verbeteringen (human factor velden) | mei 2026 | 1 sessie | ~3 uur |
 | Machine categorieën + Meetmiddelen serie + opmerkingen stap | 2026-05-11 | 1 sessie | ~3 uur |
 | Meet Setup module | 2026-05-11 | 1 sessie | ~4 uur |
-| **Totaal** | **feb 2026 – mei 2026** | **~37–44 sessies** | **~130 uur** |
+| CNC Agent monitoring + Machine Dashboard | 2026-05-18 | 2 sessies | ~8 uur |
+| **Totaal** | **feb 2026 – mei 2026** | **~39–46 sessies** | **~138 uur** |
 
 *v1.0 (12.661 regels TypeScript/TSX, 186 bestanden) in ~11 werkdagen — gemiddeld ~5 uur/dag.*  
 *v2.0 t/m Meet Setup: ~75 uur aanvullende ontwikkeling over ~26–33 sessies.*  
@@ -77,6 +78,7 @@ Factory Assistant is het volledige bedrijfsbesturingssysteem voor de werkvloer:
   - **Preventieve Maatregelen** — kanban + uitvoerder + datum
   - **Klantmeldingen** — kanban + detail (klant, oorzaak, artikel)
   - **Meetmiddelen** — kalibratiebeheer, serie suffix, vervaldatum melding
+  - **Machine Dashboard** — beschikbaarheid % per Freesmachine, downtime-verdeling, spindeluren (voor management)
   - **Mijn Taken** — takenlijst per medewerker
   - **Mijn Meldingen** — eigen NCR-overzicht
 
@@ -85,6 +87,7 @@ Factory Assistant is het volledige bedrijfsbesturingssysteem voor de werkvloer:
 - Medewerkers (CRUD, PIN, rol, foto, BC-sync)
 - Machines (overzicht, CNC-configuratie, IP-adres)
 - CNC Machining (toolbeheer, upload TOOL.T, samenstellingen, zoeken)
+- Machine Dashboard (beschikbaarheid %, downtime, spindeluren per Freesmachine)
 - BC Configuratie (OAuth2, test)
 - Veldmapping (auto-detectie BC-velden)
 
@@ -137,6 +140,18 @@ Identiek aan Product Setup maar gericht op 3D-meetapparaten. Geen CNC-tab.
 - **Tekeningen** en **CAD** portaal identiek aan Product Setup
 - Rapportage types: Inmeten · Controle · Eindmeting (geen "Frezen")
 
+### Machine Dashboard (`routes/admin/machine-dashboard.tsx`)
+Beschikbaarheids- en stilstandsoverzicht voor alle Freesmachines. Beschikbaar in admin-panel én kiosk (via geëxporteerde `MachineDashboardContent`).
+
+- Periode-filter: Vandaag / 7 dagen / Maand / Kwartaal / Jaar
+- Beschikbaarheids-bars per machine (groen/amber/rood afhankelijk van uptime %)
+- Gecombineerde downtime-tabel: alle machines, nieuwste perioden eerst
+- Spindeluren lijndiagram per machine (per dag ≤14 dagen, per ISO-week bij langere perioden)
+- Downtime-perioden worden on-the-fly afgeleid uit `cnc_machine_events` (geen extra tabel)
+- Drempelwaarde stilstand: 30 minuten gap tussen PROGRAM_STOPPED en PROGRAM_STARTED
+
+Per machine ook in Admin > Machines: tab "Downtime" met samenvatting + periodentabel.
+
 ### Meetmiddelen (`routes/kiosk/meetmiddelen.tsx`)
 Kalibratiebeheer van meetgereedschappen.
 
@@ -157,6 +172,9 @@ Kalibratiebeheer van meetgereedschappen.
 | Handmatige Drizzle migraties | Volledige controle over SQL; geen auto-generate risico's |
 | Lichte toolvalidatie in Product Setup | NC-bestand vergelijken met live toolmagazijn zonder extra invoer van operators |
 | Case-insensitive toolnaam-matching | Voorkomt valse negatieven bij TOOL CALL vs. toolbibliotheek naamverschillen |
+| Event-stream derivatie voor downtime | Geen extra DB-tabel; stilstandsperioden worden on-the-fly berekend uit bestaande `cnc_machine_events` — werkt direct met handmatig geposte test-events |
+| LSV2 read-only voor state polling | TNCcmd is voor bestandsoverdracht; LSV2 is het lees-protocol voor machinestatus (ingebouwd in TNCremo, geen extra licentie) |
+| Exponential backoff voor offline machines | Voorkomt onnodige netwerklast bij uitgeschakelde machines; reset bij eerste succesvolle respons |
 
 ## Deployment
 
