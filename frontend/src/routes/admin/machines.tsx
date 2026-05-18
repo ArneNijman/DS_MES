@@ -1790,6 +1790,26 @@ interface CncProgramRun {
   createdAt: string
 }
 
+interface DowntimePeriod {
+  type: 'offline' | 'alarmstilstand' | 'stilstand' | 'wachttijd'
+  startedAt: string
+  endedAt: string | null
+  durationSeconds: number | null
+  isOngoing: boolean
+}
+
+interface DowntimeResult {
+  periods: DowntimePeriod[]
+  summary: { offline: number; alarmstilstand: number; stilstand: number; wachttijd: number }
+}
+
+const DOWNTIME_CONFIG: Record<string, { label: string; color: string }> = {
+  offline:        { label: 'Offline',         color: 'bg-gray-100 text-gray-600' },
+  alarmstilstand: { label: 'Alarmstilstand',  color: 'bg-red-100 text-red-700' },
+  stilstand:      { label: 'Stilstand',       color: 'bg-amber-100 text-amber-700' },
+  wachttijd:      { label: 'Wachttijd',       color: 'bg-orange-100 text-orange-700' },
+}
+
 const CNC_EVENT_CONFIG: Record<string, { label: string; color: string }> = {
   TOOL_CHANGED:        { label: 'Gereedschapwissel', color: 'bg-orange-100 text-orange-700' },
   PROGRAM_STARTED:     { label: 'Programma Start',   color: 'bg-teal-100 text-teal-700' },
@@ -1818,8 +1838,9 @@ function formatCncTime(iso: string): string {
   return `${date} ${time}`
 }
 
-function formatDuration(seconds: number | null): string {
-  if (seconds === null) return '—'
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '—'
+  if (seconds === 0) return '0m'
   if (seconds < 60) return `${seconds}s`
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -1844,7 +1865,7 @@ function formatCncEventDetail(ev: CncMachineEvent): string {
 // ── Machine detail panel ───────────────────────────────────────────────────
 
 function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string; onEdit: () => void; onDelete: () => void }) {
-  const [subTab, setSubTab] = useState<'gegevens' | 'onderhoud' | 'storingen' | 'cnc_events' | 'cnc_runs' | 'service' | 'documenten' | 'facturen'>('gegevens')
+  const [subTab, setSubTab] = useState<'gegevens' | 'onderhoud' | 'storingen' | 'cnc_events' | 'cnc_runs' | 'cnc_downtime' | 'service' | 'documenten' | 'facturen'>('gegevens')
   const [eventTypeFilter, setEventTypeFilter] = useState<string | null>(null)
   const [maintenanceModal, setMaintenanceModal] = useState<Partial<MaintenanceTask> | null>(null)
   const [breakdownModal, setBreakdownModal] = useState<Partial<Breakdown> | null>(null)
@@ -1881,6 +1902,13 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-program-runs?limit=50`) as Promise<CncProgramRun[]>,
     enabled: subTab === 'cnc_runs',
     refetchInterval: subTab === 'cnc_runs' ? 15_000 : false,
+  })
+
+  const { data: downtimeData } = useQuery<DowntimeResult>({
+    queryKey: ['cnc-downtime', machineId],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-downtime?days=7`) as Promise<DowntimeResult>,
+    enabled: subTab === 'cnc_downtime',
+    refetchInterval: subTab === 'cnc_downtime' ? 30_000 : false,
   })
 
   const saveMaintenance = useMutation({
@@ -1967,8 +1995,9 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
           { key: 'onderhoud', label: 'Onderhoud' },
           { key: 'storingen', label: 'Storingen' },
           ...(machine.category === 'Freesmachine' ? [
-            { key: 'cnc_events', label: 'CNC Events' },
-            { key: 'cnc_runs',   label: 'Programma Runs' },
+            { key: 'cnc_events',   label: 'CNC Events' },
+            { key: 'cnc_runs',     label: 'Programma Runs' },
+            { key: 'cnc_downtime', label: 'Downtime' },
           ] : []),
           { key: 'service',   label: 'Service' },
           { key: 'documenten',label: 'Documenten' },
@@ -2230,6 +2259,51 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {subTab === 'cnc_downtime' && (
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Activity size={15} className="text-red-500" />
+              <h3 className="text-sm font-semibold text-gray-700">Downtime — afgelopen 7 dagen</h3>
+            </div>
+            {downtimeData && (
+              <div className="grid grid-cols-4 gap-3 mb-5">
+                {([
+                  { key: 'offline',        label: 'Offline',         color: 'bg-gray-50 border-gray-200 text-gray-600' },
+                  { key: 'alarmstilstand', label: 'Alarmstilstand',  color: 'bg-red-50 border-red-100 text-red-700' },
+                  { key: 'stilstand',      label: 'Stilstand',       color: 'bg-amber-50 border-amber-100 text-amber-700' },
+                  { key: 'wachttijd',      label: 'Wachttijd',       color: 'bg-orange-50 border-orange-100 text-orange-700' },
+                ] as const).map(({ key, label, color }) => (
+                  <div key={key} className={cn('rounded-xl border p-3', color)}>
+                    <p className="text-xs opacity-70 mb-0.5">{label}</p>
+                    <p className="text-lg font-semibold">{formatDuration(downtimeData.summary[key])}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!downtimeData || downtimeData.periods.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm text-green-600 py-8 justify-center">
+                <span className="text-green-500">✓</span> Geen stilstand geregistreerd in de afgelopen 7 dagen
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {downtimeData.periods.map((p, i) => {
+                  const cfg = DOWNTIME_CONFIG[p.type] ?? { label: p.type, color: 'bg-gray-100 text-gray-600' }
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:bg-gray-50">
+                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium shrink-0', cfg.color)}>{cfg.label}</span>
+                      <div className="flex-1 text-xs text-gray-500">
+                        {formatCncTime(p.startedAt)} → {p.endedAt ? formatCncTime(p.endedAt) : <span className="text-red-500 font-medium">lopend</span>}
+                      </div>
+                      <span className="text-xs font-medium text-gray-700">{formatDuration(p.durationSeconds)}</span>
+                      {p.isOngoing && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

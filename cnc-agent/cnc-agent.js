@@ -200,8 +200,16 @@ async function syncWintoolIfChanged({ force = false } = {}) {
 // NOOT: readMachineState() gebruikt TNCcmd of LSV2 — te implementeren bij
 //       netwerktoegang. Nu als placeholder die een lege staat retourneert.
 
-/** @type {Map<string, { online: boolean; program: string|null; tool: number|null; alarm: boolean }>} */
+/** @type {Map<string, { online: boolean; program: string|null; tool: number|null; alarm: boolean; spindleRunning: boolean|null }>} */
 const machineState = new Map()
+
+/**
+ * Backoff tracking voor offline machines.
+ * Na elke mislukte poll wordt de wachttijd verdubbeld (max 5 min).
+ * Zodra een machine online is, wordt de backoff gereset.
+ * @type {Map<string, { failCount: number; nextPollAt: number }>}
+ */
+const machineBackoff = new Map()
 
 /**
  * Leest de huidige staat van een machine via TNCcmd / LSV2.
@@ -219,7 +227,13 @@ async function readMachineState(machine) {  // eslint-disable-line no-unused-var
   // Vervang dit door de echte TNCcmd/LSV2-aanroep:
   //
   //   const result = await runTncCmd(machine.cncIpAddress, 'READ_STATUS')
-  //   return { online: true, program: result.program ?? null, tool: result.tool ?? null, alarm: result.alarm ?? false }
+  //   return {
+  //     online:         true,
+  //     program:        result.program        ?? null,
+  //     tool:           result.tool           ?? null,
+  //     alarm:          result.alarm          ?? false,
+  //     spindleRunning: result.spindleRunning ?? null,
+  //   }
   //
   return null
 }
@@ -277,10 +291,21 @@ function diffState(prev, curr, machineOnline) {
     events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
   }
 
+  // Spindel (wachttijd-detectie — actief zodra readMachineState() spindleRunning levert)
+  if (prev.spindleRunning === true && curr.spindleRunning === false && curr.program) {
+    events.push({ eventType: 'SPINDLE_OFF', programName: curr.program, occurredAt: now })
+  } else if (prev.spindleRunning === false && curr.spindleRunning === true) {
+    events.push({ eventType: 'SPINDLE_ON', programName: curr.program ?? null, occurredAt: now })
+  }
+
   return events
 }
 
 async function pollMachineState(machine) {
+  // Backoff: sla offline machines over tot de volgende geplande retry
+  const backoff = machineBackoff.get(machine.id)
+  if (backoff && Date.now() < backoff.nextPollAt) return
+
   const prev = machineState.get(machine.id) ?? null
 
   let curr = null
@@ -292,9 +317,19 @@ async function pollMachineState(machine) {
     online = false
   }
 
+  if (online) {
+    // Machine bereikbaar — reset backoff
+    machineBackoff.delete(machine.id)
+  } else {
+    // Verdubbel wachttijd: 10s → 20s → 40s → ... max 5 min
+    const failCount    = (backoff?.failCount ?? 0) + 1
+    const delaySec     = Math.min(STATE_POLL_MS / 1000 * Math.pow(2, failCount - 1), 300)
+    machineBackoff.set(machine.id, { failCount, nextPollAt: Date.now() + delaySec * 1000 })
+  }
+
   const state = online
-    ? { online: true, program: curr.program ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false }
-    : { online: false, program: null, tool: null, alarm: false }
+    ? { online: true, program: curr.program ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, spindleRunning: curr.spindleRunning ?? null }
+    : { online: false, program: null, tool: null, alarm: false, spindleRunning: null }
 
   const events = diffState(prev, state, online)
   machineState.set(machine.id, state)

@@ -1,15 +1,16 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Link2, Map, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Link2, Map, LogOut, Activity } from 'lucide-react'
 import { removeToken } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const VERSION = '2.0.0'
 
 const navItems = [
-  { to: '/admin/home', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/employees', icon: Users, label: 'Medewerkers' },
-  { to: '/admin/bc-config', icon: Link2, label: 'BC Configuratie' },
-  { to: '/admin/bc-field-map', icon: Map, label: 'Veldmapping' },
+  { to: '/admin/home',             icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/admin/employees',        icon: Users,           label: 'Medewerkers' },
+  { to: '/admin/machine-dashboard',icon: Activity,        label: 'Machine Dashboard' },
+  { to: '/admin/bc-config',        icon: Link2,           label: 'BC Configuratie' },
+  { to: '/admin/bc-field-map',     icon: Map,             label: 'Veldmapping' },
 ]
 
 export default function AdminSidebar() {
