@@ -48,7 +48,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
       case 'PROGRAM_STARTED':
         if (programStopTime) {
           const gapSec = (t.getTime() - programStopTime.getTime()) / 1000
-          if (gapSec > 300) periods.push(makePeriod('stilstand', programStopTime, t))
+          if (gapSec > 1800) periods.push(makePeriod('stilstand', programStopTime, t))
           programStopTime = null
         }
         break
@@ -58,7 +58,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   const now = new Date()
   if (offlineStart)   periods.push(makePeriod('offline', offlineStart, null))
   if (alarmStart)     periods.push(makePeriod('alarmstilstand', alarmStart, null))
-  if (programStopTime && (now.getTime() - programStopTime.getTime()) / 1000 > 300)
+  if (programStopTime && (now.getTime() - programStopTime.getTime()) / 1000 > 1800)
     periods.push(makePeriod('stilstand', programStopTime, null))
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
