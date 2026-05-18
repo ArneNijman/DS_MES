@@ -8,7 +8,7 @@ import { randomUUID, randomBytes } from 'crypto'
 
 const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 
-const ROLES = ['operator_lassen', 'operator_frezen', 'operator_assemblage', 'cam', 'productie_engineer', 'projectmanager', 'manager', 'quality', 'admin'] as const
+const ROLES = ['operator_lassen', 'operator_frezen', 'operator_assemblage', 'cam', 'productie_engineer', 'projectmanager', 'manager', 'teamleider', 'quality', 'admin'] as const
 
 const roleSchema = z.object({
   role: z.enum(ROLES),

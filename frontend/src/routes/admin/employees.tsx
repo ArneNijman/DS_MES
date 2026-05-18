@@ -23,6 +23,7 @@ const ROLES = [
   { value: 'productie_engineer',  label: 'Productie engineer'  },
   { value: 'projectmanager',      label: 'Project manager'     },
   { value: 'manager',             label: 'Manager'             },
+  { value: 'teamleider',          label: 'Teamleider'          },
   { value: 'quality',             label: 'Kwaliteit'           },
   { value: 'admin',               label: 'Beheerder'           },
 ]

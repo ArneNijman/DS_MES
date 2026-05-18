@@ -27,6 +27,7 @@ type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'mijn_taken' 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
   manager:             'Manager',
+  teamleider:          'Teamleider',
   quality:             'Kwaliteit',
   productie_engineer:  'Productie engineer',
   projectmanager:      'Project manager',
