@@ -185,9 +185,11 @@ function RecentDowntimeTable({ data }: { data: DashboardData }) {
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
-  { value: 1,  label: 'Vandaag' },
-  { value: 7,  label: '7 dagen' },
-  { value: 30, label: '30 dagen' },
+  { value: 1,   label: 'Vandaag' },
+  { value: 7,   label: '7 dagen' },
+  { value: 30,  label: 'Maand' },
+  { value: 90,  label: 'Kwartaal' },
+  { value: 365, label: 'Jaar' },
 ]
 
 export function MachineDashboardContent() {

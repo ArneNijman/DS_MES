@@ -177,7 +177,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
   fastify.get('/admin/machines/:id/cnc-downtime', auth, async (req) => {
     const { id } = req.params as { id: string }
     const q      = req.query  as { days?: string }
-    const days   = Math.min(parseInt(q.days ?? '7', 10), 90)
+    const days   = Math.min(parseInt(q.days ?? '7', 10), 366)
     const since  = new Date(Date.now() - days * 86_400_000)
 
     const events = await fastify.db
@@ -193,7 +193,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   fastify.get('/admin/cnc-downtime/all', auth, async (req) => {
     const q    = req.query as { days?: string }
-    const days = Math.min(parseInt(q.days ?? '7', 10), 90)
+    const days = Math.min(parseInt(q.days ?? '7', 10), 366)
     const since = new Date(Date.now() - days * 86_400_000)
 
     const freesmachines = await fastify.db
