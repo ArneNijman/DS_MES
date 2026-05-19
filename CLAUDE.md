@@ -32,7 +32,7 @@ Drizzle genereert **geen** migraties automatisch. Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0050_beschrijving.sql` (oplopend nummer, huidig laatste: 0049)
+   - Naamconventie: `0059_beschrijving.sql` (oplopend nummer, huidig laatste: 0058)
 3. Drizzle past alle `.sql` bestanden in die map toe bij opstarten
 
 Voorbeeld migratie:
@@ -148,15 +148,19 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 | Meetmiddelen | `routes/kiosk/meetmiddelen.tsx` | `routes/kiosk/meetmiddelen.ts` |
 | Machines (admin) | `routes/admin/machines.tsx` | `routes/admin/machines.ts` |
 | Medewerkers | `routes/admin/employees.tsx` | `routes/admin/employees.ts` |
+| Machine Dashboard | `routes/admin/machine-dashboard.tsx` (exporteert ook `MachineDashboardContent` voor kiosk) | `routes/admin/cnc-events.ts` + `cnc-metrics.ts` |
 
 ## Sleuteltabellen in de DB
 
 | Tabel | Omschrijving |
 |-------|-------------|
-| `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal) |
+| `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal); `spindle_hours` = cumulatief spindeluren |
 | `employees` | Medewerkers (PIN, rol, inklokstatus) |
 | `cnc_tool_entries` | Toolmagazijn per machine (gesynchroniseerd via TOOL.T upload) |
 | `cnc_sync_logs` | Log van TOOL.T syncs per machine |
+| `cnc_machine_events` | CNC event-stroom (MACHINE_OFFLINE/ONLINE, ALARM_TRIGGERED/CLEARED, PROGRAM_STARTED/STOPPED) per machine |
+| `cnc_program_runs` | Programma-uitvoeringen per machine (startedAt, endedAt, durationSeconds, status) |
+| `cnc_machine_metrics` | Historische machine-metrics (bijv. spindle_hours) als tijdreeks; index op (machineId, metric_type, recorded_at DESC) |
 | `tool_library_assemblies` | Samenstellingen in toolbibliotheek |
 | `tool_library_items` | Individuele toolcomponenten |
 | `product_setups` | Product/Meet setup; `setup_type` = `'product'` of `'meet'` scheidt de modules |
@@ -196,6 +200,31 @@ const magazineByName = new Map(
 // lookup:
 magazineByName.get(tc.toolName.toLowerCase())
 ```
+
+### CNC Events & Machine Dashboard
+`backend/src/routes/admin/cnc-events.ts` — CNC event-stroom, downtime-derivatie en programma-runs.
+
+- `deriveDowntimePeriods(events)` — pure functie: event-stroom → stilstandsperioden
+  - `OFFLINE_MIN_SEC = 300` — offline < 5 min wordt genegeerd (monitoring-ruis)
+  - `STILSTAND_THRESHOLD_SEC = 600` — stilstand drempel 10 minuten
+  - Beschikbaarheid: `Math.floor` (100% alleen bij nul stilstand)
+- `extractArticle(programName)` — extraheert derde padsegment als artikelnummer (`TNC:\Program\22073-3201-11\...` → `22073-3201-11`)
+- `GET /admin/machines/:id/cnc-downtime?days=N` — downtime-perioden + samenvatting per machine
+- `GET /admin/cnc-downtime/all?days=N` — beschikbaarheid % + downtime voor alle Freesmachines
+- `GET /admin/machines/:id/cnc-program-runs?article=X` — runs gefilterd op artikelnaam (LIKE)
+- `GET /admin/machines/:id/cnc-program-runs/summary` — lifetime totaal seconden + runcount per artikel
+- `PATCH /admin/machines/:id/cnc-program-runs/:runId` — run afsluiten (endedAt, status, duur berekend)
+
+`backend/src/routes/admin/cnc-metrics.ts` — spindeluren tijdreeks.
+
+- `POST /admin/machines/:id/cnc-metrics` — agent post `{ spindleHours }` → update `machines.spindle_hours` + insert in `cnc_machine_metrics`
+- `GET /admin/machines/:id/cnc-metrics?metric=spindle_hours&days=N` — dagelijkse datapunten (laatste reading per dag)
+
+`frontend/src/routes/admin/machine-dashboard.tsx`:
+- Exporteert `MachineDashboardContent` (herbruikbaar in kiosk) en default `MachineDashboard` (admin-pagina met sidebar)
+- Periode-opties: 1 / 7 / 30 / 90 / 365 dagen
+- Aggregatie: per dag als `days ≤ 14`, per ISO-week als `days > 14`
+- Beschikbaarheids-bars met vaste breedte (type-breakdown op tweede regel)
 
 ### Wisselplaat-componenten (assembly view)
 `parseWisselplaat(comment)` splitst op `WP:` in de comment:

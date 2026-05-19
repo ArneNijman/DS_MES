@@ -13,10 +13,12 @@ De installatie bestaat uit twee onderdelen die op **aparte machines** draaien:
 ```
   CNC-machines (Heidenhain)              Windows PC (ergens in het netwerk)
   ┌─────────────┐                        ┌──────────────────────────────────┐
-  │ BF 3200     │◄──── TNCcmd.exe ──────│  cnc-agent/                      │
-  │ FPT Ronin   │                        │  • haalt TOOL.T op per machine   │
-  │ ...         │                        │  • synchroniseert WinTool (.db)  │
-  └─────────────┘                        │  • stuurt data naar MES backend  │
+  │ BF 3200     │◄── TNCcmd (TOOL.T) ───│  cnc-agent/                      │
+  │ FPT Ronin   │◄── LSV2  (status)  ───│  • haalt TOOL.T op per machine   │
+  │ ...         │       read-only        │  • leest machinestatus (LSV2)    │
+  └─────────────┘                        │  • leest spindeluren (LSV2)      │
+                                         │  • synchroniseert WinTool (.db)  │
+                                         │  • stuurt data naar MES backend  │
                                          └────────────────┬─────────────────┘
                                                           │ HTTP naar poort 8080
                                                           ▼
@@ -144,7 +146,10 @@ crontab -e
 > Geen Docker, geen database, geen Linux. Alleen Node.js + de map `cnc-agent\` uit de repo.
 > De volledige MES-server (Docker Compose) draait alleen op de Linux server.
 
-De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-machine afzonderlijk. Die PC hoeft alleen **netwerkbereik** te hebben naar de CNC-machines (ping werkt) en naar de MES-server (poort 8080). De agent haalt de gereedschapstabellen op via TNCcmd.exe en stuurt ze naar het MES.
+De CNC agent draait op **één Windows PC** in het netwerk — niet op elke CNC-machine afzonderlijk. Die PC hoeft alleen **netwerkbereik** te hebben naar de CNC-machines (ping werkt) en naar de MES-server (poort 8080). De agent doet twee dingen:
+
+- **TOOL.T sync** — haalt gereedschapstabellen op via TNCcmd.exe en stuurt ze naar het MES (elke 30 min)
+- **State polling** — bewaakt continu de machinestatus via LSV2 (elke 10 seconden): programmastart/-stop, alarmen, online/offline → CNC Events → automatische stilstandsdetectie in het Machine Dashboard
 
 **Stap 1** — Installeer Node.js 22 LTS via [nodejs.org](https://nodejs.org)
 
@@ -195,7 +200,7 @@ Open PowerShell als administrator, navigeer naar de cnc-agent map en voer uit:
 powershell -ExecutionPolicy Bypass -File install-scheduler.ps1
 ```
 
-De agent draait nu automatisch op de achtergrond en synchroniseert bij elke Windows-opstart en elke 30 minuten daarna.
+De agent draait nu automatisch op de achtergrond: synchroniseert bij elke Windows-opstart en elke 30 minuten daarna, en bewaakt continu de machinestatus.
 
 > **Volg voor de volledige installatie van de CNC agent het stappenplan in [`cnc-agent\README.md`](cnc-agent/README.md#eerste-installatie).**
 > Dat document bevat uitgebreide uitleg per stap, probleemoplossing, de werking van de Sync-knop in de kiosk en het instellen van meerdere agents voor redundantie.

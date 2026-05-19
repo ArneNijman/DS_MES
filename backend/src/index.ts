@@ -31,6 +31,8 @@ import { kioskCadRoutes } from './routes/kiosk/cad.js'
 import { bcLookupRoutes } from './routes/kiosk/bc-lookup.js'
 import { rolePermissionRoutes } from './routes/role-permissions.js'
 import { ncrImportRoutes } from './routes/admin/ncr-import.js'
+import { cncEventsRoutes } from './routes/admin/cnc-events.js'
+import { cncMetricsRoutes } from './routes/admin/cnc-metrics.js'
 import { ncrStatsRoutes } from './routes/kiosk/ncr-stats.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
@@ -88,6 +90,8 @@ async function main() {
   await fastify.register(rolePermissionRoutes, { prefix: '/api' })
   await fastify.register(ncrImportRoutes, { prefix: '/api' })
   await fastify.register(ncrStatsRoutes,  { prefix: '/api' })
+  await fastify.register(cncEventsRoutes,  { prefix: '/api' })
+  await fastify.register(cncMetricsRoutes, { prefix: '/api' })
 
   // Graceful shutdown
   const shutdown = async () => {

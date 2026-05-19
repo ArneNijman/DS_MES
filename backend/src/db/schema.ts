@@ -102,6 +102,7 @@ export const machines = pgTable('machines', {
   cncPlcVersion: text('cnc_plc_version'),
   toolTableFormat: text('tool_table_format'),  // null = 'heidenhain', 'fooke'
   postprocessor: text('postprocessor'),
+  spindleHours: numeric('spindle_hours', { precision: 10, scale: 2 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -502,6 +503,35 @@ export const cncSyncLogs = pgTable('cnc_sync_logs', {
 export type CncToolEntry = typeof cncToolEntries.$inferSelect
 export type NewCncToolEntry = typeof cncToolEntries.$inferInsert
 export type CncSyncLog = typeof cncSyncLogs.$inferSelect
+
+export const cncMachineEvents = pgTable('cnc_machine_events', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  machineId:   uuid('machine_id').notNull().references(() => machines.id, { onDelete: 'cascade' }),
+  eventType:   text('event_type').notNull(),
+  eventData:   jsonb('event_data'),
+  programName: text('program_name'),
+  occurredAt:  timestamp('occurred_at', { withTimezone: true }).notNull(),
+  createdAt:   timestamp('created_at',  { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const cncProgramRuns = pgTable('cnc_program_runs', {
+  id:              uuid('id').primaryKey().defaultRandom(),
+  machineId:       uuid('machine_id').notNull().references(() => machines.id, { onDelete: 'cascade' }),
+  programName:     text('program_name').notNull(),
+  startedAt:       timestamp('started_at', { withTimezone: true }).notNull(),
+  endedAt:         timestamp('ended_at',   { withTimezone: true }),
+  durationSeconds: integer('duration_seconds'),
+  status:          text('status').notNull().default('running'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const cncMachineMetrics = pgTable('cnc_machine_metrics', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  machineId:  uuid('machine_id').notNull().references(() => machines.id, { onDelete: 'cascade' }),
+  metricType: text('metric_type').notNull(),
+  value:      numeric('value', { precision: 12, scale: 4 }).notNull(),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+})
 
 export const productSetups = pgTable('product_setups', {
   id:                uuid('id').primaryKey().defaultRandom(),

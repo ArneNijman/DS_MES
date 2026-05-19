@@ -25,6 +25,12 @@ en stuurt ze naar de MES backend. Detecteert ook wijzigingen in de WinTool datab
 en synchroniseert deze automatisch. Biedt een HTTP server zodat de Sync-knop
 in de MES kiosk een directe sync kan triggeren.
 
+Bewaakt daarnaast continu de machinestatus via LSV2 R_RI (programmanaam, programmastatus,
+alarm) en TCP ping (online/offline). Op machines zonder LSV2 R_RI ondersteuning (bijv. oudere
+Heidenhain TNC426/430M) is het TNCremo logboek beschikbaar als alternatief.
+Events worden opgeslagen als CNC Events en omgezet naar automatische stilstandsperioden
+en programma-runs in het Machine Dashboard.
+
 ---
 
 ## Inhoudsopgave
@@ -35,8 +41,10 @@ in de MES kiosk een directe sync kan triggeren.
 4. [Handmatig starten](#handmatig-starten)
 5. [Sync-knop in de kiosk](#sync-knop-in-de-kiosk)
 6. [WinTool synchronisatie](#wintool-synchronisatie)
-7. [Hoe werkt de sync?](#hoe-werkt-de-sync)
-8. [Probleemoplossing](#probleemoplossing)
+7. [CNC Events & machinestatus](#cnc-events--machinestatus)
+8. [TNCremo logboek monitoring](#tncremo-logboek-monitoring)
+9. [Hoe werkt de sync?](#hoe-werkt-de-sync)
+10. [Probleemoplossing](#probleemoplossing)
 
 ---
 
@@ -95,6 +103,9 @@ SYNC_INTERVAL_MIN=30                    ← automatische sync elke 30 minuten
 AGENT_PORT=3099                         ← HTTP poort voor de Sync-knop in de kiosk
 
 WINTOOL_DB_PATH=R:\Arne\tooldatabase\Dutch-Shape_2025.db   ← pad naar WinTool .db bestand (optioneel)
+
+CNC_STATE_POLL_ENABLED=true           ← continu machinestatus bewaken (Freesmachines)
+CNC_STATE_POLL_INTERVAL_MS=10000      ← polling interval in ms (standaard 10 seconden)
 ```
 
 Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `install.sh` script op de server.
@@ -253,6 +264,112 @@ Bij een geforceerde sync wordt het bestand altijd geüpload, ook als het niet ge
 
 ---
 
+## CNC Events & machinestatus
+
+Naast de periodieke TOOL.T sync bewaakt de agent **continu** de machinestatus via LSV2 (lees-protocol van Heidenhain, ingebouwd in TNCremo — geen extra software nodig).
+
+### Wat wordt bewaakt
+
+Elke `CNC_STATE_POLL_INTERVAL_MS` milliseconden (standaard 10 seconden) leest de agent per Freesmachine via LSV2 R_RI:
+
+| Signaal | LSV2 bron | CNC Event |
+|---------|-----------|-----------|
+| Machine niet bereikbaar | TCP verbinding mislukt | `MACHINE_OFFLINE` |
+| Machine weer bereikbaar | TCP verbinding geslaagd | `MACHINE_ONLINE` |
+| Programma gestart | R_RI PGM_STATE: IDLE→STARTED | `PROGRAM_STARTED` (incl. programmanaam) |
+| Programma afgerond | R_RI PGM_STATE: STARTED→FINISHED | `PROGRAM_STOPPED` (status: completed) |
+| Programma handmatig gestopt | R_RI PGM_STATE: STARTED→STOPPED | `PROGRAM_STOPPED` (status: stopped) |
+| Programma onderbroken | R_RI PGM_STATE: STARTED→INTERRUPTED | `PROGRAM_STOPPED` (status: interrupted) |
+| Alarm actief | R_RI PGM_STATE: →ERROR | `ALARM_TRIGGERED` |
+| Alarm gewist | R_RI PGM_STATE: ERROR→overig | `ALARM_CLEARED` |
+
+Op machines die R_RI niet ondersteunen (bijv. TNC426/430M) detecteert de agent alleen online/offline via TCP ping. Gebruik het TNCremo logboek als aanvulling.
+
+### Programma-runs
+
+Bij elke PROGRAM_STARTED maakt de agent een run-record aan (`cnc_program_runs`) met programmanaam en starttijd. Bij PROGRAM_STOPPED wordt de run afgesloten met eindtijd, duur en de juiste status (afgerond/gestopt/onderbroken/fout).
+
+Programmanamen worden gelezen via R_RI SELECTED_PGM (parameter 24) — typisch `TNC:\Program\<artikel>\<bewerking>\<bestand>.H`.
+
+### Automatische stilstandsdetectie
+
+De MES backend berekent op basis van deze events automatisch stilstandsperioden:
+
+| Type | Kleur | Detectie | Min. duur |
+|------|-------|---------|-----------|
+| **Offline** | Grijs | MACHINE_OFFLINE → MACHINE_ONLINE | ≥ 5 minuten |
+| **Alarmstilstand** | Rood | ALARM_TRIGGERED → ALARM_CLEARED | — |
+| **Stilstand** | Amber | PROGRAM_STOPPED → PROGRAM_STARTED (machine online) | ≥ 10 minuten |
+
+Korte offline-perioden (< 5 min) worden genegeerd als monitoring-ruis (bijv. agent-herstart).
+
+Deze perioden zijn zichtbaar in:
+- **Machine Detail** (Admin > Machines > Downtime tab) — historisch per machine
+- **Machine Dashboard** (Admin > Machine Dashboard, kiosk) — beschikbaarheid % per Freesmachine
+
+### Spindeluren
+
+Spindeluren worden bijgehouden door de looptijd van programma-runs op te tellen (geen DNC-licentie nodig). Bij elke PROGRAM_STOPPED wordt de verstreken tijd opgeteld bij het cumulatieve totaal en opgeslagen via `POST /admin/machines/:id/cnc-metrics`.
+
+### Backoff voor offline machines
+
+Als een machine niet reageert, verdubbelt de agent het polling-interval per poging (10s → 20s → 40s → … → max 5 minuten). Zodra de machine weer reageert, reset het interval terug naar 10 seconden.
+
+### Configuratie
+
+In `.env`:
+
+```
+CNC_STATE_POLL_ENABLED=true           ← zet op false om state polling uit te schakelen
+CNC_STATE_POLL_INTERVAL_MS=10000      ← polling interval in milliseconden (standaard 10s)
+```
+
+State polling werkt alleen voor machines met categorie **Freesmachine** en een geldig IP-adres in het MES.
+
+---
+
+## TNCremo logboek monitoring
+
+Als TNCremo op dezelfde Windows PC draait als de agent, kan de agent het TNCremo-logboek uitlezen om alarm- en programma-events te extraheren. Dit werkt zonder DNC-licentie en geeft rijkere data dan de TCP-ping alleen.
+
+### Wat wordt gelezen
+
+TNCremo schrijft events naar `%TEMP%\TNCremo\Logbook\`. De agent leest dit bestand elke 60 seconden en verwerkt alleen nieuw toegevoegde regels (via byte-positie tracking — het bestand wordt niet verwijderd of aangepast).
+
+| Logboek-entry | CNC Event |
+|--------------|-----------|
+| `Stib: ON` + `Info: MAIN PGM` | `PROGRAM_STARTED` (met programmanaam) |
+| `Info: MAIN PGMEND` + Stop reason | `PROGRAM_STOPPED` (met reden) |
+| `Error:` (niet gefilterd) | `ALARM_TRIGGERED` |
+| `Info: MAIN ERRCLEARED` | `ALARM_CLEARED` |
+| `Reset` | `MACHINE_OFFLINE` |
+| `Info: MAIN START` | `MACHINE_ONLINE` |
+| `Info: CTRL REG` + EMERGENCY STOP | `ALARM_TRIGGERED` |
+
+**Gefilterde alarm-codes** (geen productiestoring):
+- `N938` — Toets zonder functie (toetsdruk in verkeerde modus)
+- `P99` — Melding in PLC venster (periodiek PLC-statusbericht op Fooke-machines)
+
+Daarnaast worden identieke alarmen van dezelfde machine binnen 5 minuten automatisch gededupliceerd.
+
+### Machine-identificatie
+
+TNCremo logt `Info: REMO A_LG` bij elke verbinding met een machine, inclusief het IP-adres (`Addr:0xC0A801B3` → `192.168.1.179`). De agent koppelt alle opvolgende events aan die machine op basis van dit IP-adres.
+
+### Configuratie
+
+In `.env`:
+
+```
+TNCREMO_LOGBOOK_ENABLED=true
+TNCREMO_LOGBOOK_PATH=C:\Users\ArneNijman\AppData\Local\Temp\TNCremo\Logbook
+TNCREMO_POLL_INTERVAL_MS=60000
+```
+
+> **Opmerking:** het logboekpad verschilt per Windows-gebruiker. Als de agent onder een ander account draait, pas het pad aan. Standaard wordt `%TEMP%\TNCremo\Logbook` gebruikt.
+
+---
+
 ## Hoe werkt de sync?
 
 Voor elke CNC-machine die een IP-adres heeft in het MES:
@@ -284,3 +401,8 @@ De overige machines worden gewoon gesynchroniseerd.
 | Machine offline | Netwerk/machine uit | Controleer of de machine aan staat en bereikbaar is op het netwerk |
 | `WinTool bestand niet gevonden` | Verkeerd pad of share niet gemount | Controleer `WINTOOL_DB_PATH` in `.env`; zorg dat de netwerkschijf gemount is |
 | `WinTool ongewijzigd` | Bestand niet aangepast | Normaal gedrag — agent slaat sync over. Gebruik `/sync-wintool` om te forceren |
+| Geen CNC Events in dashboard | State polling uitgeschakeld of geen Freesmachines | Controleer `CNC_STATE_POLL_ENABLED=true` in `.env`; zorg dat machines categorie "Freesmachine" hebben |
+| Machine toont altijd "offline" | IP-adres fout of machine niet bereikbaar | Ping het IP-adres van de machine vanuit de Windows PC |
+| Spindeluren worden niet bijgewerkt | Geen DNC-licentie (optie #18) | Normaal gedrag op iTNC 530 zonder licentie; spindeluren handmatig in te stellen in het MES |
+| Logboek events worden niet verwerkt | Logboek monitoring uitgeschakeld of verkeerd pad | Controleer `TNCREMO_LOGBOOK_ENABLED=true` en `TNCREMO_LOGBOOK_PATH` in `.env`; zorg dat TNCremo op dezelfde PC draait |
+| Machine IP niet gevonden in logboek | REMO A_LG entry ontbreekt | Open TNCremo en maak verbinding met de machine — TNCremo logt het IP bij de eerste verbinding |
