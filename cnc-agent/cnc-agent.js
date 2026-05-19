@@ -622,12 +622,30 @@ if (runDiag) {
       s.on('close',   () => resolve(Buffer.concat(chunks)))
     })
 
+    // Helper: zelfde als lsv2Tgm maar length in little-endian
+    const tgmLE = (cmd) => {
+      const data = Buffer.from(cmd, 'latin1')
+      const hdr  = Buffer.alloc(4)
+      hdr.writeUInt16BE(0, 0)
+      hdr.writeUInt16LE(data.length, 2)  // LE ipv BE
+      return Buffer.concat([hdr, data])
+    }
+    // Volledig raw (geen header)
+    const tgmRaw = (cmd) => Buffer.from(cmd, 'latin1')
+
     const loginFormats = [
-      { label: 'LOGN\\0          (5 b, geen user/pass)',    buf: lsv2Tgm('LOGN\0') },
-      { label: 'LOGN\\0\\0        (6 b, lege user)',         buf: lsv2Tgm('LOGN\0\0') },
-      { label: 'LOGN\\0\\0\\0      (7 b, lege user+pass)',   buf: lsv2Tgm('LOGN\0\0\0') },
-      { label: 'LOGN\\0INSPECT\\0\\0',                       buf: lsv2Tgm('LOGN\0INSPECT\0\0') },
-      { label: 'LOGN\\0MONITOR\\0\\0',                       buf: lsv2Tgm('LOGN\0MONITOR\0\0') },
+      // Big-endian length (huidig)
+      { label: 'BE  LOGN\\0              [00 00 00 05 ...]', buf: lsv2Tgm('LOGN\0') },
+      { label: 'BE  LOGN\\0\\0\\0          [00 00 00 07 ...]', buf: lsv2Tgm('LOGN\0\0\0') },
+      { label: 'BE  LOGN\\0INSPECT\\0\\0', buf: lsv2Tgm('LOGN\0INSPECT\0\0') },
+      { label: 'BE  LOGN\\0MONITOR\\0\\0', buf: lsv2Tgm('LOGN\0MONITOR\0\0') },
+      // Little-endian length
+      { label: 'LE  LOGN\\0              [00 00 05 00 ...]', buf: tgmLE('LOGN\0') },
+      { label: 'LE  LOGN\\0\\0\\0',                           buf: tgmLE('LOGN\0\0\0') },
+      { label: 'LE  LOGN\\0INSPECT\\0\\0',                    buf: tgmLE('LOGN\0INSPECT\0\0') },
+      { label: 'LE  LOGN\\0MONITOR\\0\\0',                    buf: tgmLE('LOGN\0MONITOR\0\0') },
+      // Volledig raw (geen header)
+      { label: 'RAW LOGN\\0 (geen header)',                   buf: tgmRaw('LOGN\0') },
     ]
     let workingFormat = null
     for (const fmt of loginFormats) {
