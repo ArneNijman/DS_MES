@@ -246,7 +246,7 @@ function lsv2Command(ip, command, timeoutMs = 5000) {
     }
 
     socket.setTimeout(timeoutMs)
-    socket.connect(LSV2_PORT, ip, () => socket.write(lsv2Tgm('LOGN\0\0')))
+    socket.connect(LSV2_PORT, ip, () => socket.write(lsv2Tgm('LOGN\0')))
 
     socket.on('data', chunk => {
       rxBuf = Buffer.concat([rxBuf, chunk])
@@ -270,6 +270,7 @@ function lsv2Command(ip, command, timeoutMs = 5000) {
 
     socket.on('timeout', () => done(reject, new Error('LSV2 timeout')))
     socket.on('error',   err => done(reject, err))
+    socket.on('close',   ()  => done(reject, new Error('LSV2 verbinding verbroken door machine')))
   })
 }
 
@@ -579,11 +580,23 @@ if (runDiag) {
     }
     console.log(`    ✅  TCP poort ${LSV2_PORT} bereikbaar`)
 
-    // Stap 2: LSV2 login + R_RI
-    const state = await readMachineState(m)
-    if (!state) {
-      console.log(`    ❌  LSV2 protocol mislukt (login geweigerd of R_RI fout)`)
+    // Stap 2: LSV2 login + R_RI (met echte foutmelding)
+    let state = null
+    try {
+      const data = await lsv2Command(m.cncIpAddress, 'R_RI', 3000)
+      if (data.length >= 272) {
+        const progStatus = data.readInt32LE(4)
+        const pgmName    = data.slice(8, 264).toString('latin1').replace(/\0.*$/, '').trim()
+        const toolNr     = data.readInt32LE(264)
+        const errCode    = data.readInt32LE(268)
+        state = { program: progStatus > 0 && pgmName ? pgmName : null, tool: toolNr > 0 ? toolNr : null, alarm: errCode !== 0 }
+      } else {
+        state = { program: null, tool: null, alarm: false }
+      }
+    } catch (err) {
+      console.log(`    ❌  LSV2 protocol fout: ${err.message}`)
       console.log(`        → Controleer of het LSV2-wachtwoord leeg is op de controller`)
+      console.log(`        → Heidenhain: MOD → Machine-parameters → Wachtwoorden`)
       console.log()
       continue
     }
