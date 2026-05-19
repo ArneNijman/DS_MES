@@ -545,7 +545,7 @@ async function syncAllGuarded() {
 }
 
 if (runDiag) {
-  // Diagnose-modus: test LSV2-verbinding met alle machines zonder backend
+  // Diagnose-modus: test TCP + LSV2 per machine zonder backend
   console.log('🔍  LSV2 diagnose-modus — geen backend nodig\n')
   await authenticate()
   const machines = await getCncMachines()
@@ -554,19 +554,51 @@ if (runDiag) {
     console.log('⚠️   Geen machines met IP-adres gevonden')
     process.exit(0)
   }
+
+  // TCP ping: kan de poort bereikt worden?
+  const tcpPing = (ip, port, timeoutMs = 2000) => new Promise(resolve => {
+    const s = new net.Socket()
+    s.setTimeout(timeoutMs)
+    s.connect(port, ip, () => { s.destroy(); resolve(true) })
+    s.on('error', () => resolve(false))
+    s.on('timeout', () => { s.destroy(); resolve(false) })
+  })
+
   for (const m of freesmachines) {
-    process.stdout.write(`🔌  ${m.name} (${m.cncIpAddress}) ... `)
-    const state = await readMachineState(m)
-    if (!state) {
-      console.log('❌  Niet bereikbaar (offline of LSV2 uitgeschakeld)')
+    console.log(`🔌  ${m.name}  (${m.cncIpAddress})`)
+
+    // Stap 1: TCP bereikbaarheid op poort 19000
+    const portOpen = await tcpPing(m.cncIpAddress, LSV2_PORT, 2000)
+    if (!portOpen) {
+      console.log(`    ❌  TCP poort ${LSV2_PORT} niet bereikbaar`)
+      console.log(`        → Machine offline, firewall blokkeert de poort, of LSV2 uitgeschakeld`)
+      console.log(`        → Controleer: ping ${m.cncIpAddress} werkt?`)
+      console.log(`        → Heidenhain: MOD → Machine-parameters → Netwerk → LSV2 aanzetten`)
+      console.log()
       continue
     }
-    console.log('✅  Online')
-    console.log(`    Programma : ${state.program ?? '(geen)'}`)
+    console.log(`    ✅  TCP poort ${LSV2_PORT} bereikbaar`)
+
+    // Stap 2: LSV2 login + R_RI
+    const state = await readMachineState(m)
+    if (!state) {
+      console.log(`    ❌  LSV2 protocol mislukt (login geweigerd of R_RI fout)`)
+      console.log(`        → Controleer of het LSV2-wachtwoord leeg is op de controller`)
+      console.log()
+      continue
+    }
+    console.log(`    ✅  LSV2 R_RI OK`)
+    console.log(`    Programma : ${state.program ?? '(geen actief programma)'}`)
     console.log(`    Tool      : ${state.tool ?? '(geen)'}`)
     console.log(`    Alarm     : ${state.alarm ? '⚠️  JA' : 'nee'}`)
+
+    // Stap 3: R_OT (spindeluren)
     const hours = await readSpindleHours(m)
-    console.log(`    Spindel   : ${hours !== null ? hours + ' uur' : '(niet beschikbaar via R_OT)'}`)
+    if (hours !== null) {
+      console.log(`    Spindel   : ${hours} uur  (R_OT OK)`)
+    } else {
+      console.log(`    Spindel   : (R_OT niet beschikbaar op deze controller)`)
+    }
     console.log()
   }
   process.exit(0)
