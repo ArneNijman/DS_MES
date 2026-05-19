@@ -580,7 +580,22 @@ if (runDiag) {
     }
     console.log(`    ✅  TCP poort ${LSV2_PORT} bereikbaar`)
 
-    // Stap 1b: machine stuurt iets bij connect? (server-speaks-first check)
+    // Stap 1b: welke poorten zijn open? (helpt bepalen welk protocol beschikbaar is)
+    const knownPorts = [
+      { port: 19000, label: 'LSV2 / FileServer (Heidenhain)' },
+      { port: 5001,  label: 'FileServer alternatief' },
+      { port: 8080,  label: 'REST API (TNC 7 / nieuwere controllers)' },
+      { port: 443,   label: 'HTTPS' },
+      { port: 4840,  label: 'OPC-UA' },
+    ]
+    const openPorts = []
+    for (const { port, label } of knownPorts) {
+      const open = await tcpPing(m.cncIpAddress, port, 1000)
+      if (open) { openPorts.push(port); console.log(`    ✅  Poort ${port} open  (${label})`) }
+    }
+    console.log()
+
+    // Stap 1c: machine stuurt iets bij connect? (server-speaks-first check)
     const banner = await new Promise(resolve => {
       const s = new net.Socket()
       const chunks = []
@@ -623,8 +638,21 @@ if (runDiag) {
     }
     if (!workingFormat) {
       console.log(`    ❌  Geen enkel LOGN-formaat geeft response — machine negeert alle packets`)
-      console.log(`        → Mogelijk is LSV2 uitgeschakeld (poort open maar service inactief)`)
-      console.log(`        → Of machine verwacht een ander protocol op poort 19000`)
+      // REST API check (TNC 7 / TNC 640 met software-optie)
+      if (openPorts.includes(8080)) {
+        console.log(`    💡  Poort 8080 is open → probeer REST API:`)
+        try {
+          const r = await fetch(`http://${m.cncIpAddress}:8080/api/v1/machine`, { signal: AbortSignal.timeout(2000) })
+          const body = await r.text().catch(() => '(geen body)')
+          console.log(`    📡  REST GET /api/v1/machine → HTTP ${r.status}: ${body.slice(0, 200)}`)
+        } catch (e) {
+          console.log(`    📡  REST API fetch mislukt: ${e.message}`)
+        }
+        try {
+          const r = await fetch(`http://${m.cncIpAddress}:8080/`, { signal: AbortSignal.timeout(2000) })
+          console.log(`    📡  REST GET / → HTTP ${r.status}`)
+        } catch { /* ignore */ }
+      }
       console.log()
       continue
     }
