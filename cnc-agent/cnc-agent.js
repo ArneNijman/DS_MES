@@ -580,6 +580,24 @@ if (runDiag) {
     }
     console.log(`    ✅  TCP poort ${LSV2_PORT} bereikbaar`)
 
+    // Stap 1b: raw dump — stuurt LOGN en toont alles wat de machine teruggeeft
+    const rawDump = await new Promise(resolve => {
+      const s = new net.Socket()
+      const chunks = []
+      s.setTimeout(2000)
+      s.connect(LSV2_PORT, m.cncIpAddress, () => s.write(lsv2Tgm('LOGN\0')))
+      s.on('data', d => chunks.push(d))
+      s.on('timeout', () => { s.destroy(); resolve(Buffer.concat(chunks)) })
+      s.on('error',   () => resolve(Buffer.concat(chunks)))
+      s.on('close',   () => resolve(Buffer.concat(chunks)))
+    })
+    if (rawDump.length === 0) {
+      console.log(`    ⚠️   Machine reageert NIET op LOGN-telegram (0 bytes ontvangen)`)
+      console.log(`        → Verkeerd packet-formaat, of machine wacht op iets anders`)
+    } else {
+      console.log(`    📦  Raw response (${rawDump.length} bytes): ${rawDump.toString('hex').match(/../g).join(' ')}`)
+    }
+
     // Stap 2: LSV2 login + R_RI (met echte foutmelding)
     let state = null
     try {
