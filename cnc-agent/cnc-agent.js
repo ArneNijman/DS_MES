@@ -16,6 +16,7 @@ import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createServer } from 'http'
+import net from 'net'
 
 const execFileAsync = promisify(execFile)
 
@@ -203,14 +204,76 @@ async function syncWintoolIfChanged({ force = false } = {}) {
   return result
 }
 
+// ── LSV2 protocol (Heidenhain, poort 19000) ───────────────────────────────────
+//
+// LSV2 is het read-only communicatieprotocol van Heidenhain (zelfde als TNCremo
+// gebruikt voor de statusbalk). Volledig read-only — er wordt niets naar de
+// machine geschreven.
+//
+// Telegram-formaat: [type:2 BE][length:2 BE][data:length bytes]
+//   type 0x0000 = T_CMD (client→machine)
+//   type 0x0001 = T_ANS (machine→client, OK)
+//   type 0x0002 = T_ERR (machine→client, fout)
+
+const LSV2_PORT = 19000
+
+function lsv2Tgm(cmd) {
+  const data = Buffer.from(cmd, 'latin1')
+  const hdr  = Buffer.alloc(4)
+  hdr.writeUInt16BE(0, 0)
+  hdr.writeUInt16BE(data.length, 2)
+  return Buffer.concat([hdr, data])
+}
+
+/**
+ * Verbindt met een Heidenhain machine via LSV2, logt in (geen wachtwoord),
+ * stuurt één commando en retourneert de response-payload als Buffer.
+ * Gooit een Error als de verbinding mislukt, timeout optreedt, of de machine
+ * een T_ERR teruggeeft.
+ */
+function lsv2Command(ip, command, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const socket  = new net.Socket()
+    let   rxBuf   = Buffer.alloc(0)
+    let   phase   = 0   // 0 = wacht op login-ack, 1 = wacht op command-ack
+    let   settled = false
+
+    const done = (fn, val) => {
+      if (settled) return
+      settled = true
+      socket.destroy()
+      fn(val)
+    }
+
+    socket.setTimeout(timeoutMs)
+    socket.connect(LSV2_PORT, ip, () => socket.write(lsv2Tgm('LOGN\0\0')))
+
+    socket.on('data', chunk => {
+      rxBuf = Buffer.concat([rxBuf, chunk])
+      while (rxBuf.length >= 4) {
+        const type = rxBuf.readUInt16BE(0)
+        const len  = rxBuf.readUInt16BE(2)
+        if (rxBuf.length < 4 + len) break
+        const payload = rxBuf.slice(4, 4 + len)
+        rxBuf = rxBuf.slice(4 + len)
+
+        if (phase === 0) {
+          if (type === 2) return done(reject, new Error('LSV2 login geweigerd'))
+          phase = 1
+          socket.write(lsv2Tgm(command + '\0'))
+        } else {
+          if (type === 2) return done(reject, new Error(`LSV2 ${command} fout`))
+          done(resolve, payload)
+        }
+      }
+    })
+
+    socket.on('timeout', () => done(reject, new Error('LSV2 timeout')))
+    socket.on('error',   err => done(reject, err))
+  })
+}
+
 // ── Machine state polling ─────────────────────────────────────────────────────
-//
-// Elke STATE_POLL_MS seconden wordt de status van elke Freesmachine gepolled.
-// Uit de vergelijking van vorige vs. huidige staat worden events gegenereerd
-// en naar de backend gepost. Programma-runs worden bijgehouden via cnc-program-runs.
-//
-// NOOT: readMachineState() gebruikt TNCcmd of LSV2 — te implementeren bij
-//       netwerktoegang. Nu als placeholder die een lege staat retourneert.
 
 /** @type {Map<string, { online: boolean; program: string|null; tool: number|null; alarm: boolean; spindleRunning: boolean|null }>} */
 const machineState = new Map()
@@ -218,48 +281,60 @@ const machineState = new Map()
 /**
  * Backoff tracking voor offline machines.
  * Na elke mislukte poll wordt de wachttijd verdubbeld (max 5 min).
- * Zodra een machine online is, wordt de backoff gereset.
  * @type {Map<string, { failCount: number; nextPollAt: number }>}
  */
 const machineBackoff = new Map()
 
 /**
- * Leest de huidige staat van een machine via TNCcmd / LSV2.
- * Retourneert null als de machine niet bereikbaar is.
+ * Leest de actuele machinestatus via LSV2 (R_RI commando).
  *
- * TODO: implementeren bij netwerktoegang.
- * Benodigde waarden:
- *   - online:  machine bereikbaar (ping / connect)
- *   - program: actieve NC-bestandsnaam (of null als stilstand)
- *   - tool:    actief gereedschapsnummer (integer of null)
- *   - alarm:   alarmstatus (boolean)
+ * R_RI response (272 bytes):
+ *   mode(4) + status(4) + file[256] + tool(4) + errCode(4)
+ *
+ * status: 0=stilstand 1=loopt 2=onderbroken 3=fout
  */
-async function readMachineState(machine) {  // eslint-disable-line no-unused-vars
-  // Placeholder — retourneert null zodat we offline behandelen
-  // Vervang dit door de echte TNCcmd/LSV2-aanroep:
-  //
-  //   const result = await runTncCmd(machine.cncIpAddress, 'READ_STATUS')
-  //   return {
-  //     online:         true,
-  //     program:        result.program        ?? null,
-  //     tool:           result.tool           ?? null,
-  //     alarm:          result.alarm          ?? false,
-  //     spindleRunning: result.spindleRunning ?? null,
-  //   }
-  //
-  return null
+async function readMachineState(machine) {
+  try {
+    const data = await lsv2Command(machine.cncIpAddress, 'R_RI', Math.min(TIMEOUT_MS, 3000))
+
+    if (data.length < 272) {
+      return { online: true, program: null, tool: null, alarm: false, spindleRunning: null }
+    }
+
+    const progStatus = data.readInt32LE(4)    // 0=idle 1=running 2=interrupted 3=error
+    const pgmName    = data.slice(8, 264).toString('latin1').replace(/\0.*$/, '').trim()
+    const toolNr     = data.readInt32LE(264)
+    const errCode    = data.readInt32LE(268)
+
+    return {
+      online:         true,
+      program:        progStatus > 0 && pgmName ? pgmName : null,
+      tool:           toolNr > 0 ? toolNr : null,
+      alarm:          errCode !== 0,
+      spindleRunning: null,
+    }
+  } catch {
+    return null
+  }
 }
 
 /**
- * Leest het totaal aantal spindeluren van de machine.
- * Retourneert null als niet beschikbaar.
+ * Leest het totaal aantal spindeluren via LSV2 (R_OT commando).
  *
- * TODO: implementeren bij netwerktoegang via LSV2:
- *   const hours = await lsv2.readOperatingTime(machine.cncIpAddress, 'SPINDLE')
- *   return hours  // getal in uren (bijv. 4283.5)
+ * R_OT response (minimaal 12 bytes):
+ *   ctrlOnSec(4) + progRunSec(4) + spindleSec(4) + ...
+ *
+ * Tijden zijn in seconden op iTNC 530+ / TNC 640+.
  */
-async function readSpindleHours(machine) {  // eslint-disable-line no-unused-vars
-  return null
+async function readSpindleHours(machine) {
+  try {
+    const data = await lsv2Command(machine.cncIpAddress, 'R_OT', Math.min(TIMEOUT_MS, 5000))
+    if (data.length < 12) return null
+    const spindleSec = data.readUInt32LE(8)
+    return spindleSec > 0 ? +(spindleSec / 3600).toFixed(2) : null
+  } catch {
+    return null
+  }
 }
 
 /** Vergelijkt vorige en huidige staat en retourneert gegenereerde events. */
@@ -451,7 +526,8 @@ async function syncAll() {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-const runOnce = process.argv.includes('--once')
+const runOnce    = process.argv.includes('--once')
+const runDiag    = process.argv.includes('--diag')
 
 let syncInProgress = false
 
@@ -468,7 +544,33 @@ async function syncAllGuarded() {
   }
 }
 
-if (runOnce) {
+if (runDiag) {
+  // Diagnose-modus: test LSV2-verbinding met alle machines zonder backend
+  console.log('🔍  LSV2 diagnose-modus — geen backend nodig\n')
+  await authenticate()
+  const machines = await getCncMachines()
+  const freesmachines = machines.filter(m => m.cncIpAddress)
+  if (!freesmachines.length) {
+    console.log('⚠️   Geen machines met IP-adres gevonden')
+    process.exit(0)
+  }
+  for (const m of freesmachines) {
+    process.stdout.write(`🔌  ${m.name} (${m.cncIpAddress}) ... `)
+    const state = await readMachineState(m)
+    if (!state) {
+      console.log('❌  Niet bereikbaar (offline of LSV2 uitgeschakeld)')
+      continue
+    }
+    console.log('✅  Online')
+    console.log(`    Programma : ${state.program ?? '(geen)'}`)
+    console.log(`    Tool      : ${state.tool ?? '(geen)'}`)
+    console.log(`    Alarm     : ${state.alarm ? '⚠️  JA' : 'nee'}`)
+    const hours = await readSpindleHours(m)
+    console.log(`    Spindel   : ${hours !== null ? hours + ' uur' : '(niet beschikbaar via R_OT)'}`)
+    console.log()
+  }
+  process.exit(0)
+} else if (runOnce) {
   await syncAll()
   process.exit(0)
 } else {
