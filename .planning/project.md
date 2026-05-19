@@ -144,13 +144,18 @@ Identiek aan Product Setup maar gericht op 3D-meetapparaten. Geen CNC-tab.
 Beschikbaarheids- en stilstandsoverzicht voor alle Freesmachines. Beschikbaar in admin-panel én kiosk (via geëxporteerde `MachineDashboardContent`).
 
 - Periode-filter: Vandaag / 7 dagen / Maand / Kwartaal / Jaar
-- Beschikbaarheids-bars per machine (groen/amber/rood afhankelijk van uptime %)
+- Beschikbaarheids-bars per machine (groen/amber/rood), type-breakdown op tweede regel
+- 100% beschikbaarheid alleen bij letterlijk nul stilstand (Math.floor, niet Math.round)
 - Gecombineerde downtime-tabel: alle machines, nieuwste perioden eerst
 - Spindeluren lijndiagram per machine (per dag ≤14 dagen, per ISO-week bij langere perioden)
 - Downtime-perioden worden on-the-fly afgeleid uit `cnc_machine_events` (geen extra tabel)
-- Drempelwaarde stilstand: 30 minuten gap tussen PROGRAM_STOPPED en PROGRAM_STARTED
+- Drempelwaarden: offline ≥ 5 min, stilstand ≥ 10 min gap PROGRAM_STOPPED → PROGRAM_STARTED
 
-Per machine ook in Admin > Machines: tab "Downtime" met samenvatting + periodentabel.
+Per machine ook in Admin > Machines:
+- Tab "Downtime" — samenvatting (4 kaartjes) + periodentabel + pulserende badge bij lopend
+- Tab "Programma Runs" — naam, starttijd, duur, status (afgerond/gestopt/onderbroken/fout)
+  - Artikel-zoekbalk: filter op mapnaam (bijv. `22073-3201-11`)
+  - Totale verspaantijd per artikel via lifetime-aggregatie (geen 50-runs limiet)
 
 ### Meetmiddelen (`routes/kiosk/meetmiddelen.tsx`)
 Kalibratiebeheer van meetgereedschappen.

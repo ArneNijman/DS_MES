@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, ChevronRight, AlertTriangle, Clock, Wrench, Zap, Settings, Paperclip, X, Download, Activity, Cpu } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronRight, AlertTriangle, Clock, Wrench, Zap, Settings, Paperclip, X, Download, Activity, Cpu, Search } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import AdminSidebar from '@/components/AdminSidebar'
@@ -1899,9 +1899,17 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     refetchInterval: subTab === 'cnc_events' ? 15_000 : false,
   })
 
+  const [articleFilter, setArticleFilter] = useState<string | null>(null)
+
+  const { data: cncRunsSummary = [] } = useQuery<{ article: string; totalSeconds: number; runCount: number }[]>({
+    queryKey: ['cnc-runs-summary', machineId],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-program-runs/summary`) as Promise<{ article: string; totalSeconds: number; runCount: number }[]>,
+    enabled: subTab === 'cnc_runs',
+  })
+
   const { data: cncRuns = [] } = useQuery<CncProgramRun[]>({
-    queryKey: ['cnc-runs', machineId],
-    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-program-runs?limit=50`) as Promise<CncProgramRun[]>,
+    queryKey: ['cnc-runs', machineId, articleFilter],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-program-runs?limit=100${articleFilter ? `&article=${encodeURIComponent(articleFilter)}` : ''}`) as Promise<CncProgramRun[]>,
     enabled: subTab === 'cnc_runs',
     refetchInterval: subTab === 'cnc_runs' ? 15_000 : false,
   })
@@ -2229,9 +2237,34 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
 
         {subTab === 'cnc_runs' && (
           <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Cpu size={15} className="text-teal-500" />
-              <h3 className="text-sm font-semibold text-gray-700">Programma Runs</h3>
+            {/* Artikel zoekbalk */}
+            <div className="mb-4">
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filter op artikel (bijv. 22073-3201-11)"
+                  value={articleFilter ?? ''}
+                  onChange={e => setArticleFilter(e.target.value || null)}
+                  className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-400"
+                />
+                {articleFilter && (
+                  <button onClick={() => setArticleFilter(null)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              {articleFilter && (() => {
+                const sel = cncRunsSummary.find(s => s.article.toLowerCase().includes(articleFilter.toLowerCase()))
+                if (!sel) return null
+                return (
+                  <div className="mt-1.5 px-3 py-2 bg-teal-50 rounded-lg flex items-center gap-3 text-xs">
+                    <span className="text-teal-700 font-medium">{sel.article}</span>
+                    <span className="text-teal-600">Totale verspaantijd: <strong>{formatDuration(sel.totalSeconds)}</strong></span>
+                    <span className="text-teal-500">{sel.runCount} run{sel.runCount !== 1 ? 's' : ''}</span>
+                  </div>
+                )
+              })()}
             </div>
             {cncRuns.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-12">Nog geen programma-runs ontvangen</p>

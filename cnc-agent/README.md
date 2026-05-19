@@ -25,9 +25,11 @@ en stuurt ze naar de MES backend. Detecteert ook wijzigingen in de WinTool datab
 en synchroniseert deze automatisch. Biedt een HTTP server zodat de Sync-knop
 in de MES kiosk een directe sync kan triggeren.
 
-Bewaakt daarnaast continu de machinestatus via TCP ping (online/offline) en via het
-TNCremo logboek (alarmen, resets, machinestart). Die events worden opgeslagen als
-CNC Events en omgezet naar automatische stilstandsperioden in het Machine Dashboard.
+Bewaakt daarnaast continu de machinestatus via LSV2 R_RI (programmanaam, programmastatus,
+alarm) en TCP ping (online/offline). Op machines zonder LSV2 R_RI ondersteuning (bijv. oudere
+Heidenhain TNC426/430M) is het TNCremo logboek beschikbaar als alternatief.
+Events worden opgeslagen als CNC Events en omgezet naar automatische stilstandsperioden
+en programma-runs in het Machine Dashboard.
 
 ---
 
@@ -268,26 +270,38 @@ Naast de periodieke TOOL.T sync bewaakt de agent **continu** de machinestatus vi
 
 ### Wat wordt bewaakt
 
-Elke `CNC_STATE_POLL_INTERVAL_MS` milliseconden (standaard 10 seconden) leest de agent per Freesmachine:
+Elke `CNC_STATE_POLL_INTERVAL_MS` milliseconden (standaard 10 seconden) leest de agent per Freesmachine via LSV2 R_RI:
 
-| Signaal | CNC Event |
-|---------|-----------|
-| Machine niet bereikbaar | `MACHINE_OFFLINE` |
-| Machine weer bereikbaar | `MACHINE_ONLINE` |
-| Programma gestart | `PROGRAM_STARTED` |
-| Programma gestopt | `PROGRAM_STOPPED` |
-| Alarm actief | `ALARM_TRIGGERED` |
-| Alarm gewist | `ALARM_CLEARED` |
+| Signaal | LSV2 bron | CNC Event |
+|---------|-----------|-----------|
+| Machine niet bereikbaar | TCP verbinding mislukt | `MACHINE_OFFLINE` |
+| Machine weer bereikbaar | TCP verbinding geslaagd | `MACHINE_ONLINE` |
+| Programma gestart | R_RI PGM_STATE: IDLE→STARTED | `PROGRAM_STARTED` (incl. programmanaam) |
+| Programma afgerond | R_RI PGM_STATE: STARTED→FINISHED | `PROGRAM_STOPPED` (status: completed) |
+| Programma handmatig gestopt | R_RI PGM_STATE: STARTED→STOPPED | `PROGRAM_STOPPED` (status: stopped) |
+| Programma onderbroken | R_RI PGM_STATE: STARTED→INTERRUPTED | `PROGRAM_STOPPED` (status: interrupted) |
+| Alarm actief | R_RI PGM_STATE: →ERROR | `ALARM_TRIGGERED` |
+| Alarm gewist | R_RI PGM_STATE: ERROR→overig | `ALARM_CLEARED` |
+
+Op machines die R_RI niet ondersteunen (bijv. TNC426/430M) detecteert de agent alleen online/offline via TCP ping. Gebruik het TNCremo logboek als aanvulling.
+
+### Programma-runs
+
+Bij elke PROGRAM_STARTED maakt de agent een run-record aan (`cnc_program_runs`) met programmanaam en starttijd. Bij PROGRAM_STOPPED wordt de run afgesloten met eindtijd, duur en de juiste status (afgerond/gestopt/onderbroken/fout).
+
+Programmanamen worden gelezen via R_RI SELECTED_PGM (parameter 24) — typisch `TNC:\Program\<artikel>\<bewerking>\<bestand>.H`.
 
 ### Automatische stilstandsdetectie
 
 De MES backend berekent op basis van deze events automatisch stilstandsperioden:
 
-| Type | Kleur | Detectie |
-|------|-------|---------|
-| **Offline** | Grijs | MACHINE_OFFLINE → MACHINE_ONLINE |
-| **Alarmstilstand** | Rood | ALARM_TRIGGERED → ALARM_CLEARED |
-| **Stilstand** | Amber | PROGRAM_STOPPED → PROGRAM_STARTED (gap > 30 min) |
+| Type | Kleur | Detectie | Min. duur |
+|------|-------|---------|-----------|
+| **Offline** | Grijs | MACHINE_OFFLINE → MACHINE_ONLINE | ≥ 5 minuten |
+| **Alarmstilstand** | Rood | ALARM_TRIGGERED → ALARM_CLEARED | — |
+| **Stilstand** | Amber | PROGRAM_STOPPED → PROGRAM_STARTED (machine online) | ≥ 10 minuten |
+
+Korte offline-perioden (< 5 min) worden genegeerd als monitoring-ruis (bijv. agent-herstart).
 
 Deze perioden zijn zichtbaar in:
 - **Machine Detail** (Admin > Machines > Downtime tab) — historisch per machine
@@ -295,7 +309,7 @@ Deze perioden zijn zichtbaar in:
 
 ### Spindeluren
 
-Spindeluren worden gelezen via LSV2 (`R_OT_SPINDEL_TIME`) — vereist de Heidenhain DNC-licentie (optie #18). Op machines zonder die licentie blijven spindeluren op 0; ze zijn handmatig bij te houden via het MES.
+Spindeluren worden bijgehouden door de looptijd van programma-runs op te tellen (geen DNC-licentie nodig). Bij elke PROGRAM_STOPPED wordt de verstreken tijd opgeteld bij het cumulatieve totaal en opgeslagen via `POST /admin/machines/:id/cnc-metrics`.
 
 ### Backoff voor offline machines
 

@@ -282,7 +282,7 @@ function lsv2Command(ip, command, timeoutMs = 5000) {
 
 // ── Machine state polling ─────────────────────────────────────────────────────
 
-/** @type {Map<string, { online: boolean; program: string|null; tool: number|null; alarm: boolean; spindleRunning: boolean|null }>} */
+/** @type {Map<string, { online: boolean; program: string|null; pgmState: number|null; tool: number|null; alarm: boolean; spindleRunning: boolean|null }>} */
 const machineState = new Map()
 
 /**
@@ -292,30 +292,135 @@ const machineState = new Map()
  */
 const machineBackoff = new Map()
 
+// ── LSV2 R_RI constanten (pyLSV2) ─────────────────────────────────────────────
+const LSV2_A_LGINSPECT = Buffer.from('00000008415f4c47494e5350454354 00'.replace(/\s/g,''), 'hex')
+const LSV2_C_CC_03     = Buffer.from('00000002435f434300 03'.replace(/\s/g,''), 'hex')
+const LSV2_C_CC_06     = Buffer.from('00000002435f434300 06'.replace(/\s/g,''), 'hex')
+
+// PgmState enum (pyLSV2): 0=STARTED 1=STOPPED 2=FINISHED 3=CANCELLED 4=INTERRUPTED 5=ERROR 6=ERROR_CLEARED 7=IDLE
+const PGM_STATE_STARTED = 0
+const PGM_STATE_ERROR   = 5
+
+function mkRRI(paramId) {
+  const hdr = Buffer.alloc(4); hdr.writeUInt16BE(0, 0); hdr.writeUInt16BE(2, 2)
+  const p = Buffer.alloc(2);   p.writeUInt16BE(paramId, 0)
+  return Buffer.concat([hdr, Buffer.from('R_RI', 'latin1'), p])
+}
+
 /**
- * Controleert of de machine online is via een TCP-ping op poort 19000.
- * Retourneert een minimale staat { online: true } of null (offline).
- *
- * LSV2 monitoring (programma, alarm, tool, spindel) vereist de Heidenhain
- * DNC-licentie die op deze machines niet actief is. TCP-ping geeft
- * MACHINE_ONLINE / MACHINE_OFFLINE events voor het downtime-dashboard.
+ * Leest machine-staat via LSV2 R_RI (geen DNC-licentie nodig).
+ * Geeft { online, program, pgmState, alarm, tool, spindleRunning } of null bij offline.
  */
 async function readMachineState(machine) {
   return new Promise(resolve => {
-    const socket = new net.Socket()
-    socket.setTimeout(Math.min(TIMEOUT_MS, 3000))
-    socket.connect(LSV2_PORT, machine.cncIpAddress, () => {
-      socket.destroy()
-      resolve({ online: true, program: null, tool: null, alarm: false, spindleRunning: null })
+    const ip = machine.cncIpAddress
+    const s  = new net.Socket()
+    let rxBuf = Buffer.alloc(0)
+    let step = 0
+    let program = null, pgmState = null
+    let timer
+
+    const commands = [
+      LSV2_A_LGINSPECT,
+      LSV2_C_CC_03,
+      LSV2_C_CC_06,
+      mkRRI(23),  // EXEC_STATE
+      mkRRI(24),  // SELECTED_PGM
+      mkRRI(26),  // PGM_STATE
+    ]
+
+    const finish = (online) => {
+      clearTimeout(timer)
+      s.destroy()
+      if (!online) return resolve(null)
+      resolve({ online: true, program, pgmState, tool: null, alarm: pgmState === PGM_STATE_ERROR, spindleRunning: null })
+    }
+
+    const sendNext = () => {
+      if (step >= commands.length) return finish(true)
+      s.write(commands[step++])
+      clearTimeout(timer)
+      timer = setTimeout(() => finish(true), 1500)
+    }
+
+    s.setTimeout(Math.min(TIMEOUT_MS, 3000))
+    s.connect(LSV2_PORT, ip, () => sendNext())
+
+    s.on('data', chunk => {
+      rxBuf = Buffer.concat([rxBuf, chunk])
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const body = rxBuf.slice(4)
+        const cmd  = body.slice(0, 4).toString('latin1')
+        if (cmd === 'S_RI') {
+          const cmdIdx = step - 1
+          if (cmdIdx === 4) {
+            // SELECTED_PGM — null-terminated path na S_RI + eventuele padding-bytes
+            const data = body.slice(4)
+            let start = 0
+            while (start < data.length && data[start] === 0) start++
+            if (start < data.length) {
+              const raw = data.slice(start).toString('latin1')
+              const end = raw.indexOf('\0')
+              const path = (end >= 0 ? raw.slice(0, end) : raw).trim()
+              if (path.length > 0) program = path
+            }
+          } else if (cmdIdx === 5) {
+            // PGM_STATE — 2-byte uint16 na S_RI
+            if (body.length >= 6) pgmState = body.readUInt16BE(4)
+          }
+        }
+        rxBuf = Buffer.alloc(0)
+        sendNext()
+      }, 200)
     })
-    socket.on('error',   () => resolve(null))
-    socket.on('timeout', () => { socket.destroy(); resolve(null) })
+
+    s.on('error',   () => finish(false))
+    s.on('timeout', () => finish(false))
+    s.on('close',   () => { if (!s.destroyed) finish(true) })
   })
 }
 
 async function readSpindleHours(_machine) {
-  // Vereist LSV2 monitoring (DNC-licentie) — niet beschikbaar op huidige machines
-  return null
+  return null  // Niet meer nodig — spindeluren worden bijgehouden via programma-looptijden
+}
+
+// ── Spindeluren via programma-looptijd tracking ───────────────────────────────
+// Cache: machineId → huidige cumulatieve uren (geseeded vanuit backend)
+const spindleHoursCache = new Map()
+
+// Bijhouden wanneer een programma gestart is: machineId → Date.now()
+const programRunStartAt = new Map()
+
+// Run ID van de lopende programma-run: machineId → uuid (om later te PATCHen)
+const programRunId = new Map()
+
+async function seedSpindleHours(machineId) {
+  if (spindleHoursCache.has(machineId)) return
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/admin/machines/${machineId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) { spindleHoursCache.set(machineId, 0); return }
+    const data = await res.json()
+    spindleHoursCache.set(machineId, parseFloat(data.spindleHours ?? '0') || 0)
+  } catch {
+    spindleHoursCache.set(machineId, 0)
+  }
+}
+
+async function addSpindleRunTime(machine, durationMs) {
+  await seedSpindleHours(machine.id)
+  const addedHours = durationMs / 3_600_000
+  const newTotal   = (spindleHoursCache.get(machine.id) ?? 0) + addedHours
+  spindleHoursCache.set(machine.id, newTotal)
+  const rounded = Math.round(newTotal * 100) / 100
+  await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-metrics`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body:    JSON.stringify({ spindleHours: rounded }),
+  }).catch(err => console.error(`   ⚠️   Spindeluren opslaan mislukt: ${err.message}`))
+  console.log(`   ⏱️   ${machine.name}: +${(addedHours * 60).toFixed(1)}min looptijd → ${rounded}u totaal`)
 }
 
 // ── TNCremo logboek parser ────────────────────────────────────────────────────
@@ -328,6 +433,8 @@ async function readSpindleHours(_machine) {
 
 const logbookPosFile = join(tmpdir(), 'cnc-agent', 'logbook-pos.json')
 let   logbookPositions = {}   // { filename: byteOffset }
+let   logbookLastActivity = 0 // epoch ms — laatste keer dat nieuwe content gevonden werd
+let   logbookWarnedStale  = false
 
 async function loadLogbookPositions() {
   try {
@@ -534,7 +641,15 @@ async function processLogbook(machines) {
   try {
     files = (await readdir(LOGBOOK_DIR)).filter(f => !f.startsWith('.'))
   } catch {
-    return   // Map bestaat niet of geen toegang — stil negeren
+    console.warn(`⚠️   TNCremo logboek map niet gevonden: ${LOGBOOK_DIR}`)
+    console.warn(`     → Start TNCremo en maak verbinding met de machines om events te ontvangen`)
+    return
+  }
+
+  if (files.length === 0) {
+    console.warn(`⚠️   TNCremo logboek map is leeg — TNCremo heeft nog niet ingelogd op een machine`)
+    console.warn(`     → Open TNCremo en maak verbinding met de machines`)
+    return
   }
 
   let totalEvents = 0
@@ -590,7 +705,20 @@ async function processLogbook(machines) {
     }
   }
 
-  if (totalEvents > 0) console.log(`📋  Logboek: ${totalEvents} event(s) verwerkt`)
+  if (totalEvents > 0) {
+    console.log(`📋  Logboek: ${totalEvents} event(s) verwerkt`)
+    logbookLastActivity = Date.now()
+    logbookWarnedStale  = false
+  } else {
+    // Controleer of de logbestanden al lang niet meer zijn bijgewerkt
+    const STALE_MS = Math.max(30 * 60_000, LOGBOOK_POLL_MS * 3)
+    if (logbookLastActivity > 0 && Date.now() - logbookLastActivity > STALE_MS && !logbookWarnedStale) {
+      const minutesAgo = Math.round((Date.now() - logbookLastActivity) / 60_000)
+      console.warn(`⚠️   Logboek inactief: geen nieuwe events in de afgelopen ${minutesAgo} minuten`)
+      console.warn(`     → Controleer of TNCremo verbonden is met de machines`)
+      logbookWarnedStale = true
+    }
+  }
   await saveLogbookPositions()
 }
 
@@ -637,8 +765,17 @@ function diffState(prev, curr, machineOnline) {
     events.push({ eventType: 'MACHINE_ONLINE', occurredAt: now })
   }
 
-  // Programmawissel
-  if (prev.program !== curr.program) {
+  // Programma start/stop via pgmState (R_RI) of fallback op programmanaam-wissel
+  if (curr.pgmState !== null && prev.pgmState !== null) {
+    const wasRunning = prev.pgmState === PGM_STATE_STARTED
+    const isRunning  = curr.pgmState === PGM_STATE_STARTED
+    if (!wasRunning && isRunning) {
+      events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program ?? null, occurredAt: now })
+    } else if (wasRunning && !isRunning) {
+      // pgmState 2=FINISHED (normaal einde), 1=STOPPED, 3=CANCELLED, 4=INTERRUPTED, 5=ERROR
+      events.push({ eventType: 'PROGRAM_STOPPED', programName: prev.program ?? null, occurredAt: now, pgmStateAtStop: curr.pgmState })
+    }
+  } else if (prev.program !== curr.program) {
     if (!prev.program && curr.program) {
       events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program, occurredAt: now })
     } else if (prev.program && !curr.program) {
@@ -656,11 +793,19 @@ function diffState(prev, curr, machineOnline) {
     })
   }
 
-  // Alarm
-  if (!prev.alarm && curr.alarm) {
-    events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
-  } else if (prev.alarm && !curr.alarm) {
-    events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
+  // Alarm via pgmState (R_RI) of fallback op alarm-vlag
+  if (curr.pgmState !== null && prev.pgmState !== null) {
+    if (prev.pgmState !== PGM_STATE_ERROR && curr.pgmState === PGM_STATE_ERROR) {
+      events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
+    } else if (prev.pgmState === PGM_STATE_ERROR && curr.pgmState !== PGM_STATE_ERROR) {
+      events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
+    }
+  } else {
+    if (!prev.alarm && curr.alarm) {
+      events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
+    } else if (prev.alarm && !curr.alarm) {
+      events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
+    }
   }
 
   // Spindel (wachttijd-detectie — actief zodra readMachineState() spindleRunning levert)
@@ -700,8 +845,8 @@ async function pollMachineState(machine) {
   }
 
   const state = online
-    ? { online: true, program: curr.program ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, spindleRunning: curr.spindleRunning ?? null }
-    : { online: false, program: null, tool: null, alarm: false, spindleRunning: null }
+    ? { online: true, program: curr.program ?? null, pgmState: curr.pgmState ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, spindleRunning: curr.spindleRunning ?? null }
+    : { online: false, program: null, pgmState: null, tool: null, alarm: false, spindleRunning: null }
 
   const events = diffState(prev, state, online)
   machineState.set(machine.id, state)
@@ -720,18 +865,49 @@ async function pollMachineState(machine) {
     const stopEv  = events.find(e => e.eventType === 'PROGRAM_STOPPED')
 
     if (startEv) {
-      await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ programName: startEv.programName, startedAt: startEv.occurredAt, status: 'running' }),
-      })
+      programRunStartAt.set(machine.id, Date.now())
+      const pgmName = startEv.programName ?? 'onbekend'
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ programName: pgmName, startedAt: startEv.occurredAt, status: 'running' }),
+        })
+        if (res.ok) {
+          const run = await res.json()
+          if (run?.id) programRunId.set(machine.id, run.id)
+        }
+      } catch { /* ignore — run start niet kritiek */ }
     }
     if (stopEv) {
-      await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ programName: stopEv.programName, startedAt: stopEv.occurredAt, endedAt: stopEv.occurredAt, status: 'completed' }),
-      })
+      const startMs = programRunStartAt.get(machine.id)
+      if (startMs) {
+        programRunStartAt.delete(machine.id)
+        await addSpindleRunTime(machine, Date.now() - startMs).catch(() => {})
+      }
+      const runId = programRunId.get(machine.id)
+      programRunId.delete(machine.id)
+      // pgmState 2=FINISHED → completed, 4=INTERRUPTED → interrupted, 5=ERROR → error, overige → stopped
+      const pgmStateAtStop = stopEv.pgmStateAtStop ?? null
+      const stopStatus = pgmStateAtStop === 2 ? 'completed'
+        : pgmStateAtStop === 4 ? 'interrupted'
+        : pgmStateAtStop === 5 ? 'error'
+        : 'stopped'
+      if (runId) {
+        // Update de bestaande run met echte eindtijd en duur
+        await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs/${runId}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ endedAt: stopEv.occurredAt, status: stopStatus }),
+        }).catch(err => console.error(`   ⚠️   Run afsluiten mislukt: ${err.message}`))
+      } else {
+        // Geen bekende runId (agent herstart tijdens een lopend programma) — maak alsnog een entry
+        await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-program-runs`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ programName: stopEv.programName ?? 'onbekend', startedAt: stopEv.occurredAt, endedAt: stopEv.occurredAt, status: stopStatus }),
+        }).catch(() => {})
+      }
     }
   } catch (err) {
     console.error(`   ❌  Events posten mislukt voor ${machine.name}: ${err.message}`)
@@ -1105,6 +1281,15 @@ if (runDiag) {
     await loadLogbookPositions()
     console.log(`📋  TNCremo logboek monitoring actief — elke ${LOGBOOK_POLL_MS / 1000}s`)
     console.log(`    Logboek pad: ${LOGBOOK_DIR}`)
+
+    // Directe check: waarschuw als de map (nog) niet bestaat
+    const dirExists = await stat(LOGBOOK_DIR).then(() => true).catch(() => false)
+    if (!dirExists) {
+      console.warn(`\n⚠️   Logboek map bestaat nog niet: ${LOGBOOK_DIR}`)
+      console.warn(`     → Start TNCremo en maak verbinding met de machines`)
+      console.warn(`     → De agent blijft proberen elke ${LOGBOOK_POLL_MS / 1000}s\n`)
+    }
+
     await pollLogbook()
     setInterval(pollLogbook, LOGBOOK_POLL_MS)
   }

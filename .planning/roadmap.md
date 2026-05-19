@@ -176,36 +176,49 @@
 
 ## ✅ CNC Agent monitoring + Machine Dashboard
 
-**Afgerond:** 2026-05-18
+**Afgerond:** 2026-05-19
 
-### CNC Agent — State polling
-- Continu machinestatus bewaken via LSV2 (elke 10 seconden per Freesmachine)
-- Events: `MACHINE_OFFLINE/ONLINE`, `ALARM_TRIGGERED/CLEARED`, `PROGRAM_STARTED/STOPPED`, `SPINDLE_OFF/ON`
+### CNC Agent — State polling via LSV2 R_RI
+- Continu machinestatus via LSV2 R_RI (elke 10 seconden per Freesmachine, geen DNC-licentie nodig)
+- Programmanaam via R_RI SELECTED_PGM (parameter 24)
+- Programmastatus via R_RI PGM_STATE (parameter 26): STARTED/FINISHED/STOPPED/INTERRUPTED/ERROR/IDLE
+- Alarmdetectie via PGM_STATE ERROR-transitie
 - Exponential backoff voor offline machines (10s → 20s → … → max 5 min, reset bij reconnect)
-- Spindeluren lezen tijdens TOOL.T sync (`R_OT_SPINDEL_TIME` via LSV2)
+- Nieuwe machines worden automatisch opgepikt (machinelijst wordt elke poll ververst)
+- TNCremo logboek monitoring beschikbaar als alternatief (oudere controllers)
+
+### CNC Agent — Programma-runs
+- Run-record aangemaakt bij PROGRAM_STARTED (naam + starttijd)
+- Run afgesloten via PATCH bij PROGRAM_STOPPED (eindtijd + duur berekend)
+- Stop-reden per run: `completed` (normaal einde) / `stopped` (handmatig) / `interrupted` / `error`
+- Spindeluren bijgehouden via optelsom programma-looptijden (geen DNC-licentie)
 
 ### Backend
 - `cnc_machine_events` tabel — event-stroom per machine
 - `cnc_program_runs` tabel — programma-uitvoeringen met status en duur
 - `cnc_machine_metrics` tabel — historische metrics tijdreeks (spindle_hours)
 - `machines.spindle_hours` kolom (cumulatief, numeric)
-- `deriveDowntimePeriods()` — pure functie: event-stroom → stilstandsperioden (geen extra DB-tabel)
+- `deriveDowntimePeriods()` — pure functie: event-stroom → stilstandsperioden
+- `OFFLINE_MIN_SEC = 300` — offline perioden < 5 min genegeerd als monitoring-ruis
+- `STILSTAND_THRESHOLD_SEC = 600` — stilstand drempel 10 minuten
 - `GET /admin/machines/:id/cnc-downtime` — downtime-perioden + samenvatting per machine
-- `GET /admin/cnc-downtime/all` — beschikbaarheid % voor alle Freesmachines
+- `GET /admin/cnc-downtime/all` — beschikbaarheid % voor alle Freesmachines (Math.floor, niet Math.round)
+- `PATCH /admin/machines/:id/cnc-program-runs/:runId` — run afsluiten met echte eindtijd/duur
+- `GET /admin/machines/:id/cnc-program-runs/summary` — totale verspaantijd per artikel (lifetime, onbeperkt)
 - `GET/POST /admin/machines/:id/cnc-metrics` — spindeluren opslaan en ophalen
 
-### Frontend — Machine Detail (Downtime tab)
-- Tab "Downtime" per Freesmachine in Admin > Machines
-- 4 samenvattingkaartjes: offline / alarmstilstand / stilstand / wachttijd (minuten)
-- Tabel met perioden, pulserende badge voor lopende perioden
-- Drempelwaarde stilstand: 30 minuten
+### Frontend — Machine Detail (tabs)
+- Tab "Downtime" per Freesmachine: 4 kaartjes + periodentabel + pulserende badge
+- Tab "Programma Runs": naam, starttijd, duur, status (afgerond/gestopt/onderbroken/fout)
+  - Artikel-zoekbalk: filter op mapnaam (bijv. `22073-3201-11`), toont totale verspaantijd
+  - Totaal lifetime per artikel via summary endpoint (niet beperkt tot 50 runs)
 
-### Frontend — Machine Dashboard (nieuw)
-- Admin > Machine Dashboard + kiosk (via `MachineDashboardContent`)
-- Beschikbaarheids-bars per Freesmachine met type-uitsplitsing
+### Frontend — Machine Dashboard
+- Admin > Machine Dashboard + kiosk (`MachineDashboardContent`)
+- Beschikbaarheids-bars gelijke breedte (type-breakdown op tweede regel)
+- 100% alleen bij letterlijk nul stilstand
 - Periode-filter: Vandaag · 7 dagen · Maand · Kwartaal · Jaar
-- Gecombineerde downtime-tabel alle machines
-- Spindeluren lijndiagram per machine (dag of ISO-week)
+- Gecombineerde downtime-tabel, spindeluren lijndiagram
 
 ### Migraties
 - `0050`–`0057` — CNC events schema (cnc_machine_events, cnc_program_runs)

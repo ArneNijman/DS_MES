@@ -80,51 +80,53 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
   const total = machine.totalDowntimeMinutes
 
   return (
-    <div className="flex items-center gap-4 py-3 px-4 rounded-xl hover:bg-gray-50 border border-gray-100">
-      <div className="w-40 shrink-0">
-        <p className="text-sm font-medium text-gray-800 truncate">{machine.name}</p>
-        {machine.ongoingPeriod && (
-          <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', DOWNTIME_BADGE[machine.ongoingPeriod.type])}>
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
-            {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
-          </span>
-        )}
-      </div>
-
-      <div className="flex-1 flex items-center gap-3">
-        <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={cn('h-full rounded-full transition-all', color)}
-            style={{ width: `${avail}%` }}
-          />
-        </div>
-        <span className={cn('text-sm font-semibold w-10 text-right shrink-0', color.replace('bg-', 'text-'))}>
-          {avail}%
-        </span>
-      </div>
-
-      <div className="text-xs text-gray-400 w-36 text-right shrink-0">
-        {total > 0 ? (
-          <span className="text-gray-600">
-            {formatDuration(total)} stilstand
-          </span>
-        ) : (
-          <span className="text-green-600">Geen stilstand ✓</span>
-        )}
-      </div>
-
-      {/* Type breakdown dots */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map((type) => {
-          const mins = machine.byType[type]
-          if (!mins) return null
-          return (
-            <span key={type} className={cn('px-1.5 py-0.5 rounded text-xs font-medium', DOWNTIME_BADGE[type])}>
-              {DOWNTIME_LABEL[type].replace('stilstand', '').trim() || DOWNTIME_LABEL[type]} {formatDuration(mins)}
+    <div className="py-3 px-4 rounded-xl hover:bg-gray-50 border border-gray-100">
+      <div className="flex items-center gap-4">
+        <div className="w-40 shrink-0">
+          <p className="text-sm font-medium text-gray-800 truncate">{machine.name}</p>
+          {machine.ongoingPeriod && (
+            <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', DOWNTIME_BADGE[machine.ongoingPeriod.type])}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
+              {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
             </span>
-          )
-        })}
+          )}
+        </div>
+
+        <div className="flex-1 flex items-center gap-3">
+          <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', color)}
+              style={{ width: `${avail}%` }}
+            />
+          </div>
+          <span className={cn('text-sm font-semibold w-10 text-right shrink-0', color.replace('bg-', 'text-'))}>
+            {avail}%
+          </span>
+        </div>
+
+        <div className="text-xs w-36 text-right shrink-0">
+          {total > 0 ? (
+            <span className="text-gray-600">{formatDuration(total)} stilstand</span>
+          ) : (
+            <span className="text-green-600">Geen stilstand ✓</span>
+          )}
+        </div>
       </div>
+
+      {/* Type breakdown — onder de balk zodat breedte gelijk blijft */}
+      {total > 0 && (
+        <div className="flex items-center gap-1.5 mt-1.5 pl-44">
+          {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map((type) => {
+            const mins = machine.byType[type]
+            if (!mins) return null
+            return (
+              <span key={type} className={cn('px-1.5 py-0.5 rounded text-xs font-medium', DOWNTIME_BADGE[type])}>
+                {DOWNTIME_LABEL[type]} {formatDuration(mins)}
+              </span>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

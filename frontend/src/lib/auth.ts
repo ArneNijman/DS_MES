@@ -3,12 +3,22 @@ import { useState, useEffect } from 'react'
 export const ADMIN_TOKEN_KEY = 'mes_admin_token'
 export const EMPLOYEE_TOKEN_KEY = 'employee_token'
 
+function isTokenValid(token: string | null): boolean {
+  if (!token) return false
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return !(payload.exp && Date.now() / 1000 > payload.exp)
+  } catch {
+    return false
+  }
+}
+
 export function getToken(): string | null {
-  return (
-    localStorage.getItem(ADMIN_TOKEN_KEY) ??
-    localStorage.getItem(EMPLOYEE_TOKEN_KEY) ??
-    null
-  )
+  const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY)
+  if (isTokenValid(adminToken)) return adminToken
+  const employeeToken = localStorage.getItem(EMPLOYEE_TOKEN_KEY)
+  if (isTokenValid(employeeToken)) return employeeToken
+  return null
 }
 
 export function setToken(token: string, type: 'admin' | 'employee'): void {

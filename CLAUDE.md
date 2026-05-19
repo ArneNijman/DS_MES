@@ -202,11 +202,18 @@ magazineByName.get(tc.toolName.toLowerCase())
 ```
 
 ### CNC Events & Machine Dashboard
-`backend/src/routes/admin/cnc-events.ts` — CNC event-stroom en downtime-derivatie.
+`backend/src/routes/admin/cnc-events.ts` — CNC event-stroom, downtime-derivatie en programma-runs.
 
-- `deriveDowntimePeriods(events)` — pure functie die een event-stroom omzet naar stilstandsperioden (offline / alarmstilstand / stilstand ≥30 min)
+- `deriveDowntimePeriods(events)` — pure functie: event-stroom → stilstandsperioden
+  - `OFFLINE_MIN_SEC = 300` — offline < 5 min wordt genegeerd (monitoring-ruis)
+  - `STILSTAND_THRESHOLD_SEC = 600` — stilstand drempel 10 minuten
+  - Beschikbaarheid: `Math.floor` (100% alleen bij nul stilstand)
+- `extractArticle(programName)` — extraheert derde padsegment als artikelnummer (`TNC:\Program\22073-3201-11\...` → `22073-3201-11`)
 - `GET /admin/machines/:id/cnc-downtime?days=N` — downtime-perioden + samenvatting per machine
 - `GET /admin/cnc-downtime/all?days=N` — beschikbaarheid % + downtime voor alle Freesmachines
+- `GET /admin/machines/:id/cnc-program-runs?article=X` — runs gefilterd op artikelnaam (LIKE)
+- `GET /admin/machines/:id/cnc-program-runs/summary` — lifetime totaal seconden + runcount per artikel
+- `PATCH /admin/machines/:id/cnc-program-runs/:runId` — run afsluiten (endedAt, status, duur berekend)
 
 `backend/src/routes/admin/cnc-metrics.ts` — spindeluren tijdreeks.
 
@@ -217,6 +224,7 @@ magazineByName.get(tc.toolName.toLowerCase())
 - Exporteert `MachineDashboardContent` (herbruikbaar in kiosk) en default `MachineDashboard` (admin-pagina met sidebar)
 - Periode-opties: 1 / 7 / 30 / 90 / 365 dagen
 - Aggregatie: per dag als `days ≤ 14`, per ISO-week als `days > 14`
+- Beschikbaarheids-bars met vaste breedte (type-breakdown op tweede regel)
 
 ### Wisselplaat-componenten (assembly view)
 `parseWisselplaat(comment)` splitst op `WP:` in de comment:

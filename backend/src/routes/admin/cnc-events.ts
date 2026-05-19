@@ -1,7 +1,17 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { eq, desc, and, asc, gte } from 'drizzle-orm'
+import { eq, desc, and, asc, gte, like, sql } from 'drizzle-orm'
 import { cncMachineEvents, cncProgramRuns, machines } from '../../db/schema.js'
+
+/** Extraheert het artikel-mapje uit een programmapad: TNC:\Program\22073-3201-11\... → 22073-3201-11 */
+function extractArticle(programName: string | null): string | null {
+  if (!programName) return null
+  const parts = programName.split(/[\\/]/)
+  return parts.length >= 3 ? (parts[2] || null) : null
+}
+
+const STILSTAND_THRESHOLD_SEC = 600  // 10 minuten
+const OFFLINE_MIN_SEC         = 300  // offline perioden korter dan 5 min worden genegeerd (monitoring-ruis)
 
 // ── Downtime derivation ────────────────────────────────────────────────────
 
@@ -36,7 +46,10 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
       case 'MACHINE_OFFLINE':
         offlineStart = t; online = false; break
       case 'MACHINE_ONLINE':
-        if (offlineStart) periods.push(makePeriod('offline', offlineStart, t))
+        if (offlineStart) {
+          const dur = (t.getTime() - offlineStart.getTime()) / 1000
+          if (dur >= OFFLINE_MIN_SEC) periods.push(makePeriod('offline', offlineStart, t))
+        }
         offlineStart = null; online = true; break
       case 'ALARM_TRIGGERED':
         alarmStart = t; break
@@ -48,7 +61,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
       case 'PROGRAM_STARTED':
         if (programStopTime) {
           const gapSec = (t.getTime() - programStopTime.getTime()) / 1000
-          if (gapSec > 1800) periods.push(makePeriod('stilstand', programStopTime, t))
+          if (gapSec > STILSTAND_THRESHOLD_SEC) periods.push(makePeriod('stilstand', programStopTime, t))
           programStopTime = null
         }
         break
@@ -56,9 +69,10 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   }
 
   const now = new Date()
-  if (offlineStart)   periods.push(makePeriod('offline', offlineStart, null))
+  if (offlineStart && (now.getTime() - offlineStart.getTime()) / 1000 >= OFFLINE_MIN_SEC)
+    periods.push(makePeriod('offline', offlineStart, null))
   if (alarmStart)     periods.push(makePeriod('alarmstilstand', alarmStart, null))
-  if (programStopTime && (now.getTime() - programStopTime.getTime()) / 1000 > 1800)
+  if (programStopTime && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC)
     periods.push(makePeriod('stilstand', programStopTime, null))
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
@@ -113,15 +127,48 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   fastify.get('/admin/machines/:id/cnc-program-runs', auth, async (req) => {
     const { id } = req.params as { id: string }
-    const q      = req.query  as { limit?: string }
-    const limit  = Math.min(parseInt(q.limit ?? '50', 10), 200)
+    const q      = req.query  as { limit?: string; article?: string }
+    const limit  = Math.min(parseInt(q.limit ?? '50', 10), 500)
+
+    const conditions = [eq(cncProgramRuns.machineId, id)]
+    if (q.article) conditions.push(like(cncProgramRuns.programName, `%${q.article}%`))
 
     return fastify.db
       .select()
       .from(cncProgramRuns)
-      .where(eq(cncProgramRuns.machineId, id))
+      .where(and(...conditions as [ReturnType<typeof eq>, ...ReturnType<typeof eq>[]]))
       .orderBy(desc(cncProgramRuns.startedAt))
       .limit(limit)
+  })
+
+  // ── GET program runs samenvatting per artikel ─────────────────────────────
+
+  fastify.get('/admin/machines/:id/cnc-program-runs/summary', auth, async (req) => {
+    const { id } = req.params as { id: string }
+
+    const runs = await fastify.db
+      .select({
+        programName:     cncProgramRuns.programName,
+        durationSeconds: cncProgramRuns.durationSeconds,
+        status:          cncProgramRuns.status,
+      })
+      .from(cncProgramRuns)
+      .where(and(eq(cncProgramRuns.machineId, id), sql`${cncProgramRuns.durationSeconds} IS NOT NULL`))
+
+    // Groepeer op artikel (derde padsegment)
+    const byArticle = new Map<string, { totalSeconds: number; runCount: number }>()
+    for (const run of runs) {
+      const article = extractArticle(run.programName)
+      if (!article) continue
+      const existing = byArticle.get(article) ?? { totalSeconds: 0, runCount: 0 }
+      existing.totalSeconds += run.durationSeconds ?? 0
+      existing.runCount     += 1
+      byArticle.set(article, existing)
+    }
+
+    return [...byArticle.entries()]
+      .map(([article, s]) => ({ article, totalSeconds: s.totalSeconds, runCount: s.runCount }))
+      .sort((a, b) => b.totalSeconds - a.totalSeconds)
   })
 
   // ── POST events (van de agent) ────────────────────────────────────────────
@@ -172,6 +219,37 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     return run ?? { ok: true }
   })
 
+  // ── PATCH program run (agent sluit een lopende run af) ───────────────────
+
+  fastify.patch('/admin/machines/:id/cnc-program-runs/:runId', auth, async (req, reply) => {
+    const { id, runId } = req.params as { id: string; runId: string }
+    const body = z.object({
+      endedAt:  z.string(),
+      status:   z.enum(['completed', 'interrupted', 'error', 'stopped']).default('completed'),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ error: 'Ongeldige invoer' })
+
+    const endedAt = new Date(body.data.endedAt)
+
+    const [existing] = await fastify.db
+      .select({ startedAt: cncProgramRuns.startedAt })
+      .from(cncProgramRuns)
+      .where(and(eq(cncProgramRuns.id, runId), eq(cncProgramRuns.machineId, id)))
+      .limit(1)
+
+    if (!existing) return reply.status(404).send({ error: 'Run niet gevonden' })
+
+    const durationSeconds = Math.round((endedAt.getTime() - existing.startedAt.getTime()) / 1000)
+
+    const [updated] = await fastify.db
+      .update(cncProgramRuns)
+      .set({ endedAt, durationSeconds, status: body.data.status })
+      .where(and(eq(cncProgramRuns.id, runId), eq(cncProgramRuns.machineId, id)))
+      .returning()
+
+    return updated
+  })
+
   // ── GET downtime periods — per machine ────────────────────────────────────
 
   fastify.get('/admin/machines/:id/cnc-downtime', auth, async (req) => {
@@ -212,7 +290,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
         const { periods, summary } = deriveDowntimePeriods(events)
         const periodMinutes        = days * 24 * 60
         const totalDowntimeSec     = Object.values(summary).reduce((a, b) => a + b, 0)
-        const availabilityPct      = Math.max(0, Math.round((1 - totalDowntimeSec / (periodMinutes * 60)) * 100))
+        const availabilityPct      = totalDowntimeSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / (periodMinutes * 60)) * 100))
         const ongoingPeriod        = periods.find(p => p.isOngoing) ?? null
 
         return {
