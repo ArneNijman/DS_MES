@@ -287,55 +287,29 @@ const machineState = new Map()
 const machineBackoff = new Map()
 
 /**
- * Leest de actuele machinestatus via LSV2 (R_RI commando).
+ * Controleert of de machine online is via een TCP-ping op poort 19000.
+ * Retourneert een minimale staat { online: true } of null (offline).
  *
- * R_RI response (272 bytes):
- *   mode(4) + status(4) + file[256] + tool(4) + errCode(4)
- *
- * status: 0=stilstand 1=loopt 2=onderbroken 3=fout
+ * LSV2 monitoring (programma, alarm, tool, spindel) vereist de Heidenhain
+ * DNC-licentie die op deze machines niet actief is. TCP-ping geeft
+ * MACHINE_ONLINE / MACHINE_OFFLINE events voor het downtime-dashboard.
  */
 async function readMachineState(machine) {
-  try {
-    const data = await lsv2Command(machine.cncIpAddress, 'R_RI', Math.min(TIMEOUT_MS, 3000))
-
-    if (data.length < 272) {
-      return { online: true, program: null, tool: null, alarm: false, spindleRunning: null }
-    }
-
-    const progStatus = data.readInt32LE(4)    // 0=idle 1=running 2=interrupted 3=error
-    const pgmName    = data.slice(8, 264).toString('latin1').replace(/\0.*$/, '').trim()
-    const toolNr     = data.readInt32LE(264)
-    const errCode    = data.readInt32LE(268)
-
-    return {
-      online:         true,
-      program:        progStatus > 0 && pgmName ? pgmName : null,
-      tool:           toolNr > 0 ? toolNr : null,
-      alarm:          errCode !== 0,
-      spindleRunning: null,
-    }
-  } catch {
-    return null
-  }
+  return new Promise(resolve => {
+    const socket = new net.Socket()
+    socket.setTimeout(Math.min(TIMEOUT_MS, 3000))
+    socket.connect(LSV2_PORT, machine.cncIpAddress, () => {
+      socket.destroy()
+      resolve({ online: true, program: null, tool: null, alarm: false, spindleRunning: null })
+    })
+    socket.on('error',   () => resolve(null))
+    socket.on('timeout', () => { socket.destroy(); resolve(null) })
+  })
 }
 
-/**
- * Leest het totaal aantal spindeluren via LSV2 (R_OT commando).
- *
- * R_OT response (minimaal 12 bytes):
- *   ctrlOnSec(4) + progRunSec(4) + spindleSec(4) + ...
- *
- * Tijden zijn in seconden op iTNC 530+ / TNC 640+.
- */
-async function readSpindleHours(machine) {
-  try {
-    const data = await lsv2Command(machine.cncIpAddress, 'R_OT', Math.min(TIMEOUT_MS, 5000))
-    if (data.length < 12) return null
-    const spindleSec = data.readUInt32LE(8)
-    return spindleSec > 0 ? +(spindleSec / 3600).toFixed(2) : null
-  } catch {
-    return null
-  }
+async function readSpindleHours(_machine) {
+  // Vereist LSV2 monitoring (DNC-licentie) — niet beschikbaar op huidige machines
+  return null
 }
 
 /** Vergelijkt vorige en huidige staat en retourneert gegenereerde events. */
@@ -824,7 +798,7 @@ if (runDiag) {
   setInterval(syncAllGuarded, INTERVAL_MIN * 60 * 1000)
 
   if (STATE_POLL_ENABLED) {
-    console.log(`📡  State polling actief — interval: ${STATE_POLL_MS / 1000}s`)
+    console.log(`📡  Online/offline monitoring actief — TCP ping elke ${STATE_POLL_MS / 1000}s`)
     await pollAllMachineStates()
     setInterval(pollAllMachineStates, STATE_POLL_MS)
   }
