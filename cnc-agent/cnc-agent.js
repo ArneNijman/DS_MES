@@ -11,7 +11,7 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { readFile, writeFile, unlink, mkdir, stat } from 'fs/promises'
+import { readFile, writeFile, unlink, mkdir, stat, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -32,6 +32,12 @@ const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099
 const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
 const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '10000', 10)
 const STATE_POLL_ENABLED = (process.env.CNC_STATE_POLL_ENABLED ?? 'true') === 'true'
+
+// TNCremo logboek — pad naar de Logbook map (per PC anders; standaard %TEMP%\TNCremo\Logbook)
+const LOGBOOK_DIR     = process.env.TNCREMO_LOGBOOK_PATH
+  ?? join(process.env.TEMP ?? process.env.TMP ?? tmpdir(), 'TNCremo', 'Logbook')
+const LOGBOOK_ENABLED = (process.env.TNCREMO_LOGBOOK_ENABLED ?? 'false') === 'true'
+const LOGBOOK_POLL_MS = parseInt(process.env.TNCREMO_POLL_INTERVAL_MS ?? '60000', 10)
 
 if (!USERNAME || !PASSWORD) {
   console.error('❌  ADMIN_USERNAME en ADMIN_PASSWORD zijn verplicht in .env')
@@ -310,6 +316,298 @@ async function readMachineState(machine) {
 async function readSpindleHours(_machine) {
   // Vereist LSV2 monitoring (DNC-licentie) — niet beschikbaar op huidige machines
   return null
+}
+
+// ── TNCremo logboek parser ────────────────────────────────────────────────────
+//
+// TNCremo schrijft machine-events naar %TEMP%\TNCremo\Logbook\.
+// Eén bestand bevat events van alle verbonden machines.
+//
+// We lezen alleen nieuwe content via byte-positie tracking (geen bestandswijziging
+// nodig, geen race-condition met TNCremo die tegelijk schrijft).
+
+const logbookPosFile = join(tmpdir(), 'cnc-agent', 'logbook-pos.json')
+let   logbookPositions = {}   // { filename: byteOffset }
+
+async function loadLogbookPositions() {
+  try {
+    logbookPositions = JSON.parse(await readFile(logbookPosFile, 'utf8'))
+  } catch {
+    logbookPositions = {}
+  }
+}
+
+async function saveLogbookPositions() {
+  await mkdir(join(tmpdir(), 'cnc-agent'), { recursive: true })
+  await writeFile(logbookPosFile, JSON.stringify(logbookPositions), 'utf8')
+}
+
+/** 0xC0A801B3 → "192.168.1.179" */
+function hexToIp(hex) {
+  const n = parseInt(hex, 16)
+  return [(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF].join('.')
+}
+
+/**
+ * "06:28:01 Tue May 19 2026" → ISO-string.
+ * new Date() accepteert "Tue May 19 2026 06:28:01" maar niet de TNCremo volgorde.
+ */
+function parseLogTimestamp(s) {
+  const m = (s ?? '').trim().match(/^(\d{2}:\d{2}:\d{2})\s+(.+)$/)
+  if (m) {
+    try { return new Date(`${m[2]} ${m[1]}`).toISOString() } catch { /* fall through */ }
+  }
+  return new Date().toISOString()
+}
+
+/** Extraheert timestamp uit de rechterkant van een logboek-regel. */
+function extractLogTimestamp(line) {
+  const m = line.match(/(\d{2}:\d{2}:\d{2}\s+\w+\s+\w+\s+\d+\s+\d{4})\s*$/)
+  return m ? parseLogTimestamp(m[1]) : null
+}
+
+// Alarm codes die geen productierelevante informatie bevatten en gefilterd worden
+const IGNORED_ALARM_CODES = new Set([
+  'N938',   // Toets zonder functie — toetsdruk in verkeerde modus, geen alarm
+  'P99',    // Melding in PLC venster — periodiek PLC-statusbericht (Fooke), geen storing
+])
+
+/**
+ * Parseert TNCremo logboek-content en retourneert gevonden events.
+ * Machine-IP wordt afgeleid uit "Info: REMO A_LG" regels (verbinding met machine).
+ *
+ * Ondersteunde controllers:
+ *  - iTNC 530 (MTE 4200): Error/ERRCLEARED/Reset/MAIN START/CTRL REG
+ *  - TNC 640 Ronin: bovenstaande + Stib: ON/OFF + Info: MAIN PGMEND
+ *
+ * @param {string} content
+ * @returns {{ machineIp: string|null, eventType: string, occurredAt: string, data?: object }[]}
+ */
+function parseLogbookContent(content) {
+  const lines = content.split('\n')
+  const events = []
+  let currentMachineIp = null
+  let i = 0
+
+  // Deduplicatie: zelfde alarm van zelfde machine binnen 5 min → overslaan
+  // Voorkomt dat een persistente fout honderden identieke events oplevert.
+  const recentAlarmTs = new Map()  // key: `${ip}:${msg}` → ISO-timestamp
+
+  const isDuplicateAlarm = (ip, msg, ts) => {
+    const key  = `${ip ?? ''}:${msg}`
+    const last = recentAlarmTs.get(key)
+    if (last && (new Date(ts) - new Date(last)) < 5 * 60 * 1000) return true
+    recentAlarmTs.set(key, ts)
+    return false
+  }
+
+  /** Leest alle ingesprongen regels na de huidige positie als één blok. */
+  const readBlock = (startIdx) => {
+    const block = []
+    let j = startIdx
+    while (j < lines.length && (lines[j].trim() === '' || /^\s/.test(lines[j]))) {
+      block.push(lines[j].trim())
+      j++
+    }
+    return { block, endIdx: j }
+  }
+
+  while (i < lines.length) {
+    const line    = lines[i]
+    const trimmed = line.trim()
+
+    if (!trimmed || /^_+Date:/.test(trimmed)) { i++; continue }
+
+    // Key: → operator-toetsdruk, negeren
+    if (/^Key:/.test(trimmed)) { i++; continue }
+
+    // Info: SOKY / Info: PLC → intern TNCremo-bericht, negeren
+    if (/^Info:\s+(SOKY|PLC)\b/.test(trimmed)) {
+      i++; if (/^\s/.test(lines[i] ?? '')) i++; continue
+    }
+
+    // REMO A_LG → TNCremo verbindt met machine; achterhaal IP
+    if (/^Info:\s+REMO\s+A_LG/.test(trimmed)) {
+      const next = lines[i + 1]?.trim() ?? ''
+      const m = next.match(/Addr:(0x[0-9a-fA-F]+)/)
+      if (m) currentMachineIp = hexToIp(m[1])
+      i += 2; continue
+    }
+
+    // Stib: ON → PROGRAM_STARTED (TNC 640)
+    // Vlak daarna volgt "Info: MAIN PGM" met de programmanaam
+    if (/^Stib:\s+ON/.test(trimmed)) {
+      const ts = extractLogTimestamp(line)
+      let programName = null
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        if (/^Info:\s+MAIN\s+PGM\b/.test(lines[j].trim())) {
+          programName = lines[j + 1]?.trim() || null
+          break
+        }
+      }
+      events.push({ machineIp: currentMachineIp, eventType: 'PROGRAM_STARTED', occurredAt: ts ?? new Date().toISOString(), data: { programName } })
+      i++; continue
+    }
+
+    // Stib: OFF / BLINK → aankondiging; echte stop wordt via PGMEND verwerkt
+    if (/^Stib:/.test(trimmed)) { i++; continue }
+
+    // Info: MAIN PGMEND → PROGRAM_STOPPED (TNC 640)
+    // TNCremo logt twee PGMEND blokken: eerste met hex, tweede met "Stop reason:"
+    if (/^Info:\s+MAIN\s+PGMEND/.test(trimmed)) {
+      const ts = extractLogTimestamp(line)
+      const { block, endIdx } = readBlock(i + 1)
+      i = endIdx
+      const reasonLine = block.find(l => l.startsWith('Stop reason:'))
+      if (reasonLine) {
+        const reason = reasonLine.replace(/^Stop reason:\s*/, '').trim()
+        events.push({ machineIp: currentMachineIp, eventType: 'PROGRAM_STOPPED', occurredAt: ts ?? new Date().toISOString(), data: { reason } })
+      }
+      continue
+    }
+
+    // Error: → ALARM_TRIGGERED
+    if (/^Error:/.test(trimmed)) {
+      const ts  = extractLogTimestamp(line)
+      const msg = lines[i + 1]?.trim() ?? ''
+      const codeMatch = msg.match(/^([A-Z]\d+)\b/)
+      const isIgnored = codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1])
+      const occurredAt = ts ?? new Date().toISOString()
+      if (!isIgnored && !isDuplicateAlarm(currentMachineIp, msg, occurredAt)) {
+        events.push({ machineIp: currentMachineIp, eventType: 'ALARM_TRIGGERED', occurredAt, data: { message: msg } })
+      }
+      i++; if (/^\s/.test(lines[i] ?? '')) i++; continue
+    }
+
+    // MAIN ERRCLEARED → ALARM_CLEARED
+    if (/^Info:\s+MAIN\s+ERRCLEARED/.test(trimmed)) {
+      const ts  = extractLogTimestamp(line)
+      const msg = lines[i + 1]?.trim() ?? ''
+      const codeMatch = msg.match(/^([A-Z]\d+)\b/)
+      if (!(codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1]))) {
+        events.push({ machineIp: currentMachineIp, eventType: 'ALARM_CLEARED', occurredAt: ts ?? new Date().toISOString() })
+      }
+      i++; if (/^\s/.test(lines[i] ?? '')) i++; continue
+    }
+
+    // CTRL REG → EMERGENCY STOP als ALARM_TRIGGERED
+    if (/^Info:\s+CTRL\s+REG/.test(trimmed)) {
+      const ts   = extractLogTimestamp(line)
+      const next = lines[i + 1]?.trim() ?? ''
+      if (/EMERGENCY STOP/i.test(next)) {
+        events.push({ machineIp: currentMachineIp, eventType: 'ALARM_TRIGGERED', occurredAt: ts ?? new Date().toISOString(), data: { message: next } })
+      }
+      i += 2; continue
+    }
+
+    // Reset → MACHINE_OFFLINE (herstart)
+    if (/^Reset/.test(trimmed)) {
+      const ts = extractLogTimestamp(line)
+      events.push({ machineIp: currentMachineIp, eventType: 'MACHINE_OFFLINE', occurredAt: ts ?? new Date().toISOString(), data: { reason: 'reset' } })
+      i++; continue
+    }
+
+    // MAIN START → MACHINE_ONLINE (controller opgestart)
+    if (/^Info:\s+MAIN\s+START/.test(trimmed)) {
+      const ts = extractLogTimestamp(line)
+      events.push({ machineIp: currentMachineIp, eventType: 'MACHINE_ONLINE', occurredAt: ts ?? new Date().toISOString() })
+      i++; if (/^\s/.test(lines[i] ?? '')) i++; continue
+    }
+
+    i++
+  }
+
+  return events
+}
+
+/**
+ * Leest alle logboekbestanden in LOGBOOK_DIR, verwerkt alleen nieuw toegevoegde
+ * content en post gevonden events naar de backend.
+ */
+async function processLogbook(machines) {
+  // IP → machine-object map
+  const ipToMachine = new Map(
+    machines.filter(m => m.cncIpAddress).map(m => [m.cncIpAddress, m])
+  )
+
+  let files
+  try {
+    files = (await readdir(LOGBOOK_DIR)).filter(f => !f.startsWith('.'))
+  } catch {
+    return   // Map bestaat niet of geen toegang — stil negeren
+  }
+
+  let totalEvents = 0
+
+  for (const filename of files) {
+    const filepath = join(LOGBOOK_DIR, filename)
+    let newContent
+    let newSize
+
+    try {
+      const buf = await readFile(filepath)
+      newSize = buf.length
+      const lastPos = logbookPositions[filename] ?? 0
+
+      // Bestand opnieuw aangemaakt (kleiner dan vorige pos) → reset
+      if (newSize < lastPos) logbookPositions[filename] = 0
+
+      const startPos = logbookPositions[filename] ?? 0
+      if (newSize <= startPos) continue   // Geen nieuwe content
+
+      // latin1 voor Windows-logbestanden (handelt speciale tekens veilig af)
+      newContent = buf.slice(startPos).toString('latin1')
+      logbookPositions[filename] = newSize
+    } catch {
+      continue
+    }
+
+    const parsed = parseLogbookContent(newContent)
+    if (!parsed.length) continue
+
+    for (const ev of parsed) {
+      if (!ev.machineIp) {
+        console.log(`   ⚠️   Logboek event zonder machine-IP (${ev.eventType}) — overgeslagen`)
+        continue
+      }
+      const machine = ipToMachine.get(ev.machineIp)
+      if (!machine) {
+        console.log(`   ⚠️   Logboek: machine ${ev.machineIp} niet gevonden — overgeslagen`)
+        continue
+      }
+
+      try {
+        await fetch(`${BACKEND_URL}/api/admin/machines/${machine.id}/cnc-events`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ events: [{ eventType: ev.eventType, occurredAt: ev.occurredAt, eventData: ev.data ?? null }] }),
+        })
+        console.log(`   📋  ${machine.name}: ${ev.eventType} @ ${ev.occurredAt.slice(11, 19)}`)
+        totalEvents++
+      } catch (err) {
+        console.error(`   ❌  Logboek event posten mislukt: ${err.message}`)
+      }
+    }
+  }
+
+  if (totalEvents > 0) console.log(`📋  Logboek: ${totalEvents} event(s) verwerkt`)
+  await saveLogbookPositions()
+}
+
+let logbookPollInProgress = false
+
+async function pollLogbook() {
+  if (logbookPollInProgress) return
+  logbookPollInProgress = true
+  try {
+    await authenticate()
+    const machines = await getCncMachines()
+    await processLogbook(machines)
+  } catch (err) {
+    console.error(`❌  Logboek verwerking mislukt: ${err.message}`)
+  } finally {
+    logbookPollInProgress = false
+  }
 }
 
 /** Vergelijkt vorige en huidige staat en retourneert gegenereerde events. */
@@ -801,5 +1099,13 @@ if (runDiag) {
     console.log(`📡  Online/offline monitoring actief — TCP ping elke ${STATE_POLL_MS / 1000}s`)
     await pollAllMachineStates()
     setInterval(pollAllMachineStates, STATE_POLL_MS)
+  }
+
+  if (LOGBOOK_ENABLED) {
+    await loadLogbookPositions()
+    console.log(`📋  TNCremo logboek monitoring actief — elke ${LOGBOOK_POLL_MS / 1000}s`)
+    console.log(`    Logboek pad: ${LOGBOOK_DIR}`)
+    await pollLogbook()
+    setInterval(pollLogbook, LOGBOOK_POLL_MS)
   }
 }
