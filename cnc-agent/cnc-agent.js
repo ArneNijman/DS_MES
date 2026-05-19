@@ -655,21 +655,41 @@ if (runDiag) {
       if (resp.length > 0 && !workingFormat) workingFormat = fmt
     }
     if (!workingFormat) {
-      console.log(`    ❌  Geen enkel LOGN-formaat geeft response — machine negeert alle packets`)
-      // REST API check (TNC 7 / TNC 640 met software-optie)
-      if (openPorts.includes(8080)) {
-        console.log(`    💡  Poort 8080 is open → probeer REST API:`)
+      console.log(`    ❌  LSV2 monitoring niet beschikbaar (DNC-licentie vereist)`)
+      console.log(`    💡  Probeer logbestanden via TNCcmd (FileServer)...\n`)
+
+      // Probeer mappen te listen om te zien wat beschikbaar is
+      const dirsToCheck = ['TNC:\\', 'TNC:\\SYSLOG', 'TNC:\\LOG', 'TNC:\\prot', 'TNC:\\runtime']
+      for (const dir of dirsToCheck) {
         try {
-          const r = await fetch(`http://${m.cncIpAddress}:8080/api/v1/machine`, { signal: AbortSignal.timeout(2000) })
-          const body = await r.text().catch(() => '(geen body)')
-          console.log(`    📡  REST GET /api/v1/machine → HTTP ${r.status}: ${body.slice(0, 200)}`)
-        } catch (e) {
-          console.log(`    📡  REST API fetch mislukt: ${e.message}`)
+          const tempDir  = join(tmpdir(), 'cnc-agent')
+          await mkdir(tempDir, { recursive: true })
+          const { stdout } = await runTncCmd(m.cncIpAddress, `DIR ${dir}`)
+          const lines = stdout.split('\n').filter(l => l.trim()).slice(0, 8)
+          console.log(`    📁  DIR ${dir}:`)
+          lines.forEach(l => console.log(`        ${l.trim()}`))
+        } catch {
+          console.log(`    ✗   ${dir} niet toegankelijk`)
         }
+      }
+
+      // Probeer specifieke statusbestanden te lezen
+      const filesToCheck = [
+        'TNC:\\SYSLOG\\SYSLOG.SYS',
+        'TNC:\\prot\\errorlog.txt',
+        'TNC:\\LOG\\error.log',
+      ]
+      for (const filePath of filesToCheck) {
+        const tempFile = join(tmpdir(), 'cnc-agent', `diag_${Date.now()}.tmp`)
         try {
-          const r = await fetch(`http://${m.cncIpAddress}:8080/`, { signal: AbortSignal.timeout(2000) })
-          console.log(`    📡  REST GET / → HTTP ${r.status}`)
-        } catch { /* ignore */ }
+          await runTncCmd(m.cncIpAddress, `GET ${filePath} ${tempFile}`)
+          const content = await readFile(tempFile, 'utf8').catch(() => readFile(tempFile, 'latin1'))
+          console.log(`\n    📄  ${filePath} (eerste 5 regels):`)
+          content.split('\n').slice(0, 5).forEach(l => console.log(`        ${l}`))
+          await unlink(tempFile).catch(() => {})
+        } catch {
+          console.log(`    ✗   ${filePath} niet beschikbaar`)
+        }
       }
       console.log()
       continue
