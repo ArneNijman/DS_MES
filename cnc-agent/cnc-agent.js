@@ -580,23 +580,55 @@ if (runDiag) {
     }
     console.log(`    ✅  TCP poort ${LSV2_PORT} bereikbaar`)
 
-    // Stap 1b: raw dump — stuurt LOGN en toont alles wat de machine teruggeeft
-    const rawDump = await new Promise(resolve => {
+    // Stap 1b: machine stuurt iets bij connect? (server-speaks-first check)
+    const banner = await new Promise(resolve => {
       const s = new net.Socket()
       const chunks = []
-      s.setTimeout(2000)
-      s.connect(LSV2_PORT, m.cncIpAddress, () => s.write(lsv2Tgm('LOGN\0')))
-      s.on('data', d => chunks.push(d))
+      s.setTimeout(1500)
+      s.connect(LSV2_PORT, m.cncIpAddress)
+      s.on('data', d => { chunks.push(d); s.destroy() })
       s.on('timeout', () => { s.destroy(); resolve(Buffer.concat(chunks)) })
       s.on('error',   () => resolve(Buffer.concat(chunks)))
       s.on('close',   () => resolve(Buffer.concat(chunks)))
     })
-    if (rawDump.length === 0) {
-      console.log(`    ⚠️   Machine reageert NIET op LOGN-telegram (0 bytes ontvangen)`)
-      console.log(`        → Verkeerd packet-formaat, of machine wacht op iets anders`)
-    } else {
-      console.log(`    📦  Raw response (${rawDump.length} bytes): ${rawDump.toString('hex').match(/../g).join(' ')}`)
+    if (banner.length > 0) {
+      console.log(`    📡  Machine stuurt banner bij connect (${banner.length} bytes): ${banner.toString('hex').match(/../g).join(' ')}`)
     }
+
+    // Stap 1c: probeer alle bekende LOGN-formaten, toon welke een response geeft
+    const rawSend = (data, tMs = 1500) => new Promise(resolve => {
+      const s = new net.Socket()
+      const chunks = []
+      s.setTimeout(tMs)
+      s.connect(LSV2_PORT, m.cncIpAddress, () => s.write(data))
+      s.on('data', d => { chunks.push(d); s.destroy() })
+      s.on('timeout', () => { s.destroy(); resolve(Buffer.concat(chunks)) })
+      s.on('error',   () => resolve(Buffer.concat(chunks)))
+      s.on('close',   () => resolve(Buffer.concat(chunks)))
+    })
+
+    const loginFormats = [
+      { label: 'LOGN\\0          (5 b, geen user/pass)',    buf: lsv2Tgm('LOGN\0') },
+      { label: 'LOGN\\0\\0        (6 b, lege user)',         buf: lsv2Tgm('LOGN\0\0') },
+      { label: 'LOGN\\0\\0\\0      (7 b, lege user+pass)',   buf: lsv2Tgm('LOGN\0\0\0') },
+      { label: 'LOGN\\0INSPECT\\0\\0',                       buf: lsv2Tgm('LOGN\0INSPECT\0\0') },
+      { label: 'LOGN\\0MONITOR\\0\\0',                       buf: lsv2Tgm('LOGN\0MONITOR\0\0') },
+    ]
+    let workingFormat = null
+    for (const fmt of loginFormats) {
+      const resp = await rawSend(fmt.buf)
+      const hex = resp.length > 0 ? resp.toString('hex').match(/../g).join(' ') : '(geen)'
+      console.log(`    ${resp.length > 0 ? '✅' : '✗ '} ${fmt.label} → ${hex}`)
+      if (resp.length > 0 && !workingFormat) workingFormat = fmt
+    }
+    if (!workingFormat) {
+      console.log(`    ❌  Geen enkel LOGN-formaat geeft response — machine negeert alle packets`)
+      console.log(`        → Mogelijk is LSV2 uitgeschakeld (poort open maar service inactief)`)
+      console.log(`        → Of machine verwacht een ander protocol op poort 19000`)
+      console.log()
+      continue
+    }
+    console.log(`    → Werkend formaat: ${workingFormat.label}`)
 
     // Stap 2: LSV2 login + R_RI (met echte foutmelding)
     let state = null
