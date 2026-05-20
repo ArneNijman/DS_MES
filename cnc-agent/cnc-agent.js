@@ -310,6 +310,17 @@ function mkRRI(paramId) {
   return Buffer.concat([hdr, Buffer.from('R_RI', 'latin1'), p])
 }
 
+/** TCP-ping: kan de poort bereikt worden? Gebruikt als fallback als LSV2 faalt. */
+function tcpPing(ip, port, timeoutMs = 2000) {
+  return new Promise(resolve => {
+    const s = new net.Socket()
+    s.setTimeout(timeoutMs)
+    s.connect(port, ip, () => { s.destroy(); resolve(true) })
+    s.on('error',   () => resolve(false))
+    s.on('timeout', () => { s.destroy(); resolve(false) })
+  })
+}
+
 /**
  * Leest machine-staat via LSV2 R_RI (geen DNC-licentie nodig).
  * Geeft { online, program, pgmState, alarm, tool, spindleRunning } of null bij offline.
@@ -835,6 +846,15 @@ async function pollMachineState(machine) {
     online = curr !== null
   } catch {
     online = false
+  }
+
+  // LSV2 faalt maar machine is wel bereikbaar via TCP → niet als offline markeren
+  if (!online && machine.cncIpAddress) {
+    const reachable = await tcpPing(machine.cncIpAddress, LSV2_PORT, 2000)
+    if (reachable) {
+      online = true
+      curr = { online: true, program: null, pgmState: null, tool: null, alarm: false, spindleRunning: null }
+    }
   }
 
   if (online) {
