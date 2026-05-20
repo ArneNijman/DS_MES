@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowLeft, Clock, Info } from 'lucide-react'
+import { Activity, ArrowLeft, Clock, Info, ChevronDown } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -75,54 +75,77 @@ function formatTime(iso: string): string {
 // ── Availability bar ───────────────────────────────────────────────────────
 
 function AvailabilityBar({ machine }: { machine: MachineSummary }) {
+  const [expanded, setExpanded] = useState(false)
   const avail = machine.availabilityPct
   const color = avail >= 90 ? 'bg-green-500' : avail >= 75 ? 'bg-amber-400' : 'bg-red-500'
   const total = machine.totalDowntimeMinutes
+  const hasPeriods = machine.periods.length > 0
 
   return (
-    <div className="py-3 px-4 rounded-xl hover:bg-gray-50 border border-gray-100">
-      <div className="flex items-center gap-4">
-        <div className="w-40 shrink-0">
-          <p className="text-sm font-medium text-gray-800 truncate">{machine.name}</p>
-          {machine.ongoingPeriod && (
-            <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', DOWNTIME_BADGE[machine.ongoingPeriod.type])}>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
-              {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
-            </span>
-          )}
-        </div>
-
-        <div className="flex-1 flex items-center gap-3">
-          <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className={cn('h-full rounded-full transition-all', color)}
-              style={{ width: `${avail}%` }}
-            />
-          </div>
-          <span className={cn('text-sm font-semibold w-10 text-right shrink-0', color.replace('bg-', 'text-'))}>
-            {avail}%
-          </span>
-        </div>
-
-        <div className="text-xs w-36 text-right shrink-0">
-          {total > 0 ? (
-            <span className="text-gray-600">{formatDuration(total)} stilstand</span>
-          ) : (
-            <span className="text-green-600">Geen stilstand ✓</span>
-          )}
-        </div>
-      </div>
-
-      {/* Type breakdown — onder de balk zodat breedte gelijk blijft */}
-      {total > 0 && (
-        <div className="flex items-center gap-1.5 mt-1.5 pl-44">
-          {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map((type) => {
-            const mins = machine.byType[type]
-            if (!mins) return null
-            return (
-              <span key={type} className={cn('px-1.5 py-0.5 rounded text-xs font-medium', DOWNTIME_BADGE[type])}>
-                {DOWNTIME_LABEL[type]} {formatDuration(mins)}
+    <div className="rounded-xl border border-gray-100 overflow-hidden">
+      <button
+        onClick={() => hasPeriods && setExpanded(o => !o)}
+        className={cn('w-full py-3 px-4 text-left', hasPeriods ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default')}
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-40 shrink-0">
+            <p className="text-sm font-medium text-gray-800 truncate">{machine.name}</p>
+            {machine.ongoingPeriod && (
+              <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', DOWNTIME_BADGE[machine.ongoingPeriod.type])}>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
+                {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
               </span>
+            )}
+          </div>
+
+          <div className="flex-1 flex items-center gap-3">
+            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${avail}%` }} />
+            </div>
+            <span className={cn('text-sm font-semibold w-10 text-right shrink-0', color.replace('bg-', 'text-'))}>
+              {avail}%
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 w-36 justify-end shrink-0">
+            <span className="text-xs text-gray-600">
+              {total > 0 ? `${formatDuration(total)} stilstand` : <span className="text-green-600">Geen stilstand ✓</span>}
+            </span>
+            {hasPeriods && (
+              <ChevronDown size={14} className={cn('text-gray-400 transition-transform shrink-0', expanded && 'rotate-180')} />
+            )}
+          </div>
+        </div>
+
+        {total > 0 && (
+          <div className="flex items-center gap-1.5 mt-1.5 pl-44">
+            {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map((type) => {
+              const mins = machine.byType[type]
+              if (!mins) return null
+              return (
+                <span key={type} className={cn('px-1.5 py-0.5 rounded text-xs font-medium', DOWNTIME_BADGE[type])}>
+                  {DOWNTIME_LABEL[type]} {formatDuration(mins)}
+                </span>
+              )
+            })}
+          </div>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-1.5">
+          {machine.periods.map((p, i) => {
+            const cfg = { label: DOWNTIME_LABEL[p.type], badge: DOWNTIME_BADGE[p.type] }
+            return (
+              <div key={i} className="flex items-center gap-3 text-xs">
+                <span className={cn('px-2 py-0.5 rounded-full font-medium shrink-0', cfg.badge)}>{cfg.label}</span>
+                <span className="text-gray-500">
+                  {formatTime(p.startedAt)} → {p.endedAt ? formatTime(p.endedAt) : <span className="text-red-500 font-medium animate-pulse">lopend</span>}
+                </span>
+                <span className="font-medium text-gray-700 ml-auto">
+                  {p.durationSeconds !== null ? formatDuration(Math.round(p.durationSeconds / 60)) : '—'}
+                </span>
+              </div>
             )
           })}
         </div>
