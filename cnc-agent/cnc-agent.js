@@ -32,6 +32,9 @@ const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099
 const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
 const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '10000', 10)
 const STATE_POLL_ENABLED = (process.env.CNC_STATE_POLL_ENABLED ?? 'true') === 'true'
+const STARTUP_GRACE_MS = parseInt(process.env.STARTUP_GRACE_MS ?? String(10 * 60 * 1000), 10)
+
+const agentStartTime = Date.now()
 
 // TNCremo logboek — pad naar de Logbook map (per PC anders; standaard %TEMP%\TNCremo\Logbook)
 const LOGBOOK_DIR     = process.env.TNCREMO_LOGBOOK_PATH
@@ -848,8 +851,13 @@ async function pollMachineState(machine) {
     ? { online: true, program: curr.program ?? null, pgmState: curr.pgmState ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, spindleRunning: curr.spindleRunning ?? null }
     : { online: false, program: null, pgmState: null, tool: null, alarm: false, spindleRunning: null }
 
-  const events = diffState(prev, state, online)
+  let events = diffState(prev, state, online)
   machineState.set(machine.id, state)
+
+  // Onderdruk MACHINE_OFFLINE events tijdens de startup grace period (opstart-ruis)
+  if (Date.now() - agentStartTime < STARTUP_GRACE_MS) {
+    events = events.filter(e => e.eventType !== 'MACHINE_OFFLINE')
+  }
 
   if (!events.length) return
 

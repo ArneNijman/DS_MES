@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowLeft, Clock } from 'lucide-react'
+import { Activity, ArrowLeft, Clock, Info } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -256,6 +256,104 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
   )
 }
 
+// ── Info popover ───────────────────────────────────────────────────────────
+
+function BeschikbaarheidInfo() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-gray-300 hover:text-gray-500 transition-colors"
+        aria-label="Uitleg beschikbaarheid"
+      >
+        <Info size={14} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-6 z-20 w-96 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-xs text-gray-600 leading-relaxed space-y-3">
+            <div>
+              <p className="font-semibold text-gray-800 mb-1">Hoe werkt de beschikbaarheidsbalk?</p>
+              <p>Het systeem kijkt elke dag van <strong>06:00 tot 23:00</strong> (17 uur) hoelang een machine zonder problemen beschikbaar was.</p>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-700 mb-1">Dit telt als stilstand:</p>
+              <ul className="space-y-1 ml-1">
+                <li className="flex gap-2"><span className="text-red-400 font-bold">·</span><span><strong>Alarmstilstand</strong> — machine stopt door een alarm</span></li>
+                <li className="flex gap-2"><span className="text-amber-400 font-bold">·</span><span><strong>Stilstand</strong> — programma gestopt, niets gestart binnen 10 min</span></li>
+                <li className="flex gap-2"><span className="text-gray-400 font-bold">·</span><span><strong>Offline</strong> — machine niet bereikbaar via netwerk</span></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-700 mb-1">Dit telt NIET mee:</p>
+              <ul className="space-y-1 ml-1">
+                <li className="flex gap-2"><span className="text-gray-300 font-bold">·</span><span>Alles buiten 06:00–23:00 (de nacht)</span></li>
+                <li className="flex gap-2"><span className="text-gray-300 font-bold">·</span><span>Netwerkhaperingen korter dan 5 minuten</span></li>
+              </ul>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 space-y-1">
+              <p className="text-gray-500"><strong className="text-gray-700">Let op:</strong> de balk zegt niet of er actief verspaand werd — alleen of er geen geregistreerde stilstand was. Een machine kan op 100% staan terwijl de operator aan het instellen was, zolang er geen gap van meer dan 10 minuten zonder programma was.</p>
+              <p className="text-gray-400">Voor werkelijke verspaantijd: zie de <strong className="text-gray-600">Spindeluren</strong> grafiek hieronder.</p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Legenda ────────────────────────────────────────────────────────────────
+
+const DOWNTIME_LEGEND: { color: string; label: string; desc: string }[] = [
+  {
+    color: 'bg-green-500',
+    label: 'Beschikbaar',
+    desc:  'Geen geregistreerde stilstand binnen de werktijden (06:00–23:00). Percentage van de geplande productietijd.',
+  },
+  {
+    color: 'bg-red-400',
+    label: 'Alarmstilstand',
+    desc:  'Machine heeft een actief alarm gegenereerd. Periode loopt van alarm-trigger tot alarm-reset.',
+  },
+  {
+    color: 'bg-amber-400',
+    label: 'Stilstand',
+    desc:  'Programma gestopt maar geen nieuw programma gestart binnen 10 minuten. Machine staat aan maar verspaant niet.',
+  },
+  {
+    color: 'bg-gray-400',
+    label: 'Offline',
+    desc:  'Machine niet bereikbaar via netwerk. Perioden korter dan 5 minuten worden genegeerd (opstartruis).',
+  },
+  {
+    color: 'bg-orange-400',
+    label: 'Wachttijd',
+    desc:  'Spindel staat stil terwijl een programma loopt (bijv. gereedschapwissel, instellen). Nog niet actief.',
+  },
+]
+
+function DowntimeLegend() {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 mb-5 grid grid-cols-2 gap-3">
+      {DOWNTIME_LEGEND.map(({ color, label, desc }) => (
+        <div key={label} className="flex gap-3">
+          <span className={cn('w-3 h-3 rounded-sm shrink-0 mt-0.5', color)} />
+          <div>
+            <p className="text-xs font-medium text-gray-700">{label}</p>
+            <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
@@ -287,7 +385,7 @@ export function MachineDashboardContent() {
           <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Activity size={17} className="text-red-500" /> Machine Dashboard
           </h1>
-          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
+          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines — werktijd 06:00–23:00</p>
         </div>
 
         {/* Periode filter + samenvatting */}
@@ -329,7 +427,10 @@ export function MachineDashboardContent() {
         ) : (
           <>
             <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Beschikbaarheid</h2>
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Beschikbaarheid</h2>
+                <BeschikbaarheidInfo />
+              </div>
               <div className="space-y-1">
                 {data.machines
                   .sort((a, b) => a.availabilityPct - b.availabilityPct)
@@ -338,14 +439,7 @@ export function MachineDashboardContent() {
               </div>
             </div>
 
-            <div className="flex gap-4 mb-5 text-xs text-gray-500">
-              {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map(type => (
-                <span key={type} className="flex items-center gap-1.5">
-                  <span className={cn('w-2.5 h-2.5 rounded-sm', DOWNTIME_COLOR[type])} />
-                  {DOWNTIME_LABEL[type]}
-                </span>
-              ))}
-            </div>
+            <DowntimeLegend />
 
             <div className="bg-white rounded-xl border border-gray-100 p-4">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Recente stilstand</h2>
@@ -387,7 +481,7 @@ export default function MachineDashboard() {
           </button>
           <div>
             <h1 className="text-base font-semibold text-gray-900">Machine Dashboard</h1>
-            <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
+            <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines — werktijd 06:00–23:00</p>
           </div>
         </div>
         <MachineDashboardContent />

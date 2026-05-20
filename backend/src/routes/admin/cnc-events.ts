@@ -13,6 +13,29 @@ function extractArticle(programName: string | null): string | null {
 const STILSTAND_THRESHOLD_SEC = 600  // 10 minuten
 const OFFLINE_MIN_SEC         = 300  // offline perioden korter dan 5 min worden genegeerd (monitoring-ruis)
 
+const WORK_START_H      = 6   // 06:00
+const WORK_END_H        = 23  // 23:00
+const WORK_HOURS_PER_DAY = WORK_END_H - WORK_START_H  // 17
+
+/** Aantal seconden van [start, end) dat binnen de werktijden (06:00–23:00) valt. */
+function workingHoursSeconds(start: Date, end: Date): number {
+  let total = 0
+  const e = end.getTime()
+  const day = new Date(start)
+  day.setHours(0, 0, 0, 0)
+
+  while (day.getTime() < e) {
+    const ws = new Date(day); ws.setHours(WORK_START_H, 0, 0, 0)
+    const we = new Date(day); we.setHours(WORK_END_H,   0, 0, 0)
+    const overlapStart = Math.max(start.getTime(), ws.getTime())
+    const overlapEnd   = Math.min(e, we.getTime())
+    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 1000
+    day.setDate(day.getDate() + 1)
+  }
+
+  return total
+}
+
 // ── Downtime derivation ────────────────────────────────────────────────────
 
 type DowntimePeriod = {
@@ -76,7 +99,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
     periods.push(makePeriod('stilstand', programStopTime, null))
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
-  for (const p of periods) summary[p.type] += p.durationSeconds ?? 0
+  for (const p of periods) summary[p.type] += workingHoursSeconds(p.startedAt, p.endedAt ?? now)
 
   return {
     periods: periods.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()),
@@ -288,7 +311,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           .orderBy(asc(cncMachineEvents.occurredAt))
 
         const { periods, summary } = deriveDowntimePeriods(events)
-        const periodMinutes        = days * 24 * 60
+        const periodMinutes        = days * WORK_HOURS_PER_DAY * 60
         const totalDowntimeSec     = Object.values(summary).reduce((a, b) => a + b, 0)
         const availabilityPct      = totalDowntimeSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / (periodMinutes * 60)) * 100))
         const ongoingPeriod        = periods.find(p => p.isOngoing) ?? null
