@@ -213,9 +213,10 @@ function RecentDowntimeTable({ data }: { data: DashboardData }) {
 interface MetricPoint { date: string; value: number }
 
 function SpindleChart({ machineId, machineName, days }: { machineId: string; machineName: string; days: number }) {
+  const since = getSinceDate(days)
   const { data } = useQuery<{ data: MetricPoint[] }>({
-    queryKey: ['cnc-metrics', machineId, days],
-    queryFn:  () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&days=${days}`) as Promise<{ data: MetricPoint[] }>,
+    queryKey: ['cnc-metrics', machineId, since],
+    queryFn:  () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&since=${since}`) as Promise<{ data: MetricPoint[] }>,
     staleTime: 5 * 60_000,
   })
 
@@ -249,7 +250,10 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
     : dailyDeltas.map(p => ({ date: p.date.slice(5), uren: p.delta, totaal: p.totaal }))
 
   if (!deltas.length) return (
-    <p className="text-xs text-gray-400 text-center py-6">Nog geen spindeluren ontvangen</p>
+    <div className="flex items-center justify-between py-2">
+      <p className="text-xs font-medium text-gray-700">{machineName}</p>
+      <p className="text-xs text-gray-300">Nog geen spindeluren</p>
+    </div>
   )
 
   return (

@@ -38,10 +38,11 @@ export async function cncMetricsRoutes(fastify: FastifyInstance) {
 
   fastify.get('/admin/machines/:id/cnc-metrics', auth, async (req) => {
     const { id } = req.params as { id: string }
-    const q      = req.query  as { metric?: string; days?: string }
+    const q      = req.query  as { metric?: string; days?: string; since?: string }
     const metric = q.metric ?? 'spindle_hours'
-    const days   = Math.min(parseInt(q.days ?? '30', 10), 366)
-    const since  = new Date(Date.now() - days * 86_400_000)
+    const since  = q.since
+      ? new Date(q.since)
+      : new Date(Date.now() - Math.min(parseInt(q.days ?? '30', 10), 366) * 86_400_000)
 
     const rows = await fastify.db
       .select()
