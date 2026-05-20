@@ -364,12 +364,32 @@ const PERIOD_OPTIONS = [
   { value: 365, label: 'Jaar' },
 ]
 
+/** Berekent de exacte kalendergrens voor het geselecteerde periode-filter (lokale tijd). */
+function getSinceDate(days: number): string {
+  const d = new Date()
+  switch (days) {
+    case 1:   // Vandaag — vanaf middernacht vandaag
+      d.setHours(0, 0, 0, 0); break
+    case 7:   // 7 kalenderdagen terug
+      d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); break
+    case 30:  // Begin van de huidige maand
+      d.setDate(1); d.setHours(0, 0, 0, 0); break
+    case 90:  // Begin van het huidige kwartaal
+      d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1); d.setHours(0, 0, 0, 0); break
+    case 365: // Begin van het huidige jaar
+      d.setMonth(0, 1); d.setHours(0, 0, 0, 0); break
+    default:
+      d.setDate(d.getDate() - days + 1); d.setHours(0, 0, 0, 0)
+  }
+  return d.toISOString()
+}
+
 export function MachineDashboardContent() {
   const [days, setDays] = useState(7)
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ['machine-downtime-all', days],
-    queryFn:  () => apiFetch(`/admin/cnc-downtime/all?days=${days}`) as Promise<DashboardData>,
+    queryFn:  () => apiFetch(`/admin/cnc-downtime/all?since=${getSinceDate(days)}`) as Promise<DashboardData>,
     refetchInterval: 30_000,
   })
 
