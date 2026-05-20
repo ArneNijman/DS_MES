@@ -67,7 +67,8 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
     const t = new Date(ev.occurredAt)
     switch (ev.eventType) {
       case 'MACHINE_OFFLINE':
-        offlineStart = t; online = false; break
+        if (online) { offlineStart = t; online = false }
+        break
       case 'MACHINE_ONLINE':
         if (offlineStart) {
           const dur = (t.getTime() - offlineStart.getTime()) / 1000
