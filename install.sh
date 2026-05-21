@@ -86,7 +86,7 @@ MAX_WAIT=120
 ELAPSED=0
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-  if docker compose logs backend 2>/dev/null | grep -q "Listening on"; then
+  if docker compose logs backend 2>/dev/null | grep -q "Server listening"; then
     break
   fi
   printf "."
