@@ -68,6 +68,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
     switch (ev.eventType) {
       case 'MACHINE_OFFLINE':
         if (online) { offlineStart = t; online = false }
+        programStopTime = null  // program stop voor offline valt onder offline periode
         break
       case 'MACHINE_ONLINE':
         if (offlineStart) {
@@ -96,7 +97,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   if (offlineStart && (now.getTime() - offlineStart.getTime()) / 1000 >= OFFLINE_MIN_SEC)
     periods.push(makePeriod('offline', offlineStart, null))
   if (alarmStart)     periods.push(makePeriod('alarmstilstand', alarmStart, null))
-  if (programStopTime && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC)
+  if (programStopTime && !offlineStart && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC)
     periods.push(makePeriod('stilstand', programStopTime, null))
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
