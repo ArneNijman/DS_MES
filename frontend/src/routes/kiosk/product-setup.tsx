@@ -528,9 +528,20 @@ function SetupList({
 
   const createMutation = useMutation({
     mutationFn: (body: object) => apiFetch<{ ok: boolean; setupId: string }>('/kiosk/product-setups', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['product-setups', machine.id] })
+    onSuccess: (res, variables) => {
+      const v = variables as { productionOrderNo: string; articleNo?: string; description?: string; origin?: string }
       setShowNew(false); setNewOrder(''); setNewArticle(''); setNewDescription(''); setShowBcMsg(false); setIsFromBc(false); setBcOrderSearch('')
+      onSelect({
+        id:                res.setupId,
+        productionOrderNo: v.productionOrderNo,
+        articleNo:         v.articleNo ?? null,
+        articleName:       null,
+        description:       v.description ?? null,
+        origin:            v.origin ?? 'manual',
+        createdAt:         new Date().toISOString(),
+        totalSteps:        0,
+        stepsOnMachine:    0,
+      })
     },
   })
 
@@ -1519,8 +1530,11 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const sendToMachine = useMutation({
     mutationFn: (ncFileId: string) =>
       apiFetch(`/kiosk/product-setups/nc-files/${ncFileId}/send-to-machine`, { method: 'POST' }),
-    onSuccess: (res: any) => setSendResult({ ok: true,  msg: `Verstuurd → ${res.path ?? ''}` }),
-    onError:   (err: any) => setSendResult({ ok: false, msg: err.message ?? 'Versturen mislukt' }),
+    onSuccess: (res: any) => {
+      setSendResult({ ok: true, msg: `Bestand verstuurd naar machine` })
+      setTimeout(() => setSendResult(null), 5000)
+    },
+    onError: (err: any) => setSendResult({ ok: false, msg: err.message ?? 'Versturen mislukt' }),
   })
 
   const { data: stepValidation, isFetching: validating, refetch: validate } = useQuery<StepValidationResult>({
@@ -1715,7 +1729,10 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
                       </button>
                     )}
                     {sendResult && (
-                      <span className={cn('text-xs font-medium', sendResult.ok ? 'text-green-600' : 'text-red-500')}>
+                      <span className={cn(
+                        'text-xs font-medium px-2 py-1 rounded-md',
+                        sendResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                      )}>
                         {sendResult.ok ? '✓' : '✗'} {sendResult.msg}
                       </span>
                     )}
@@ -2857,6 +2874,10 @@ function MeetPortalModal({
 
 // ── HypermillModal ────────────────────────────────────────────────────────────
 
+function toHmopenUrl(filePath: string): string {
+  return `hmopen://${encodeURIComponent(filePath.replace(/\\/g, '/'))}`
+}
+
 function HypermillModal({
   docs, setupId, onClose,
 }: {
@@ -2864,65 +2885,77 @@ function HypermillModal({
   setupId: string
   onClose: () => void
 }) {
-  const qc      = useQueryClient()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading]   = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  const qc = useQueryClient()
+  const [pathInput, setPathInput]   = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const deleteDoc = useMutation({
     mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
   })
 
-  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    setUploadError(null)
+  async function handleSavePath() {
+    const trimmed = pathInput.trim()
+    if (!trimmed) return
+    setSaving(true)
+    setSaveError(null)
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('documentType', 'hypermill')
-      await apiFetch(`/kiosk/product-setups/${setupId}/documents`, { method: 'POST', body: fd })
+      await apiFetch(`/kiosk/product-setups/${setupId}/documents/path`, {
+        method: 'POST',
+        body: JSON.stringify({ path: trimmed }),
+      })
       qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      setPathInput('')
     } catch (err) {
-      setUploadError(`Upload mislukt: ${err instanceof Error ? err.message : String(err)}`)
+      setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
-      setUploading(false)
-      e.target.value = ''
+      setSaving(false)
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2">
             <FolderOpen size={16} className="text-gray-400" />
             <p className="font-bold text-gray-800">Hypermill bestanden</p>
             <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{docs.length}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
-            >
-              <Upload size={13} />
-              {uploading ? 'Bezig…' : 'Uploaden'}
-            </button>
-            <input ref={fileRef} type="file" className="hidden" accept=".hmc,.hmr" onChange={handleUpload} />
-            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
-          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
         </div>
-        {uploadError && (
-          <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 shrink-0">{uploadError}</div>
-        )}
+
+        {/* Pad invoeren */}
+        <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+          <p className="text-xs text-gray-500 mb-1.5">Netwerkpad of lokaal pad (bijv. <code className="bg-gray-100 px-1 rounded">\\SERVER\HyperMill\project.hmc</code>)</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={pathInput}
+              onChange={e => setPathInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSavePath()}
+              placeholder="\\server\share\project.hmc"
+              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono"
+            />
+            <button
+              onClick={handleSavePath}
+              disabled={saving || !pathInput.trim()}
+              className="px-3 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors shrink-0"
+            >
+              {saving ? 'Bezig…' : 'Opslaan'}
+            </button>
+          </div>
+          {saveError && <p className="text-xs text-red-600 mt-1">{saveError}</p>}
+        </div>
+
+        {/* Bestandslijst */}
         <div className="flex-1 overflow-auto">
           {docs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+            <div className="flex flex-col items-center justify-center py-12 text-gray-300">
               <FolderOpen size={36} className="mb-2" />
-              <p className="text-sm">Nog geen Hypermill bestanden toegevoegd</p>
+              <p className="text-sm">Nog geen Hypermill paden toegevoegd</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-50">
@@ -2931,18 +2964,18 @@ function HypermillModal({
                   <FileText size={16} className="text-gray-300 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
+                    <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">{doc.fileUrl}</p>
                     <p className="text-[10px] text-gray-400 mt-0.5">
                       {new Date(doc.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
                       {doc.uploadedByName && <span className="ml-1">· {doc.uploadedByName}</span>}
                     </p>
                   </div>
                   <a
-                    href={doc.fileUrl}
-                    download={doc.fileName}
-                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-teal-600 shrink-0"
+                    href={toHmopenUrl(doc.fileUrl)}
+                    className="p-1.5 rounded hover:bg-teal-50 text-gray-400 hover:text-teal-600 shrink-0 transition-colors"
                     title="Openen in Hypermill"
                   >
-                    <Download size={14} />
+                    <ExternalLink size={14} />
                   </a>
                   <button
                     onClick={() => deleteDoc.mutate(doc.id)}

@@ -310,6 +310,106 @@ function mkRRI(paramId) {
   return Buffer.concat([hdr, Buffer.from('R_RI', 'latin1'), p])
 }
 
+/** Bouwt een R_MB frame: lees `count` marker bytes vanaf `address`. */
+function mkRMBFrame(address, count) {
+  const cmd     = Buffer.from('R_MB', 'latin1')
+  const payload = Buffer.allocUnsafe(6)
+  payload.writeUInt32BE(address, 0)
+  payload.writeUInt16BE(count,   4)
+  const body = Buffer.concat([cmd, payload])
+  const hdr  = Buffer.allocUnsafe(4)
+  hdr.writeUInt16BE(0,           0)
+  hdr.writeUInt16BE(body.length, 2)
+  return Buffer.concat([hdr, body])
+}
+
+/**
+ * Leest een reeks marker bytes (MB) van een Heidenhain machine via één LSV2-sessie.
+ * Retourneert een Map<address, value> voor alle bytes in [startAddr, endAddr).
+ */
+function readMarkerRange(ip, startAddr, endAddr, blockSize = 200) {
+  return new Promise((resolve) => {
+    const result   = new Map()
+    const socket   = new net.Socket()
+    let   rxBuf    = Buffer.alloc(0)
+    let   loggedIn = false
+    let   sendAddr = startAddr   // adres van het blok dat we verstuurd hebben
+    let   recvAddr = startAddr   // adres van het blok waarop we antwoord verwachten
+    let   settled  = false
+
+    const hardTimer = setTimeout(() => done(), 10000)
+
+    const done = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(hardTimer)
+      socket.destroy()
+      resolve(result)
+    }
+
+    const sendNextBlock = () => {
+      if (sendAddr >= endAddr) return  // wacht op laatste antwoord, done() via S_MB handler
+      const count = Math.min(blockSize, endAddr - sendAddr)
+      socket.write(mkRMBFrame(sendAddr, count))
+      sendAddr += count
+    }
+
+    // Gebruik A_LGINSPECT + CC_03 + CC_06 (zelfde als readMachineState — werkt op TNC 530/640)
+    const loginFrames = [LSV2_A_LGINSPECT, LSV2_C_CC_03, LSV2_C_CC_06]
+    let loginStep = 0
+
+    socket.setTimeout(5000)
+    socket.connect(LSV2_PORT, ip, () => socket.write(loginFrames[loginStep++]))
+
+    socket.on('data', chunk => {
+      rxBuf = Buffer.concat([rxBuf, chunk])
+
+      // LSV2 frame: [2B type][2B data_len][4B command][data_len bytes]
+      // Totale framegrootte = 8 + data_len (niet 4 + data_len!)
+      while (rxBuf.length >= 8) {
+        const type = rxBuf.readUInt16BE(0)
+        const len  = rxBuf.readUInt16BE(2)
+        if (rxBuf.length < 8 + len) break
+        const cmd  = rxBuf.slice(4, 8).toString('latin1')
+        const data = rxBuf.slice(8, 8 + len)
+        rxBuf = rxBuf.slice(8 + len)
+
+        if (type === 2) {
+          if (loggedIn) console.log(`  ⚠️  T_ERR op R_MB — R_MB vereist mogelijk een DNC-licentie`)
+          else console.log(`  ⚠️  T_ERR tijdens login (cmd=${cmd})`)
+          done(); return
+        }
+
+        if (!loggedIn) {
+          // Login-fase: stuur volgende login-frame of start eerste blok
+          if (loginStep < loginFrames.length) {
+            socket.write(loginFrames[loginStep++])
+          } else {
+            loggedIn = true
+            console.log(`  ✓ Login geslaagd (${cmd}), stuur eerste R_MB blok`)
+            sendNextBlock()
+          }
+        } else {
+          if (cmd === 'S_MB') {
+            for (let i = 0; i < data.length; i++) {
+              result.set(recvAddr + i, data[i])
+            }
+            recvAddr += data.length
+          }
+          if (recvAddr >= endAddr) {
+            done()
+          } else {
+            sendNextBlock()
+          }
+        }
+      }
+    })
+
+    socket.on('error',   done)
+    socket.on('timeout', done)
+  })
+}
+
 /** TCP-ping: kan de poort bereikt worden? Gebruikt als fallback als LSV2 faalt. */
 function tcpPing(ip, port, timeoutMs = 2000) {
   return new Promise(resolve => {
@@ -396,7 +496,7 @@ async function readMachineState(machine) {
 }
 
 async function readSpindleHours(_machine) {
-  return null  // Niet meer nodig — spindeluren worden bijgehouden via programma-looptijden
+  return null  // R_OT vereist DNC-licentie — spindeluren worden handmatig ingevoerd via het MES
 }
 
 // ── Spindeluren via programma-looptijd tracking ───────────────────────────────
@@ -1003,8 +1103,10 @@ async function syncAll() {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-const runOnce    = process.argv.includes('--once')
-const runDiag    = process.argv.includes('--diag')
+const runOnce      = process.argv.includes('--once')
+const runDiag      = process.argv.includes('--diag')
+const runScanIdx   = process.argv.indexOf('--scan-spindle')
+const runScanIp    = runScanIdx !== -1 ? process.argv[runScanIdx + 1] : null
 
 let syncInProgress = false
 
@@ -1021,7 +1123,134 @@ async function syncAllGuarded() {
   }
 }
 
-if (runDiag) {
+if (runScanIp) {
+  // ── Spindel marker scanner ──────────────────────────────────────────────────
+  // Gebruik: node cnc-agent.js --scan-spindle 192.168.1.x
+  //
+  // 1. Laat de tool een baseline opnemen (MB1000–MB7999)
+  // 2. Draai M3 S100 op de machine (spindel aan)
+  // 3. Draai M5 (spindel uit)
+  // 4. De tool toont welke adressen veranderden → dat is jouw spindel-marker
+  // 5. Sla op met Ctrl+C
+
+  const SCAN_START  = 1000
+  const SCAN_END    = 8000
+  const SCAN_POLL   = 800   // ms tussen scans
+
+  console.log(`🔍  Spindel marker scanner`)
+  console.log(`    Machine : ${runScanIp}`)
+  console.log(`    Bereik  : MB${SCAN_START}–MB${SCAN_END - 1}`)
+  console.log(`    Interval: ${SCAN_POLL}ms\n`)
+
+  // Test TCP bereikbaarheid
+  const reachable = await tcpPing(runScanIp, LSV2_PORT, 2000)
+  if (!reachable) {
+    console.error(`❌  Poort ${LSV2_PORT} niet bereikbaar op ${runScanIp}`)
+    console.error(`    → Controleer of de machine aan staat en LSV2 actief is`)
+    process.exit(1)
+  }
+  console.log(`✅  LSV2 poort bereikbaar\n`)
+
+  // Baseline lezen — probeer tot 10x met 2s pauze
+  let baseline = new Map()
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    process.stdout.write(`📸  Baseline opnemen (poging ${attempt}/10)... `)
+    baseline = await readMarkerRange(runScanIp, SCAN_START, SCAN_END)
+    if (baseline.size > 0) {
+      console.log(`${baseline.size} bytes gelezen\n`)
+      break
+    }
+    console.log('geen respons, opnieuw...')
+    await new Promise(r => setTimeout(r, 2000))
+  }
+  if (baseline.size === 0) {
+    console.error('\n❌  Geen marker bytes ontvangen na 10 pogingen')
+    console.error('    Mogelijke oorzaken:')
+    console.error('    → LSV2 R_MB niet ondersteund op deze controller (vereist DNC-licentie op sommige TNC versies)')
+    console.error('    → INSPECT login-level heeft geen toegang tot PLC geheugen')
+    console.error('    → Probeer op een andere machine (bijv. Dino Max)')
+    process.exit(1)
+  }
+
+  console.log('▶   Voer nu M3 S100 uit op de machine (spindel starten)')
+  console.log('⏹   Voer daarna M5 uit (spindel stoppen)')
+  console.log('    Ctrl+C om te stoppen en resultaat op te slaan\n')
+
+  const changedAddrs = new Map()  // address → { min, max, lastVal }
+  let   prev = new Map(baseline)
+  let   scanCount = 0
+
+  const saveResults = () => {
+    if (changedAddrs.size === 0) {
+      console.log('\n⚠️   Geen veranderingen gevonden in MB1000–MB7999')
+      console.log('    → Probeer een groter bereik of controleer of M3/M5 uitgevoerd zijn')
+      process.exit(0)
+    }
+
+    console.log(`\n\n📊  Gevonden kandidaten (${changedAddrs.size} adressen veranderd):\n`)
+    console.log('    Adres    Waarden')
+    console.log('    ──────   ──────────────────')
+    const sorted = [...changedAddrs.entries()].sort((a, b) => a[0] - b[0])
+    for (const [addr, info] of sorted) {
+      const range = info.min === info.max ? `${info.min}` : `${info.min}–${info.max}`
+      console.log(`    MB${String(addr).padEnd(5)}  ${range}  (laatste: ${info.lastVal})`)
+    }
+
+    // Meest waarschijnlijke kandidaat: adres dat het meest schommelde tussen 0 en niet-0
+    const binary = sorted.filter(([, v]) => v.min === 0 && v.max > 0)
+    if (binary.length > 0) {
+      console.log(`\n💡  Meest waarschijnlijke spindel-marker(s):`)
+      for (const [addr, info] of binary) {
+        console.log(`    MB${addr}  (0 = stilstand, ${info.max} = draait)`)
+      }
+    }
+
+    // Opslaan als JSON
+    const outFile = join(tmpdir(), 'cnc-agent', `spindle-scan-${runScanIp.replace(/\./g, '-')}.json`)
+    const output  = {
+      ip:         runScanIp,
+      scannedAt:  new Date().toISOString(),
+      scanRange:  { start: SCAN_START, end: SCAN_END },
+      candidates: sorted.map(([addr, info]) => ({ address: addr, label: `MB${addr}`, ...info })),
+    }
+    mkdir(join(tmpdir(), 'cnc-agent'), { recursive: true })
+      .then(() => writeFile(outFile, JSON.stringify(output, null, 2), 'utf8'))
+      .then(() => console.log(`\n💾  Opgeslagen: ${outFile}`))
+      .catch(() => {})
+      .finally(() => process.exit(0))
+  }
+
+  process.on('SIGINT', saveResults)
+
+  const poll = async () => {
+    const curr = await readMarkerRange(runScanIp, SCAN_START, SCAN_END)
+    if (curr.size === 0) { process.stdout.write('.'); return }
+    scanCount++
+
+    let diffs = 0
+    for (const [addr, val] of curr) {
+      const was = prev.get(addr)
+      if (was !== undefined && was !== val) {
+        diffs++
+        const existing = changedAddrs.get(addr) ?? { min: Math.min(was, val), max: Math.max(was, val), lastVal: val }
+        existing.min    = Math.min(existing.min, val)
+        existing.max    = Math.max(existing.max, val)
+        existing.lastVal = val
+        changedAddrs.set(addr, existing)
+        console.log(`   📍  MB${addr}: ${was} → ${val}`)
+      }
+    }
+
+    prev = curr
+    if (scanCount % 10 === 0) {
+      process.stdout.write(`   [scan ${scanCount}, ${changedAddrs.size} adressen veranderd]\n`)
+    }
+  }
+
+  await poll()
+  setInterval(poll, SCAN_POLL)
+
+} else if (runDiag) {
   // Diagnose-modus: test TCP + LSV2 per machine zonder backend
   console.log('🔍  LSV2 diagnose-modus — geen backend nodig\n')
   await authenticate()
@@ -1244,7 +1473,7 @@ if (runDiag) {
       req.on('data', chunk => { body += chunk })
       req.on('end', async () => {
         try {
-          const { ip, articleNo, bewerkingNr, fileName, fileContent } = JSON.parse(body)
+          const { ip, articleNo, bewerkingNr, fileName, fileContent, toolTableFormat } = JSON.parse(body)
           if (!ip || !articleNo || !bewerkingNr || !fileName || !fileContent) {
             res.statusCode = 400
             return res.end(JSON.stringify({ error: 'ip, articleNo, bewerkingNr, fileName en fileContent zijn verplicht' }))
@@ -1257,22 +1486,41 @@ if (runDiag) {
           try {
             await writeFile(tempFile, fileContent, 'utf8')
 
+            // TNC 426/430M (toolTableFormat '3200'): max 8 tekens, koppeltekens toegestaan
+            // Modernere controllers (TNC 530/640): volledige naam, alleen spaties/slashes verwijderen
+            const isLegacy  = toolTableFormat === '3200'
+            const cleanArt  = articleNo.replace(/[^A-Za-z0-9_\-]/g, '') || 'ART'
+            const safeArt   = isLegacy ? cleanArt.slice(0, 8) : cleanArt
             const rootPath  = `Program`
-            const artPath   = `${rootPath}\\${articleNo}`
-            const stepPath  = `${artPath}\\Bewerking ${bewerkingNr}`
+            const artPath   = `${rootPath}\\${safeArt}`
+            const stepPath  = `${artPath}\\BEW${bewerkingNr}`
             const destPath  = `${stepPath}\\${fileName}`
+            console.log(`   📂  TNC pad: ${destPath}  (artikel: ${articleNo} → ${safeArt})`)
 
-            // Maak mappen aan — fouten worden genegeerd (map bestaat al)
+            // Maak mappen aan
             for (const dir of [rootPath, artPath, stepPath]) {
               try {
                 console.log(`   📁  MKDIR ${dir} op ${ip}`)
-                await runTncCmd(ip, `MKDIR ${dir}`)
-              } catch { /* map bestaat al */ }
+                const r = await runTncCmd(ip, `MKDIR ${dir}`)
+                if (r.stdout?.trim()) console.log(`       stdout: ${r.stdout.trim()}`)
+                console.log(`       ✓ MKDIR OK`)
+              } catch (err) {
+                const out = err.stdout?.trim() ?? ''
+                const se  = err.stderr?.trim() ?? ''
+                console.log(`       ⚠️  MKDIR mislukt (exit ${err.code}) ${out || se}`)
+              }
             }
 
             // Stuur bestand
-            console.log(`   📤  PUT → ${destPath} op ${ip}`)
-            await runTncCmd(ip, `PUT ${tempFile} ${destPath}`)
+            console.log(`   📤  PUT ${tempFile} → ${destPath} op ${ip}`)
+            try {
+              const r = await runTncCmd(ip, `PUT ${tempFile} ${destPath}`)
+              if (r.stdout?.trim()) console.log(`       stdout: ${r.stdout.trim()}`)
+            } catch (err) {
+              const out = err.stdout?.trim() ?? ''
+              const se  = err.stderr?.trim() ?? ''
+              throw new Error(`PUT mislukt (exit ${err.code}): ${out || se || err.message}`)
+            }
 
             console.log(`   ✅  ${fileName} verstuurd naar ${ip}:${destPath}`)
             res.end(JSON.stringify({ ok: true, path: destPath }))

@@ -1799,6 +1799,8 @@ interface DowntimePeriod {
   isOngoing: boolean
 }
 
+interface MetricPoint { date: string; value: number }
+
 interface DowntimeResult {
   periods: DowntimePeriod[]
   summary: { offline: number; alarmstilstand: number; stilstand: number; wachttijd: number }
@@ -1919,6 +1921,27 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-downtime?days=7`) as Promise<DowntimeResult>,
     enabled: subTab === 'cnc_downtime',
     refetchInterval: subTab === 'cnc_downtime' ? 30_000 : false,
+  })
+
+  const { data: spindleMetrics } = useQuery<{ data: MetricPoint[] }>({
+    queryKey: ['spindle-metrics', machineId],
+    queryFn: () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&days=365`) as Promise<{ data: MetricPoint[] }>,
+    enabled: subTab === 'gegevens',
+    staleTime: 30 * 60_000,
+  })
+
+  const [spindleInput, setSpindleInput] = useState('')
+  const [spindleInputOpen, setSpindleInputOpen] = useState(false)
+
+  const saveSpindleHours = useMutation({
+    mutationFn: (hours: number) =>
+      apiFetch(`/admin/machines/${machineId}/cnc-metrics`, { method: 'POST', body: JSON.stringify({ spindleHours: hours }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['machine', machineId] })
+      qc.invalidateQueries({ queryKey: ['spindle-metrics', machineId] })
+      setSpindleInputOpen(false)
+      setSpindleInput('')
+    },
   })
 
   const saveMaintenance = useMutation({
@@ -2070,10 +2093,87 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                   {infoRow('Spindel interface', machine.cncSpindleInterface)}
                   {infoRow('NC versie', machine.cncNcVersion)}
                   {infoRow('PLC versie', machine.cncPlcVersion)}
-                  {machine.spindleHours != null && infoRow('Spindeluren', `${Number(machine.spindleHours).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} u`)}
                 </div>
               </div>
             )}
+            {machine.category === 'Freesmachine' && machine.cncIpAddress && (() => {
+              const points = spindleMetrics?.data ?? []
+              const logRows = [...points].reverse()
+              return (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Spindeluren</h3>
+                  <div className="flex items-end gap-3 mb-4">
+                    {machine.spindleHours != null ? (
+                      <div className="inline-flex flex-col items-start bg-teal-50 rounded-xl px-5 py-3">
+                        <span className="text-2xl font-bold text-teal-700 tabular-nums">
+                          {Number(machine.spindleHours).toLocaleString('nl-NL', { maximumFractionDigits: 0 })} u
+                        </span>
+                        <span className="text-xs text-teal-500 mt-0.5">Totaal spindeluren (MOD)</span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">Nog geen spindeluren ingevoerd</p>
+                    )}
+                    {!spindleInputOpen && (
+                      <button
+                        onClick={() => { setSpindleInput(machine.spindleHours ?? ''); setSpindleInputOpen(true) }}
+                        className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
+                      >
+                        Invoeren
+                      </button>
+                    )}
+                  </div>
+                  {spindleInputOpen && (
+                    <div className="flex items-center gap-2 mb-4">
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={spindleInput}
+                        onChange={e => setSpindleInput(e.target.value)}
+                        placeholder="bijv. 19164"
+                        className="w-32 px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-teal-400"
+                        autoFocus
+                      />
+                      <span className="text-xs text-gray-500">uur</span>
+                      <button
+                        onClick={() => { const h = parseFloat(spindleInput); if (!isNaN(h) && h >= 0) saveSpindleHours.mutate(h) }}
+                        disabled={saveSpindleHours.isPending}
+                        className="px-3 py-1.5 text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+                      >
+                        Opslaan
+                      </button>
+                      <button onClick={() => setSpindleInputOpen(false)} className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600">
+                        Annuleren
+                      </button>
+                    </div>
+                  )}
+                  {logRows.length > 0 && (
+                    <div className="overflow-y-auto max-h-56 rounded-lg border border-gray-100">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-50">
+                          <tr className="text-gray-400 border-b border-gray-100">
+                            <th className="text-left px-3 py-2 font-medium">Datum</th>
+                            <th className="text-right px-3 py-2 font-medium">Totaal (u)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {logRows.map(p => (
+                            <tr key={p.date} className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-600">
+                                {new Date(p.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium tabular-nums text-gray-800">
+                                {Number(p.value).toLocaleString('nl-NL', { maximumFractionDigits: 0 })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )}
 

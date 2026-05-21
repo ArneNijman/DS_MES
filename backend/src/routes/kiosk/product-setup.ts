@@ -24,7 +24,7 @@ import {
   toolingStockLocations,
 } from '../../db/schema.js'
 import { parseNcProgram } from '../../cnc/ncProgramParser.js'
-import { callAgent } from '../../cnc/agentProxy.js'
+import { callAgent, callHypermillAgent } from '../../cnc/agentProxy.js'
 import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
 import { readFile } from 'node:fs/promises'
 
@@ -486,7 +486,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
     if (!setup?.articleNo) return reply.status(400).send({ error: 'Setup heeft geen artikelnummer' })
 
     const [machine] = await fastify.db
-      .select({ cncIpAddress: machines.cncIpAddress })
+      .select({ cncIpAddress: machines.cncIpAddress, toolTableFormat: machines.toolTableFormat })
       .from(machines)
       .where(eq(machines.id, step.machineId))
       .limit(1)
@@ -506,11 +506,12 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          ip:          machine.cncIpAddress,
-          articleNo:   setup.articleNo,
-          bewerkingNr: String(step.bewerkingNr),
-          fileName:    ncFile.fileName,
-          fileContent: ncFile.fileContent,
+          ip:              machine.cncIpAddress,
+          articleNo:       setup.articleNo,
+          bewerkingNr:     String(step.bewerkingNr),
+          fileName:        ncFile.fileName,
+          fileContent:     ncFile.fileContent,
+          toolTableFormat: machine.toolTableFormat ?? null,
         }),
         signal: AbortSignal.timeout(60_000),
       })
@@ -1239,11 +1240,12 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     const [row] = await fastify.db
       .select({
-        fileName:     productSetupNcFiles.fileName,
-        fileContent:  productSetupNcFiles.fileContent,
-        bewerkingNr:  productSetupSteps.bewerkingNr,
-        articleNo:    productSetups.articleNo,
-        cncIpAddress: machines.cncIpAddress,
+        fileName:        productSetupNcFiles.fileName,
+        fileContent:     productSetupNcFiles.fileContent,
+        bewerkingNr:     productSetupSteps.bewerkingNr,
+        articleNo:       productSetups.articleNo,
+        cncIpAddress:    machines.cncIpAddress,
+        toolTableFormat: machines.toolTableFormat,
       })
       .from(productSetupNcFiles)
       .innerJoin(productSetupSteps, eq(productSetupSteps.id, productSetupNcFiles.stepId))
@@ -1263,11 +1265,12 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          ip:          row.cncIpAddress,
-          articleNo:   row.articleNo,
-          bewerkingNr: row.bewerkingNr,
-          fileName:    row.fileName,
-          fileContent: row.fileContent,
+          ip:              row.cncIpAddress,
+          articleNo:       row.articleNo,
+          bewerkingNr:     row.bewerkingNr,
+          fileName:        row.fileName,
+          fileContent:     row.fileContent,
+          toolTableFormat: row.toolTableFormat ?? null,
         }),
         signal: AbortSignal.timeout(60_000),
       })
@@ -1335,6 +1338,49 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       .returning()
 
     return { ok: true, documentId: doc.id, fileUrl: doc.fileUrl }
+  })
+
+  // ── Hypermill netwerkpad opslaan (geen upload) ────────────────────────────
+
+  fastify.post('/kiosk/product-setups/:id/documents/path', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { path: filePath, fileName: fileNameParam } = req.body as { path: string; fileName?: string }
+    if (!filePath?.trim()) return reply.status(400).send({ error: 'Pad is verplicht' })
+
+    const rawEmployeeId = (req as any).employee?.employeeId ?? null
+    let savedUploadedBy: string | null = null
+    if (rawEmployeeId) {
+      const [emp] = await fastify.db.select({ id: employees.id }).from(employees).where(eq(employees.id, rawEmployeeId)).limit(1)
+      savedUploadedBy = emp?.id ?? null
+    }
+
+    const normalizedPath = filePath.trim()
+    const displayName    = fileNameParam?.trim() || normalizedPath.split(/[/\\]/).pop() || normalizedPath
+
+    const [doc] = await fastify.db
+      .insert(productSetupDocuments)
+      .values({ setupId: id, documentType: 'hypermill', fileUrl: normalizedPath, fileName: displayName, uploadedBy: savedUploadedBy })
+      .returning()
+
+    return { ok: true, documentId: doc.id, fileUrl: doc.fileUrl, fileName: doc.fileName }
+  })
+
+  // ── Hypermill bestand openen via agent ────────────────────────────────────
+
+  fastify.post('/kiosk/product-setups/documents/open', auth, async (req, reply) => {
+    const { path: filePath } = req.body as { path: string }
+    if (!filePath?.trim()) return reply.status(400).send({ error: 'pad verplicht' })
+    try {
+      const res = await callHypermillAgent('/open', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ path: filePath.trim() }),
+      })
+      if (!res.ok) return reply.status(502).send({ error: 'Agent gaf foutmelding' })
+      return { ok: true }
+    } catch {
+      return reply.status(503).send({ error: 'HyperMill agent niet bereikbaar — controleer HYPERMILL_AGENT_URL in .env' })
+    }
   })
 
   // ── Document­lijst ophalen ────────────────────────────────────────────────

@@ -8,6 +8,19 @@
  * De eerste die reageert wordt gebruikt — ook als de HTTP-status een fout is
  * (die fout wordt dan doorgestuurd naar de aanroeper).
  */
+export async function callHypermillAgent(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 5_000,
+): Promise<Response> {
+  const base = (process.env.HYPERMILL_AGENT_URL ?? '').trim().replace(/\/$/, '')
+  if (!base) throw new Error('HYPERMILL_AGENT_URL niet geconfigureerd in .env')
+  return fetch(`${base}${path}`, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(timeoutMs),
+  })
+}
+
 export async function callAgent(
   path: string,
   init: RequestInit = {},
@@ -24,7 +37,7 @@ export async function callAgent(
     try {
       const res = await fetch(`${base}${path}`, {
         ...init,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: init.signal ?? AbortSignal.timeout(timeoutMs),
       })
       return res  // eerste die reageert — foutstatussen worden door aanroeper afgehandeld
     } catch (err) {
