@@ -2987,6 +2987,19 @@ function HypermillModal({
               ))}
             </ul>
           )}
+          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
+            <p className="text-[11px] text-gray-400">
+              Werkt de open-knop niet?{' '}
+              <a
+                href="/hypermill-protocol-install.reg"
+                download="hypermill-protocol-install.reg"
+                className="text-teal-600 hover:underline"
+              >
+                Installeer het HyperMill protocol
+              </a>
+              {' '}(eenmalig per PC, dubbelklik na downloaden)
+            </p>
+          </div>
         </div>
       </div>
     </div>
