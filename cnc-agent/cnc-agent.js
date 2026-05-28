@@ -484,6 +484,8 @@ async function readMachineState(machine) {
       timer = setTimeout(() => {
         const body = rxBuf.slice(4)
         const cmd  = body.slice(0, 4).toString('latin1')
+        // Login T_ER → direct stoppen (voorkomt 12s timeout-reeks)
+        if (cmd === 'T_ER' && step <= 3) return finish(false)
         if (cmd === 'S_RI') {
           const cmdIdx = step - 1
           if (cmdIdx === 4) {
@@ -521,7 +523,7 @@ async function readMachineState(machine) {
         }
         rxBuf = Buffer.alloc(0)
         sendNext()
-      }, 200)
+      }, 50)
     })
 
     s.on('error',   () => finish(false))
@@ -998,8 +1000,8 @@ async function pollMachineState(machine) {
     }
   }
 
-  if (online && curr && machine.cncIpAddress) {
-    // Tool nummer uitlezen via plain R_RI block (offset 264)
+  if (online && curr && machine.cncIpAddress && curr.tool === null) {
+    // Fallback: plain R_RI block offset 264 (werkt niet op alle machines)
     const toolNr = await readToolNr(machine.cncIpAddress)
     if (toolNr !== null && toolNr > 0) curr.tool = toolNr
   }
