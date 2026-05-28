@@ -911,7 +911,12 @@ function diffState(prev, curr, machineOnline) {
     return events
   }
 
-  if (!prev) return events
+  if (!prev) {
+    // Eerste detectie: sla ook het actieve gereedschap op
+    if (curr.tool !== null)
+      events.push({ eventType: 'TOOL_CHANGED', eventData: { from: null, to: curr.tool }, programName: curr.program ?? null, occurredAt: now })
+    return events
+  }
 
   // Online → offline
   if (prev.online && !curr.online) {
@@ -941,8 +946,8 @@ function diffState(prev, curr, machineOnline) {
     }
   }
 
-  // Gereedschapwissel
-  if (curr.tool !== null && prev.tool !== null && prev.tool !== curr.tool) {
+  // Gereedschapwissel — ook bij eerste detectie (prev.tool === null)
+  if (curr.tool !== null && prev.tool !== curr.tool) {
     events.push({
       eventType:  'TOOL_CHANGED',
       eventData:  { from: prev.tool, to: curr.tool },
