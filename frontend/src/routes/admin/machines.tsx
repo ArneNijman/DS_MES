@@ -1815,6 +1815,8 @@ const DOWNTIME_CONFIG: Record<string, { label: string; color: string }> = {
 
 const CNC_EVENT_CONFIG: Record<string, { label: string; color: string }> = {
   TOOL_CHANGED:        { label: 'Gereedschapwissel', color: 'bg-orange-100 text-orange-700' },
+  SPINDLE_OFF:         { label: 'Spindel uit',       color: 'bg-orange-100 text-orange-700' },
+  SPINDLE_ON:          { label: 'Spindel aan',       color: 'bg-orange-100 text-orange-700' },
   PROGRAM_STARTED:     { label: 'Programma Start',   color: 'bg-teal-100 text-teal-700' },
   PROGRAM_STOPPED:     { label: 'Programma Stop',    color: 'bg-gray-100 text-gray-600' },
   PROGRAM_INTERRUPTED: { label: 'Onderbroken',       color: 'bg-gray-100 text-gray-600' },
@@ -1826,7 +1828,7 @@ const CNC_EVENT_CONFIG: Record<string, { label: string; color: string }> = {
 
 const CNC_RUN_STATUS: Record<string, { label: string; color: string }> = {
   running:     { label: 'Actief',      color: 'bg-teal-100 text-teal-700' },
-  completed:   { label: 'Afgerond',    color: 'bg-green-100 text-green-700' },
+  completed:   { label: 'Gestopt',     color: 'bg-gray-100 text-gray-600' },
   interrupted: { label: 'Onderbroken', color: 'bg-orange-100 text-orange-700' },
   error:       { label: 'Fout',        color: 'bg-red-100 text-red-700' },
   stopped:     { label: 'Gestopt',     color: 'bg-gray-100 text-gray-600' },
@@ -1852,16 +1854,21 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${m}m`
 }
 
-function formatCncEventDetail(ev: CncMachineEvent): string {
+function formatCncEventDetail(ev: CncMachineEvent, toolNames?: Map<number, string>): string {
   const d = ev.eventData
   if (ev.eventType === 'TOOL_CHANGED' && d) {
-    return `T${d.from ?? '?'} → T${d.to ?? '?'}`
+    const fromNr = d.from as number | undefined
+    const toNr   = d.to   as number | undefined
+    const fromName = fromNr != null && toolNames?.get(fromNr) ? ` (${toolNames.get(fromNr)})` : ''
+    const toName   = toNr   != null && toolNames?.get(toNr)   ? ` (${toolNames.get(toNr)})`   : ''
+    return `T${fromNr ?? '?'}${fromName} → T${toNr ?? '?'}${toName}`
   }
   if (ev.eventType === 'PROGRAM_STARTED' && ev.programName) {
     return ev.programName
   }
-  if (ev.eventType === 'ALARM_TRIGGERED' && d?.message) {
-    return String(d.message)
+  if (ev.eventType === 'ALARM_TRIGGERED' && d) {
+    const text = d.alarmText ?? d.message
+    if (text) return String(text)
   }
   return ''
 }
@@ -1900,6 +1907,19 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     enabled: subTab === 'cnc_events',
     refetchInterval: subTab === 'cnc_events' ? 15_000 : false,
   })
+
+  const { data: toolEntries = [] } = useQuery<{ toolNumber: number; name: string | null }[]>({
+    queryKey: ['cnc-tool-entries', machineId],
+    queryFn: async () => {
+      const res = await apiFetch(`/kiosk/cnc/machines/${machineId}/tools`) as { tools: { toolNumber: number; name: string | null }[] }
+      return res.tools ?? []
+    },
+    enabled: subTab === 'cnc_events',
+  })
+
+  const toolNameMap = new Map(
+    (Array.isArray(toolEntries) ? toolEntries : []).filter(t => t.name).map(t => [t.toolNumber, t.name!])
+  )
 
   const [articleFilter, setArticleFilter] = useState<string | null>(null)
 
@@ -2291,7 +2311,7 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
             <div className="flex flex-wrap gap-2 mb-4">
               {([
                 { key: null,                label: 'Alle' },
-                { key: 'TOOL_CHANGED',      label: 'Gereedschapwissel' },
+                { key: 'SPINDLE_OFF',       label: 'Spindel uit' },
                 { key: 'PROGRAM_STARTED',   label: 'Programma start' },
                 { key: 'PROGRAM_STOPPED',   label: 'Programma stop' },
                 { key: 'ALARM_TRIGGERED',   label: 'Alarm' },
@@ -2318,7 +2338,7 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
               <div className="space-y-1.5">
                 {cncEvents.map((ev) => {
                   const cfg = CNC_EVENT_CONFIG[ev.eventType] ?? { label: ev.eventType, color: 'bg-gray-100 text-gray-600' }
-                  const detail = formatCncEventDetail(ev)
+                  const detail = formatCncEventDetail(ev, toolNameMap)
                   return (
                     <div key={ev.id} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:bg-gray-50">
                       <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-0.5', cfg.color)}>{cfg.label}</span>
@@ -2365,6 +2385,19 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                   </div>
                 )
               })()}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 pb-3 text-xs text-gray-500">
+              {Object.entries(CNC_RUN_STATUS).filter(([, cfg], i, arr) => arr.findIndex(([, c]) => c.label === cfg.label) === i).map(([, cfg]) => (
+                <span key={cfg.label} className="flex items-center gap-1.5">
+                  <span className={cn('px-1.5 py-0.5 rounded-full font-medium', cfg.color)}>{cfg.label}</span>
+                  <span>{
+                    cfg.label === 'Actief'      ? 'programma draait' :
+                    cfg.label === 'Gestopt'     ? 'programma gestopt of afgerond' :
+                    cfg.label === 'Onderbroken' ? 'midden in bewerking afgebroken' :
+                    cfg.label === 'Fout'        ? 'gestopt door NC-fout' : ''
+                  }</span>
+                </span>
+              ))}
             </div>
             {cncRuns.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-12">Nog geen programma-runs ontvangen</p>

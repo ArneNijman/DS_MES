@@ -1540,7 +1540,6 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const { data: stepValidation, isFetching: validating, refetch: validate } = useQuery<StepValidationResult>({
     queryKey: ['step-validate-all', step.id],
     queryFn:  () => apiFetch(`/kiosk/product-setups/steps/${step.id}/validate-all`) as Promise<StepValidationResult>,
-    enabled:  false,
   })
 
   return (
@@ -1680,25 +1679,14 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
               )}
               {/* Knoppenrij */}
               <div className="flex flex-wrap items-center gap-2">
-                {!stepValidation ? (
-                  <button
-                    onClick={() => validate()}
-                    disabled={validating}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-                  >
-                    <RefreshCw size={12} className={validating ? 'animate-spin' : ''} />
-                    Importeer samenstellingen
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleSyncAndValidate()}
-                    disabled={syncStatus === 'syncing' || validating}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
-                  >
-                    <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
-                    {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
-                  </button>
-                )}
+                <button
+                  onClick={() => handleSyncAndValidate()}
+                  disabled={syncStatus === 'syncing' || validating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={syncStatus === 'syncing' || validating ? 'animate-spin' : ''} />
+                  {syncStatus === 'syncing' ? 'Syncing…' : 'Sync & hervalideer'}
+                </button>
                 {syncError && <span className="text-xs text-red-500 max-w-[200px] truncate">{syncError}</span>}
 
                 {selectedNcFileId && (
@@ -2259,7 +2247,10 @@ function NcFilePortalModal({
 
   const deleteNcFile = useMutation({
     mutationFn: (id: string) => apiFetch(`/kiosk/product-setups/nc-files/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      qc.invalidateQueries({ queryKey: ['step-validate-all', stepId] })
+    },
   })
 
   const renameNcFile = useMutation({
@@ -2289,6 +2280,7 @@ function NcFilePortalModal({
         lastId = res.ncFileId
       }
       await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      await qc.invalidateQueries({ queryKey: ['step-validate-all', stepId] })
       if (lastId) onSelect(lastId)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload mislukt')

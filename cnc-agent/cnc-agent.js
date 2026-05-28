@@ -42,7 +42,8 @@ const LOGBOOK_DIR     = process.env.TNCREMO_LOGBOOK_PATH
 const LOGBOOK_ENABLED = (process.env.TNCREMO_LOGBOOK_ENABLED ?? 'false') === 'true'
 const LOGBOOK_POLL_MS = parseInt(process.env.TNCREMO_POLL_INTERVAL_MS ?? '60000', 10)
 
-if (!USERNAME || !PASSWORD) {
+const standaloneMode = process.argv.includes('--scan-spindle') || process.argv.includes('--scan-ri')
+if (!standaloneMode && (!USERNAME || !PASSWORD)) {
   console.error('❌  ADMIN_USERNAME en ADMIN_PASSWORD zijn verplicht in .env')
   process.exit(1)
 }
@@ -285,7 +286,7 @@ function lsv2Command(ip, command, timeoutMs = 5000) {
 
 // ── Machine state polling ─────────────────────────────────────────────────────
 
-/** @type {Map<string, { online: boolean; program: string|null; pgmState: number|null; tool: number|null; alarm: boolean; spindleRunning: boolean|null }>} */
+/** @type {Map<string, { online: boolean; program: string|null; pgmState: number|null; tool: number|null; alarm: boolean; alarmText: string|null; spindleRunning: boolean|null }>} */
 const machineState = new Map()
 
 /**
@@ -421,6 +422,14 @@ function tcpPing(ip, port, timeoutMs = 2000) {
   })
 }
 
+// Alarmteksten die genegeerd worden (geen echte stilstand/fout)
+const IGNORED_ALARM_TEXTS = [
+  'toets zonder functie',
+  'kleine letter niet toegestaan',
+  'w100 het gereedschap handmatig uit de spindel wegnemen',
+  '010 werkruimte is open !',
+]
+
 /**
  * Leest machine-staat via LSV2 R_RI (geen DNC-licentie nodig).
  * Geeft { online, program, pgmState, alarm, tool, spindleRunning } of null bij offline.
@@ -441,13 +450,21 @@ async function readMachineState(machine) {
       mkRRI(23),  // EXEC_STATE
       mkRRI(24),  // SELECTED_PGM
       mkRRI(26),  // PGM_STATE
+      mkRRI(27),  // ALARM_TEXT
+      mkRRI(51),  // SPINDLE_SPEED
     ]
+
+    let alarmText    = null
+    let spindleSpeed = null
 
     const finish = (online) => {
       clearTimeout(timer)
       s.destroy()
       if (!online) return resolve(null)
-      resolve({ online: true, program, pgmState, tool: null, alarm: pgmState === PGM_STATE_ERROR, spindleRunning: null })
+      const spindleRunning = pgmState === PGM_STATE_STARTED && spindleSpeed !== null
+        ? spindleSpeed > 0.0
+        : null
+      resolve({ online: true, program, pgmState, tool: null, alarm: alarmText !== null, alarmText, spindleRunning })
     }
 
     const sendNext = () => {
@@ -482,6 +499,23 @@ async function readMachineState(machine) {
           } else if (cmdIdx === 5) {
             // PGM_STATE — 2-byte uint16 na S_RI
             if (body.length >= 6) pgmState = body.readUInt16BE(4)
+          } else if (cmdIdx === 6) {
+            // ALARM_TEXT — param 27: [state(2)][count(2)][code(4)][text...]
+            const data = body.slice(4)
+            if (data.length > 8) {
+              const count = data.readUInt16BE(2)
+              if (count > 0) {
+                const textBuf = data.slice(8)
+                const nullEnd = textBuf.indexOf(0)
+                const text = (nullEnd >= 0 ? textBuf.slice(0, nullEnd) : textBuf).toString('latin1').trim()
+                if (text.length > 0 && !IGNORED_ALARM_TEXTS.includes(text.toLowerCase()))
+                  alarmText = text
+              }
+            }
+          } else if (cmdIdx === 7) {
+            // SPINDLE_SPEED — param 51: [mode(4)][count(4)][speed_actual(8 LE double)][...]
+            const data = body.slice(4)
+            if (data.length >= 16) spindleSpeed = data.readDoubleLE(8)
           }
         }
         rxBuf = Buffer.alloc(0)
@@ -493,6 +527,15 @@ async function readMachineState(machine) {
     s.on('timeout', () => finish(false))
     s.on('close',   () => { if (!s.destroyed) finish(true) })
   })
+}
+
+/** Leest het actieve toolnummer uit de plain R_RI\0 block (offset 264, int32LE). */
+async function readToolNr(ip) {
+  try {
+    const raw = await lsv2Command(ip, 'R_RI', 3000)
+    if (raw.length >= 268) return raw.readInt32LE(264)
+  } catch { /* offline of niet ondersteund */ }
+  return null
 }
 
 async function readSpindleHours(_machine) {
@@ -907,19 +950,11 @@ function diffState(prev, curr, machineOnline) {
     })
   }
 
-  // Alarm via pgmState (R_RI) of fallback op alarm-vlag
-  if (curr.pgmState !== null && prev.pgmState !== null) {
-    if (prev.pgmState !== PGM_STATE_ERROR && curr.pgmState === PGM_STATE_ERROR) {
-      events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
-    } else if (prev.pgmState === PGM_STATE_ERROR && curr.pgmState !== PGM_STATE_ERROR) {
-      events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
-    }
-  } else {
-    if (!prev.alarm && curr.alarm) {
-      events.push({ eventType: 'ALARM_TRIGGERED', programName: curr.program ?? null, occurredAt: now })
-    } else if (prev.alarm && !curr.alarm) {
-      events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
-    }
+  // Alarm via alarmText (param 27) — detecteert NC-fouten én PLC-alarms (E-stop, hydrauliek, etc.)
+  if (!prev.alarmText && curr.alarmText) {
+    events.push({ eventType: 'ALARM_TRIGGERED', eventData: { alarmText: curr.alarmText }, programName: curr.program ?? null, occurredAt: now })
+  } else if (prev.alarmText && !curr.alarmText) {
+    events.push({ eventType: 'ALARM_CLEARED', programName: curr.program ?? null, occurredAt: now })
   }
 
   // Spindel (wachttijd-detectie — actief zodra readMachineState() spindleRunning levert)
@@ -953,8 +988,14 @@ async function pollMachineState(machine) {
     const reachable = await tcpPing(machine.cncIpAddress, LSV2_PORT, 2000)
     if (reachable) {
       online = true
-      curr = { online: true, program: null, pgmState: null, tool: null, alarm: false, spindleRunning: null }
+      curr = { online: true, program: null, pgmState: null, tool: null, alarm: false, alarmText: null, spindleRunning: null }
     }
+  }
+
+  if (online && curr && machine.cncIpAddress) {
+    // Tool nummer uitlezen via plain R_RI block (offset 264)
+    const toolNr = await readToolNr(machine.cncIpAddress)
+    if (toolNr !== null && toolNr > 0) curr.tool = toolNr
   }
 
   if (online) {
@@ -968,8 +1009,8 @@ async function pollMachineState(machine) {
   }
 
   const state = online
-    ? { online: true, program: curr.program ?? null, pgmState: curr.pgmState ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, spindleRunning: curr.spindleRunning ?? null }
-    : { online: false, program: null, pgmState: null, tool: null, alarm: false, spindleRunning: null }
+    ? { online: true, program: curr.program ?? null, pgmState: curr.pgmState ?? null, tool: curr.tool ?? null, alarm: curr.alarm ?? false, alarmText: curr.alarmText ?? null, spindleRunning: curr.spindleRunning ?? null }
+    : { online: false, program: null, pgmState: null, tool: null, alarm: false, alarmText: null, spindleRunning: null }
 
   let events = diffState(prev, state, online)
   machineState.set(machine.id, state)
@@ -1103,10 +1144,12 @@ async function syncAll() {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-const runOnce      = process.argv.includes('--once')
-const runDiag      = process.argv.includes('--diag')
-const runScanIdx   = process.argv.indexOf('--scan-spindle')
-const runScanIp    = runScanIdx !== -1 ? process.argv[runScanIdx + 1] : null
+const runOnce       = process.argv.includes('--once')
+const runDiag       = process.argv.includes('--diag')
+const runScanIdx    = process.argv.indexOf('--scan-spindle')
+const runScanIp     = runScanIdx    !== -1 ? process.argv[runScanIdx    + 1] : null
+const runScanRiIdx  = process.argv.indexOf('--scan-ri')
+const runScanRiIp   = runScanRiIdx  !== -1 ? process.argv[runScanRiIdx  + 1] : null
 
 let syncInProgress = false
 
@@ -1249,6 +1292,199 @@ if (runScanIp) {
 
   await poll()
   setInterval(poll, SCAN_POLL)
+
+} else if (runScanRiIp) {
+  // ── R_RI parameter scanner ─────────────────────────────────────────────────
+  // Gebruik: node cnc-agent.js --scan-ri 192.168.1.x
+  //
+  // Doel: ontdekken welke R_RI parameters beschikbaar zijn zonder DNC-licentie.
+  // Doet twee dingen:
+  //   1. Plain R_RI dump  — roept R_RI aan zonder paramID en toont alle bekende
+  //      velden incl. errCode (offset 268) dat mogelijk PLC-fouten bevat.
+  //   2. Parametrische scan — probeert mkRRI(0..150) en toont welke S_RI
+  //      teruggeven en welke T_ERR (niet beschikbaar / DNC vereist).
+  //
+  // Resultaat wordt opgeslagen als JSON in %TEMP%\cnc-agent\ri-scan-<ip>.json
+
+  const RI_SCAN_END = 150  // parameters 0..150
+
+  /** Interpreteert een raw Buffer als meerdere typen tegelijk. */
+  function interpretRIValue(raw) {
+    if (!raw || raw.length === 0) return '(leeg)'
+    const hex = (raw.toString('hex').match(/../g) ?? []).join(' ')
+    const parts = []
+    if (raw.length >= 2) parts.push(`u16=${raw.readUInt16BE(0)}`)
+    if (raw.length >= 4) {
+      parts.push(`i32=${raw.readInt32BE(0)}`)
+      const f = raw.readFloatBE(0)
+      if (isFinite(f) && Math.abs(f) < 1e7) parts.push(`f32=${f.toFixed(3)}`)
+    }
+    const str = raw.toString('latin1').replace(/\0.*$/, '').trim()
+    if (str.length > 1 && /^[\x20-\x7E]+$/.test(str)) parts.push(`str="${str}"`)
+    return `${hex}  [${parts.join('  ')}]`
+  }
+
+  /** Scant mkRRI(startParam..endParam) in één LSV2-sessie. */
+  function scanRIParametric(ip, startParam, endParam) {
+    return new Promise((resolve) => {
+      const socket = new net.Socket()
+      let rxBuf = Buffer.alloc(0)
+      let step  = 0
+      let timer
+      const results = new Map()
+
+      const loginCmds = [LSV2_A_LGINSPECT, LSV2_C_CC_03, LSV2_C_CC_06]
+      const paramIds  = []
+      for (let p = startParam; p <= endParam; p++) paramIds.push(p)
+      const allCmds = [...loginCmds, ...paramIds.map(p => mkRRI(p))]
+
+      const finish = () => {
+        clearTimeout(timer)
+        if (!socket.destroyed) socket.destroy()
+        resolve(results)
+      }
+
+      const sendNext = () => {
+        if (step >= allCmds.length) return finish()
+        socket.write(allCmds[step++])
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          const paramIdx = (step - 1) - loginCmds.length
+          if (paramIdx >= 0 && paramIdx < paramIds.length)
+            results.set(paramIds[paramIdx], { ok: false, timeout: true, raw: null })
+          rxBuf = Buffer.alloc(0)
+          sendNext()
+        }, 300)
+      }
+
+      socket.setTimeout(15000)
+      socket.connect(LSV2_PORT, ip, () => sendNext())
+
+      socket.on('data', chunk => {
+        rxBuf = Buffer.concat([rxBuf, chunk])
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          const type     = rxBuf.length >= 2 ? rxBuf.readUInt16BE(0) : -1
+          const body     = rxBuf.slice(4)
+          const cmdIdx   = step - 1
+          const paramIdx = cmdIdx - loginCmds.length
+
+          if (paramIdx >= 0 && paramIdx < paramIds.length) {
+            if (type === 2) {
+              results.set(paramIds[paramIdx], { ok: false, timeout: false, raw: null })
+            } else {
+              // Skip de 4-byte 'S_RI' command echo, data begint daarna
+              results.set(paramIds[paramIdx], { ok: true, raw: body.slice(4) })
+            }
+          }
+
+          rxBuf = Buffer.alloc(0)
+          sendNext()
+        }, 120)
+      })
+
+      socket.on('error',   finish)
+      socket.on('timeout', finish)
+      socket.on('close',   () => { if (!socket.destroyed) finish() })
+    })
+  }
+
+  // ── Start scan ────────────────────────────────────────────────────────────
+
+  console.log(`🔍  R_RI parameter scanner`)
+  console.log(`    Machine : ${runScanRiIp}`)
+  console.log(`    Bereik  : R_RI 0–${RI_SCAN_END}\n`)
+
+  const reachable = await tcpPing(runScanRiIp, LSV2_PORT, 2000)
+  if (!reachable) {
+    console.error(`❌  Poort ${LSV2_PORT} niet bereikbaar op ${runScanRiIp}`)
+    process.exit(1)
+  }
+  console.log(`✅  LSV2 poort bereikbaar\n`)
+
+  // ── Deel 1: plain R_RI dump ───────────────────────────────────────────────
+  console.log(`📋  Plain R_RI dump (zonder paramID — vaste machine-info block):`)
+  try {
+    const raw = await lsv2Command(runScanRiIp, 'R_RI', 5000)
+    console.log(`    Response: ${raw.length} bytes`)
+    console.log(`    Hex (eerste 32 bytes): ${(raw.toString('hex').match(/../g) ?? []).slice(0, 32).join(' ')}`)
+
+    // Bekende velden (uit --diag modus en pyLSV2 documentatie)
+    const knownFields = [
+      { offset: 0,   len: 4,   label: 'exec_state   (int32LE)' },
+      { offset: 4,   len: 4,   label: 'pgm_status   (int32LE)' },
+      { offset: 8,   len: 256, label: 'pgm_name     (string)'  },
+      { offset: 264, len: 4,   label: 'tool_nr      (int32LE)' },
+      { offset: 268, len: 4,   label: 'error_code   (int32LE) ← PLC-fout?' },
+    ]
+    console.log(`\n    Bekende velden:`)
+    for (const f of knownFields) {
+      if (raw.length < f.offset + f.len) continue
+      const slice = raw.slice(f.offset, f.offset + f.len)
+      let val
+      if (f.label.includes('string')) {
+        val = `"${slice.toString('latin1').replace(/\0.*$/, '').trim()}"`
+      } else {
+        val = `${slice.readInt32LE(0)}  (0x${slice.readUInt32LE(0).toString(16).padStart(8,'0')})`
+      }
+      console.log(`    [${String(f.offset).padStart(3)}]  ${f.label.padEnd(40)} = ${val}`)
+    }
+
+    // Dump resterende bytes per 4-byte blok (als er meer data is)
+    if (raw.length > 272) {
+      console.log(`\n    Extra bytes (offset 272+):`)
+      for (let off = 272; off < Math.min(raw.length, 400); off += 4) {
+        const slice = raw.slice(off, off + 4)
+        if (slice.length < 4) break
+        const i32 = slice.readInt32LE(0)
+        if (i32 !== 0) console.log(`    [${String(off).padStart(3)}]  ${i32}  (0x${slice.readUInt32LE(0).toString(16).padStart(8,'0')})`)
+      }
+    }
+  } catch (err) {
+    console.log(`    ❌  ${err.message}`)
+  }
+
+  // ── Deel 2: parametrische scan ────────────────────────────────────────────
+  console.log(`\n📊  Parametrische scan mkRRI(0–${RI_SCAN_END})...\n`)
+  process.stdout.write('    ')
+  const riResults = await scanRIParametric(runScanRiIp, 0, RI_SCAN_END)
+
+  const available = []
+  const denied    = []
+  for (const [paramId, res] of riResults) {
+    if (res.ok) available.push({ paramId, raw: res.raw })
+    else if (!res.timeout) denied.push(paramId)
+  }
+
+  console.log(`\n    ✅  Beschikbaar (${available.length}):`)
+  for (const { paramId, raw } of available) {
+    console.log(`    param ${String(paramId).padStart(3)}  ${interpretRIValue(raw)}`)
+  }
+
+  if (denied.length > 0) {
+    const chunks = []
+    for (let i = 0; i < denied.length; i += 20) chunks.push(denied.slice(i, i + 20).join(', '))
+    console.log(`\n    ❌  T_ERR / niet beschikbaar (${denied.length}):  ${chunks.join('\n' + ' '.repeat(40))}`)
+  }
+
+  // ── Sla op als JSON ───────────────────────────────────────────────────────
+  const outFile = join(tmpdir(), 'cnc-agent', `ri-scan-${runScanRiIp.replace(/\./g, '-')}.json`)
+  const output  = {
+    ip:        runScanRiIp,
+    scannedAt: new Date().toISOString(),
+    available: available.map(({ paramId, raw }) => ({
+      paramId,
+      hex:   (raw?.toString('hex').match(/../g) ?? []).join(' '),
+      u16:   raw?.length >= 2 ? raw.readUInt16BE(0) : null,
+      i32:   raw?.length >= 4 ? raw.readInt32BE(0)  : null,
+      str:   raw ? raw.toString('latin1').replace(/\0.*$/, '').trim() : null,
+    })),
+    denied,
+  }
+  await mkdir(join(tmpdir(), 'cnc-agent'), { recursive: true })
+  await writeFile(outFile, JSON.stringify(output, null, 2), 'utf8')
+  console.log(`\n💾  Opgeslagen: ${outFile}`)
+  process.exit(0)
 
 } else if (runDiag) {
   // Diagnose-modus: test TCP + LSV2 per machine zonder backend

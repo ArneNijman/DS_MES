@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { eq, desc, and, asc, gte, like, sql } from 'drizzle-orm'
-import { cncMachineEvents, cncProgramRuns, machines } from '../../db/schema.js'
+import { cncMachineEvents, cncProgramRuns, cncToolEntries, machines } from '../../db/schema.js'
 
 /** Extraheert het artikel-mapje uit een programmapad: TNC:\Program\22073-3201-11\... → 22073-3201-11 */
 function extractArticle(programName: string | null): string | null {
@@ -10,30 +10,14 @@ function extractArticle(programName: string | null): string | null {
   return parts.length >= 3 ? (parts[2] || null) : null
 }
 
-const STILSTAND_THRESHOLD_SEC = 600  // 10 minuten
-const OFFLINE_MIN_SEC         = 300  // offline perioden korter dan 5 min worden genegeerd (monitoring-ruis)
+const STILSTAND_THRESHOLD_SEC = 600    // 10 minuten gap voor stilstand
+const OFFLINE_MIN_SEC         = 300    // offline perioden korter dan 5 min worden genegeerd (monitoring-ruis)
+const WACHTTIJD_MIN_SEC       = 30     // spindel min 30 sec stil tijdens programma voor wachttijd
 
-const WORK_START_H      = 6   // 06:00
-const WORK_END_H        = 23  // 23:00
-const WORK_HOURS_PER_DAY = WORK_END_H - WORK_START_H  // 17
+const WORK_HOURS_PER_DAY = 24
 
-/** Aantal seconden van [start, end) dat binnen de werktijden (06:00–23:00) valt. */
 function workingHoursSeconds(start: Date, end: Date): number {
-  let total = 0
-  const e = end.getTime()
-  const day = new Date(start)
-  day.setHours(0, 0, 0, 0)
-
-  while (day.getTime() < e) {
-    const ws = new Date(day); ws.setHours(WORK_START_H, 0, 0, 0)
-    const we = new Date(day); we.setHours(WORK_END_H,   0, 0, 0)
-    const overlapStart = Math.max(start.getTime(), ws.getTime())
-    const overlapEnd   = Math.min(e, we.getTime())
-    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 1000
-    day.setDate(day.getDate() + 1)
-  }
-
-  return total
+  return Math.max(0, (end.getTime() - start.getTime()) / 1000)
 }
 
 // ── Downtime derivation ────────────────────────────────────────────────────
@@ -61,14 +45,27 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   let offlineStart:    Date | null = null
   let alarmStart:      Date | null = null
   let programStopTime: Date | null = null
+  let programRunning = false
+  let spindleOffAt:    Date | null = null
   let online = true
+
+  const closeWachttijd = (end: Date) => {
+    if (!spindleOffAt) return
+    if ((end.getTime() - spindleOffAt.getTime()) / 1000 >= WACHTTIJD_MIN_SEC)
+      periods.push(makePeriod('wachttijd', spindleOffAt, end))
+    spindleOffAt = null
+  }
 
   for (const ev of events) {
     const t = new Date(ev.occurredAt)
     switch (ev.eventType) {
       case 'MACHINE_OFFLINE':
-        if (online) { offlineStart = t; online = false }
-        programStopTime = null  // program stop voor offline valt onder offline periode
+        if (online) {
+          closeWachttijd(t)
+          programRunning = false; spindleOffAt = null
+          offlineStart = t; online = false
+        }
+        programStopTime = null
         break
       case 'MACHINE_ONLINE':
         if (offlineStart) {
@@ -82,13 +79,25 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
         if (alarmStart) periods.push(makePeriod('alarmstilstand', alarmStart, t))
         alarmStart = null; break
       case 'PROGRAM_STOPPED':
-        if (online) programStopTime = t; break
+        closeWachttijd(t)
+        programRunning = false; spindleOffAt = null
+        if (online) programStopTime = t
+        break
       case 'PROGRAM_STARTED':
+        programRunning = true
         if (programStopTime) {
           const gapSec = (t.getTime() - programStopTime.getTime()) / 1000
-          if (gapSec > STILSTAND_THRESHOLD_SEC) periods.push(makePeriod('stilstand', programStopTime, t))
+          if (gapSec > STILSTAND_THRESHOLD_SEC) {
+            periods.push(makePeriod('stilstand', programStopTime, t))
+          }
           programStopTime = null
         }
+        break
+      case 'SPINDLE_OFF':
+        if (programRunning && online) spindleOffAt = t
+        break
+      case 'SPINDLE_ON':
+        closeWachttijd(t)
         break
     }
   }
@@ -96,9 +105,15 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   const now = new Date()
   if (offlineStart && (now.getTime() - offlineStart.getTime()) / 1000 >= OFFLINE_MIN_SEC)
     periods.push(makePeriod('offline', offlineStart, null))
-  if (alarmStart)     periods.push(makePeriod('alarmstilstand', alarmStart, null))
-  if (programStopTime && !offlineStart && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC)
+  if (alarmStart)
+    periods.push(makePeriod('alarmstilstand', alarmStart, null))
+  if (programStopTime && !offlineStart && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC) {
     periods.push(makePeriod('stilstand', programStopTime, null))
+  }
+  if (programRunning && spindleOffAt && !offlineStart) {
+    if ((now.getTime() - spindleOffAt.getTime()) / 1000 >= WACHTTIJD_MIN_SEC)
+      periods.push(makePeriod('wachttijd', spindleOffAt, null))
+  }
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
   for (const p of periods) summary[p.type] += workingHoursSeconds(p.startedAt, p.endedAt ?? now)
@@ -313,9 +328,31 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
         const { periods, summary } = deriveDowntimePeriods(events)
         const periodMinutes        = days * WORK_HOURS_PER_DAY * 60
-        const totalDowntimeSec     = Object.values(summary).reduce((a, b) => a + b, 0)
+        const totalDowntimeSec     = summary.offline + summary.alarmstilstand + summary.stilstand
         const availabilityPct      = totalDowntimeSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / (periodMinutes * 60)) * 100))
         const ongoingPeriod        = periods.find(p => p.isOngoing) ?? null
+
+        // Actief gereedschap: meest recente TOOL_CHANGED event → naam opzoeken in tool-magazijn
+        const [lastToolChange] = await fastify.db
+          .select({ eventData: cncMachineEvents.eventData })
+          .from(cncMachineEvents)
+          .where(and(eq(cncMachineEvents.machineId, m.id), eq(cncMachineEvents.eventType, 'TOOL_CHANGED')))
+          .orderBy(desc(cncMachineEvents.occurredAt))
+          .limit(1)
+
+        let currentTool: { nr: number; name: string | null } | null = null
+        if (lastToolChange) {
+          const d = lastToolChange.eventData as { from?: number; to?: number } | null
+          const toolNr = d?.to ?? null
+          if (toolNr !== null) {
+            const [entry] = await fastify.db
+              .select({ name: cncToolEntries.name })
+              .from(cncToolEntries)
+              .where(and(eq(cncToolEntries.machineId, m.id), eq(cncToolEntries.toolNumber, toolNr)))
+              .limit(1)
+            currentTool = { nr: toolNr, name: entry?.name ?? null }
+          }
+        }
 
         return {
           id:   m.id,
@@ -329,6 +366,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
             wachttijd:      Math.round(summary.wachttijd / 60),
           },
           ongoingPeriod,
+          currentTool,
           periods,
         }
       })

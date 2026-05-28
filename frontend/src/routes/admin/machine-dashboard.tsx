@@ -24,6 +24,7 @@ interface MachineSummary {
   totalDowntimeMinutes: number
   byType: { offline: number; alarmstilstand: number; stilstand: number; wachttijd: number }
   ongoingPeriod: DowntimePeriod | null
+  currentTool: { nr: number; name: string | null } | null
   periods: DowntimePeriod[]
 }
 
@@ -96,6 +97,11 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
                 {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
               </span>
             )}
+            {machine.currentTool && machine.ongoingPeriod?.type !== 'offline' && (
+              <p className="text-xs text-gray-400 mt-0.5 truncate">
+                T{machine.currentTool.nr}{machine.currentTool.name ? ` · ${machine.currentTool.name}` : ''}
+              </p>
+            )}
           </div>
 
           <div className="flex-1 flex items-center gap-3">
@@ -109,7 +115,7 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
 
           <div className="flex items-center gap-2 w-36 justify-end shrink-0">
             <span className="text-xs text-gray-600">
-              {total > 0 ? `${formatDuration(total)} stilstand` : <span className="text-green-600">Geen stilstand ✓</span>}
+              {total > 0 ? `Totale downtime: ${formatDuration(total)}` : <span className="text-green-600">Geen downtime ✓</span>}
             </span>
             {hasPeriods && (
               <ChevronDown size={14} className={cn('text-gray-400 transition-transform shrink-0', expanded && 'rotate-180')} />
@@ -119,6 +125,7 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
 
         {total > 0 && (
           <div className="flex items-center gap-1.5 mt-1.5 pl-44">
+            <span className="text-xs text-gray-400 shrink-0">Waarvan:</span>
             {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map((type) => {
               const mins = machine.byType[type]
               if (!mins) return null
@@ -225,7 +232,7 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
   // Delta per dag
   const dailyDeltas = points.map((p, i) => ({
     date:  p.date,
-    delta: i === 0 ? 0 : Math.max(0, +(p.value - points[i - 1].value).toFixed(1)),
+    delta: i === 0 ? 0 : Math.min(24, Math.max(0, +(p.value - points[i - 1].value).toFixed(1))),
     totaal: +p.value.toFixed(1),
   }))
 
@@ -304,7 +311,7 @@ function BeschikbaarheidInfo() {
           <div className="absolute left-0 top-6 z-20 w-96 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-xs text-gray-600 leading-relaxed space-y-3">
             <div>
               <p className="font-semibold text-gray-800 mb-1">Hoe werkt de beschikbaarheidsbalk?</p>
-              <p>Het systeem kijkt elke dag van <strong>06:00 tot 23:00</strong> (17 uur) hoelang een machine zonder problemen beschikbaar was.</p>
+              <p>Het percentage toont hoeveel van de <strong>totale tijd</strong> een machine beschikbaar was — zonder stilstand, offline of alarm. 100% betekent geen enkel probleem geregistreerd. 60% betekent dat de machine 40% van de tijd stilstond, offline was of in alarm.</p>
             </div>
 
             <div>
@@ -319,7 +326,6 @@ function BeschikbaarheidInfo() {
             <div>
               <p className="font-semibold text-gray-700 mb-1">Dit telt NIET mee:</p>
               <ul className="space-y-1 ml-1">
-                <li className="flex gap-2"><span className="text-gray-300 font-bold">·</span><span>Alles buiten 06:00–23:00 (de nacht)</span></li>
                 <li className="flex gap-2"><span className="text-gray-300 font-bold">·</span><span>Netwerkhaperingen korter dan 5 minuten</span></li>
               </ul>
             </div>
@@ -341,7 +347,7 @@ const DOWNTIME_LEGEND: { color: string; label: string; desc: string }[] = [
   {
     color: 'bg-green-500',
     label: 'Beschikbaar',
-    desc:  'Geen geregistreerde stilstand binnen de werktijden (06:00–23:00). Percentage van de geplande productietijd.',
+    desc:  'Percentage van de totale tijd dat de machine beschikbaar was — geen stilstand, offline of alarm.',
   },
   {
     color: 'bg-red-400',
@@ -361,7 +367,7 @@ const DOWNTIME_LEGEND: { color: string; label: string; desc: string }[] = [
   {
     color: 'bg-orange-400',
     label: 'Wachttijd',
-    desc:  'Spindel staat stil terwijl een programma loopt (bijv. gereedschapwissel, instellen). Nog niet actief.',
+    desc:  'Spindel staat stil terwijl een programma loopt (bijv. gereedschapwissel, instellen).',
   },
 ]
 
@@ -432,7 +438,7 @@ export function MachineDashboardContent() {
           <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Activity size={17} className="text-red-500" /> Machine Dashboard
           </h1>
-          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines — werktijd 06:00–23:00</p>
+          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
         </div>
 
         {/* Periode filter + samenvatting */}
@@ -528,7 +534,7 @@ export default function MachineDashboard() {
           </button>
           <div>
             <h1 className="text-base font-semibold text-gray-900">Machine Dashboard</h1>
-            <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines — werktijd 06:00–23:00</p>
+            <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
           </div>
         </div>
         <MachineDashboardContent />
