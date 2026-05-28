@@ -80,6 +80,107 @@ interface AllToolsResponse {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function parseToolCode(name: string | null): string {
+  if (!name) return ''
+  const m = name.match(/^(.+)-([A-Z]?\d+\w*)$/)
+  const toolCode   = m ? m[1] : name
+  const holderCode = m ? m[2] : ''
+
+  const MAT: Record<string, string> = { A: 'Aluminium', U: 'Universeel', H: 'HSS' }
+  const LEN: Record<string, string> = { SN: 'Normale lengte', N: 'Normale lengte', SL: 'Lang', L: 'Lang', K: 'Kort' }
+
+  // Houdertype
+  let houder = ''
+  if (holderCode) {
+    const n = parseInt(holderCode)
+    if (holderCode.startsWith('H'))      houder = 'HSK'
+    else if (holderCode.startsWith('S')) houder = 'SK50'
+    else if (n >= 101 && n <= 199)       houder = 'Freeskop'
+    else if (n >= 201 && n <= 299)       houder = 'Opschroefhouder'
+    else if (n >= 301 && n <= 399)       houder = 'Weldonhouder'
+    else if (n >= 401 && n <= 499)       houder = 'Spantang'
+    else if (n >= 501 && n <= 599)       houder = 'Boorhoofd'
+    else if (n >= 601 && n <= 699)       houder = 'Morse conus'
+    else if (n >= 701 && n <= 799)       houder = 'Tussenhouder'
+    else if (n >= 801 && n <= 899)       houder = 'Diverse houder'
+  }
+
+  let parts: string[] = []
+
+  // WP-frezen met prefix (101-WP42R030)
+  const wpMatch = toolCode.match(/^(\d+)-WP(\d+)(R(\d+)|H(\d+\w*))/i)
+  // WP zonder prefix (WP66R6)
+  const wpSimple = toolCode.match(/^WP(\d+)R(\d+\.?\d*)/i)
+  // VF/BF: VF100A2SN
+  const vfMatch  = toolCode.match(/^(VF|BF)(\d{2,3})([AU]?)(\d?)S?(SN|SL|N|L)?/i)
+  // Torusfrees: T100R030A2SN
+  const torMatch = toolCode.match(/^T(\d{3})R(\d{3})([AU]?)(\d?)S?(SN|SL|N|L)?/i)
+  // Tap: TM100X150AD
+  const tmMatch  = toolCode.match(/^TM(\d{3})X(\d+)([AU]?)(D|B)?/i)
+  // Centerboor: CB100H90N
+  const cbMatch  = toolCode.match(/^CB(\d{3})H(\d+)(N|L)?/i)
+  // Boor: B010AHSSK
+  const bMatch   = toolCode.match(/^B(\d{3})([AU]?)(HSS|HM)?(K|L)?/i)
+  // Afbraamfrees: SPAB12H45A
+  const spabMatch = toolCode.match(/^SPAB(\d+)H(\d+)([AU]?)/i)
+
+  if (spabMatch) {
+    parts = ['Afbraamfrees', `${spabMatch[1]}x${spabMatch[2]}°`,
+      spabMatch[3] ? MAT[spabMatch[3].toUpperCase()] ?? '' : ''].filter(Boolean)
+  } else if (/^SP/i.test(toolCode)) {
+    parts = ['Special']
+  } else if (wpMatch) {
+    const prefix = parseInt(wpMatch[1]), d = parseInt(wpMatch[2])
+    const rVal = wpMatch[4] ? `R${parseInt(wpMatch[4]) / 10}` : ''
+    const hVal = wpMatch[5] ?? ''
+    const wpType = prefix === 101 ? 'Torusfrees (V platen)'
+                 : prefix === 102 ? 'Torusfrees (Ronde platen)'
+                 : prefix === 103 ? 'Hoekfrees'
+                 : prefix === 105 ? 'Vlakfrees'
+                 : 'Wisselplaatfrees'
+    const wpDim  = prefix === 105 ? `Ø${d}x${hVal}` : `Ø${d}${rVal ? ' ' + rVal : hVal ? ' H' + hVal : ''}`
+    parts = [wpType, wpDim].filter(Boolean)
+  } else if (wpSimple) {
+    parts = ['Wisselplaatfrees', `Ø${parseInt(wpSimple[1])} R${wpSimple[2]}`]
+  } else if (vfMatch) {
+    const typeName = vfMatch[1].toUpperCase() === 'VF' ? 'Vingerfrees' : 'Bolfrees'
+    const d = vfMatch[2].length === 3 ? parseInt(vfMatch[2]) / 10 : parseInt(vfMatch[2])
+    const mat = vfMatch[3] ? MAT[vfMatch[3].toUpperCase()] ?? '' : ''
+    const snij = vfMatch[4] ? `${vfMatch[4]} snijder` : ''
+    const len = vfMatch[5] ? LEN[vfMatch[5].toUpperCase()] ?? '' : ''
+    parts = [typeName, `Ø${d}`, snij, mat, len].filter(Boolean)
+  } else if (torMatch) {
+    const d = parseInt(torMatch[1]) / 10, r = parseInt(torMatch[2]) / 10
+    const mat = torMatch[3] ? MAT[torMatch[3].toUpperCase()] ?? '' : ''
+    const snij = torMatch[4] ? `${torMatch[4]} snijder` : ''
+    const len = torMatch[5] ? LEN[torMatch[5].toUpperCase()] ?? '' : ''
+    parts = ['Torusfrees', `Ø${d} R${r}`, snij, mat, len].filter(Boolean)
+  } else if (tmMatch) {
+    const thread = parseInt(tmMatch[1]) / 10
+    const pitch  = parseInt(tmMatch[2]) / 100
+    const mat  = tmMatch[3] ? MAT[tmMatch[3].toUpperCase()] ?? '' : ''
+    const type2 = tmMatch[4]?.toUpperCase() === 'D' ? 'Doorlopend' : tmMatch[4]?.toUpperCase() === 'B' ? 'Blind' : ''
+    parts = ['Tap', `M${thread} p${pitch}`, mat, type2].filter(Boolean)
+  } else if (cbMatch) {
+    const d = parseInt(cbMatch[1]) / 10
+    const angle = cbMatch[2]
+    const len = cbMatch[3] ? LEN[cbMatch[3].toUpperCase()] ?? '' : ''
+    parts = ['Centerboor', `Ø${d}`, `${angle}° tophoek`, len].filter(Boolean)
+  } else if (bMatch) {
+    const d = parseInt(bMatch[1])
+    const mat  = bMatch[2] ? MAT[bMatch[2].toUpperCase()] ?? '' : ''
+    const steel = bMatch[3]?.toUpperCase() ?? ''
+    const len  = bMatch[4] ? LEN[bMatch[4].toUpperCase()] ?? '' : ''
+    parts = ['Boor', `Ø${d}`, mat, steel, len].filter(Boolean)
+  }
+
+  const toolDesc = parts.join(', ')
+  if (!toolDesc && !houder) return ''
+  if (!houder) return toolDesc
+  if (!toolDesc) return houder
+  return `${toolDesc} — ${houder}`
+}
+
 function lifePercent(tool: CncToolEntry): number | null {
   const time2 = tool.time2 ? parseFloat(tool.time2) : 0
   const curTime = tool.curTime ? parseFloat(tool.curTime) : 0
@@ -1492,7 +1593,12 @@ export function CncMachiningContent() {
                         <td className="px-4 py-2.5">
                           {isEmpty
                             ? <span className="text-gray-400 italic text-xs">leeg</span>
-                            : <span className="text-gray-700 font-medium">{tool.name}</span>
+                            : <>
+                                <span className="text-gray-700 font-medium">{tool.name}</span>
+                                {parseToolCode(tool.name) && (
+                                  <p className="text-xs text-gray-400 mt-0.5">{parseToolCode(tool.name)}</p>
+                                )}
+                              </>
                           }
                         </td>
                         <td className="px-4 py-2.5 text-gray-500">{isEmpty ? '—' : (tool.doc ?? '-')}</td>

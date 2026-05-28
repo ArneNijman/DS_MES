@@ -428,6 +428,7 @@ const IGNORED_ALARM_TEXTS = [
   'kleine letter niet toegestaan',
   'w100 het gereedschap handmatig uit de spindel wegnemen',
   '010 werkruimte is open !',
+  'handwiel in laadstation plaatsen',
 ]
 
 /**
