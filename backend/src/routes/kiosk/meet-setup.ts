@@ -17,7 +17,9 @@ import {
   productSetupMaten,
 } from '../../db/schema.js'
 import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
-import pdfParse from 'pdf-parse'
+import { createRequire } from 'node:module'
+const _require = createRequire(import.meta.url)
+const pdfParse = _require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
 
 export async function meetSetupRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: [fastify.requireAuth] }
@@ -685,7 +687,7 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
       tolerantie:     body.tolerantie ?? null,
       omschrijving:   body.omschrijving ?? null,
       sortOrder:      (maxRow?.maxSort ?? 0) + 1,
-      aangemaaktDoor: req.user?.id ?? null,
+      aangemaaktDoor: (req as any).employee?.employeeId ?? null,
     }).returning()
     return row
   })
@@ -707,7 +709,7 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
     if (body.gemetenWaarde !== undefined) {
       updateData.gemetenWaarde = body.gemetenWaarde
       if (body.gemetenWaarde !== null) {
-        updateData.gemetenDoor = req.user?.id ?? null
+        updateData.gemetenDoor = (req as any).employee?.employeeId ?? null
         updateData.gemetenOp   = new Date()
       } else {
         updateData.gemetenDoor = null

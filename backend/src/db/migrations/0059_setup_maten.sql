@@ -1,4 +1,4 @@
-CREATE TABLE "product_setup_maten" (
+CREATE TABLE IF NOT EXISTS "product_setup_maten" (
   "id"              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "setup_id"        uuid NOT NULL REFERENCES "product_setups"("id") ON DELETE CASCADE,
   "balloon_nr"      integer NOT NULL,
@@ -14,4 +14,4 @@ CREATE TABLE "product_setup_maten" (
   "sort_order"      integer NOT NULL DEFAULT 0,
   "created_at"      timestamp with time zone NOT NULL DEFAULT now()
 );
-CREATE INDEX ON "product_setup_maten"("setup_id", "sort_order");
+CREATE INDEX IF NOT EXISTS "product_setup_maten_setup_id_sort_order_idx" ON "product_setup_maten"("setup_id", "sort_order");
