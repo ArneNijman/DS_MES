@@ -154,7 +154,10 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
     const conditions = [
       eq(cncMachineEvents.machineId, id),
-      sql`NOT (${cncMachineEvents.eventType} = 'ALARM_TRIGGERED' AND ${cncMachineEvents.eventData}->>'alarmText' LIKE 'W100%')`,
+      sql`NOT (${cncMachineEvents.eventType} = 'ALARM_TRIGGERED' AND (
+        ${cncMachineEvents.eventData}->>'alarmText' LIKE 'W100%' OR
+        ${cncMachineEvents.eventData}->>'alarmText' LIKE '055 TC%'
+      ))`,
     ]
     if (q.eventType) conditions.push(eq(cncMachineEvents.eventType, q.eventType))
 

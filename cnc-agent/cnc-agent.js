@@ -430,6 +430,7 @@ const IGNORED_ALARM_TEXTS = [
   '010 werkruimte is open !',
   'handwiel in laadstation plaatsen',
   '039 gereedschap ontklemmen a.u.b!',
+  '055 tc magazijn tijd overschreden',
 ]
 
 /**
@@ -741,8 +742,10 @@ function parseLogbookContent(content) {
     if (/^Error:/.test(trimmed)) {
       const ts  = extractLogTimestamp(line)
       const msg = lines[i + 1]?.trim() ?? ''
-      const codeMatch = msg.match(/^([A-Z]\d+)\b/)
-      const isIgnored = codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1])
+      const codeMatch  = msg.match(/^([A-Z]\d+)\b/)
+      const msgLower   = msg.toLowerCase().replace(/\s+/g, ' ')
+      const isIgnored  = (codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1])) ||
+        IGNORED_ALARM_TEXTS.some(t => msgLower.startsWith(t))
       const occurredAt = ts ?? new Date().toISOString()
       if (!isIgnored && !isDuplicateAlarm(currentMachineIp, msg, occurredAt)) {
         events.push({ machineIp: currentMachineIp, eventType: 'ALARM_TRIGGERED', occurredAt, data: { message: msg } })
@@ -755,7 +758,10 @@ function parseLogbookContent(content) {
       const ts  = extractLogTimestamp(line)
       const msg = lines[i + 1]?.trim() ?? ''
       const codeMatch = msg.match(/^([A-Z]\d+)\b/)
-      if (!(codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1]))) {
+      const msgLower  = msg.toLowerCase().replace(/\s+/g, ' ')
+      const isIgnored = (codeMatch && IGNORED_ALARM_CODES.has(codeMatch[1])) ||
+        IGNORED_ALARM_TEXTS.some(t => msgLower.startsWith(t))
+      if (!isIgnored) {
         events.push({ machineIp: currentMachineIp, eventType: 'ALARM_CLEARED', occurredAt: ts ?? new Date().toISOString() })
       }
       i++; if (/^\s/.test(lines[i] ?? '')) i++; continue
