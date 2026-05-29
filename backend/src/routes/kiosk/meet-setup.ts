@@ -19,7 +19,7 @@ import {
 import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
 import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
-const pdfParse = _require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
+const { PDFParse } = _require('pdf-parse') as { PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }> } }
 
 export async function meetSetupRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: [fastify.requireAuth] }
@@ -753,10 +753,12 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
 
     let text = ''
     try {
-      const parsed = await pdfParse(buf)
-      text = parsed.text
-    } catch {
-      return reply.status(422).send({ error: 'Kon PDF niet verwerken. Alleen PDF-bestanden worden ondersteund.' })
+      const parser = new PDFParse({ data: buf })
+      const parsed = await parser.getText()
+      text = parsed.text ?? ''
+    } catch (err: any) {
+      fastify.log.error(`[extract] PDFParse fout: ${err?.message ?? err}`)
+      return reply.status(422).send({ error: `PDF-fout: ${err?.message ?? 'onbekend'}` })
     }
 
     const patterns = [
