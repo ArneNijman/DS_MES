@@ -5,7 +5,7 @@ import {
   FileText, Cpu, Paperclip, Info,
   ExternalLink, RefreshCw, Wrench, PackageSearch, Layers,
   Download, FolderOpen, Lock, Unlock, GitCompare, Ruler, Send, AlertTriangle,
-  ClipboardCheck, CheckCircle2,
+  ClipboardCheck, CheckCircle2, ListChecks, ChevronDown,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -847,7 +847,7 @@ function SetupDetail({
 }) {
   const qc = useQueryClient()
   const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
-  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht'>('cnc')
+  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht' | 'maten'>('cnc')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
@@ -961,7 +961,7 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'cnc', 'bijlagen', 'overdracht'] as const).map(tab => (
+          {(['info', 'cnc', 'bijlagen', 'overdracht', 'maten'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -970,7 +970,7 @@ function SetupDetail({
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
-              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
+              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : tab === 'overdracht' ? 'Overdracht' : 'Maten'}
             </button>
           ))}
         </div>
@@ -1158,6 +1158,9 @@ function SetupDetail({
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
             <OverdrachtTab stepId={selectedStep.id} />
+          )}
+          {activeTab === 'maten' && (
+            <MatenTab setupId={setupId} setupType="product" />
           )}
         </div>
 
@@ -2211,6 +2214,306 @@ function OverdrachtTab({ stepId }: { stepId: string }) {
 
           <div className="absolute bottom-4 text-white/60 text-xs">
             {lightbox.index + 1} / {lightbox.photos.length}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Maten tab ────────────────────────────────────────────────────────────────
+
+interface Maat {
+  id: string
+  balloonNr: number
+  kenmerk: string
+  nominaal: string
+  tolerantie: string | null
+  omschrijving: string | null
+  gemetenWaarde: string | null
+  status: 'goed' | 'afgekeurd' | null
+  gemetenOp: string | null
+  gemetenDoorNaam: string | null
+  aangemaaktDoorNaam: string | null
+  sortOrder: number
+}
+
+function parseTolerantie(tolerantie: string | null): { min: number; max: number } | null {
+  if (!tolerantie) return null
+  // ±0.05
+  const pm = tolerantie.match(/^[±]\s*([\d.,]+)$/)
+  if (pm) { const v = parseFloat(pm[1].replace(',', '.')); return { min: -v, max: v } }
+  // +0.05/-0.02
+  const asym = tolerantie.match(/^[+]([\d.,]+)\s*\/\s*[-]([\d.,]+)$/)
+  if (asym) return { min: -parseFloat(asym[2].replace(',', '.')), max: parseFloat(asym[1].replace(',', '.')) }
+  return null
+}
+
+function berekenStatus(nominaal: string, tolerantie: string | null, gemeten: string): 'goed' | 'afgekeurd' | null {
+  const nom = parseFloat(nominaal.replace(',', '.').replace(/[^0-9.,\-]/g, ''))
+  const gem = parseFloat(gemeten.replace(',', '.'))
+  if (isNaN(nom) || isNaN(gem)) return null
+  const tol = parseTolerantie(tolerantie)
+  if (!tol) return null
+  return (gem >= nom + tol.min && gem <= nom + tol.max) ? 'goed' : 'afgekeurd'
+}
+
+function StatusBadgeMaat({ status }: { status: 'goed' | 'afgekeurd' | null }) {
+  if (!status) return <span className="text-xs text-gray-400">—</span>
+  return (
+    <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', status === 'goed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
+      {status === 'goed' ? 'Goed' : 'Afgekeurd'}
+    </span>
+  )
+}
+
+export function MatenTab({ setupId, setupType }: { setupId: string; setupType: 'product' | 'meet' }) {
+  const qc = useQueryClient()
+  const base = setupType === 'product' ? `/kiosk/product-setups/${setupId}` : `/kiosk/meet-setups/${setupId}`
+
+  const { data: maten = [], isLoading } = useQuery<Maat[]>({
+    queryKey: ['setup-maten', setupId],
+    queryFn: () => apiFetch(`${base}/maten`) as Promise<Maat[]>,
+  })
+
+  const [editId, setEditId]       = useState<string | null>(null)
+  const [editData, setEditData]   = useState<Partial<Maat>>({})
+  const [addOpen, setAddOpen]     = useState(false)
+  const [newRow, setNewRow]       = useState({ kenmerk: '', nominaal: '', tolerantie: '', omschrijving: '' })
+  const [extractOpen, setExtractOpen] = useState(false)
+  const [extractFragments, setExtractFragments] = useState<string[]>([])
+  const [extractSelected, setExtractSelected]   = useState<Set<string>>(new Set())
+  const [extractLoading, setExtractLoading]     = useState(false)
+
+  // Tekeningen ophalen voor extract-dropdown
+  const { data: setupData } = useQuery<{ documents: { id: string; documentType: string; fileName: string }[] }>({
+    queryKey: ['product-setup', setupId],
+    queryFn:  () => apiFetch(setupType === 'product' ? `/kiosk/product-setups/${setupId}` : `/kiosk/meet-setups/${setupId}`) as Promise<any>,
+    staleTime: 60_000,
+  })
+  const tekeningen = (setupData?.documents ?? []).filter(d => d.documentType === 'tekening')
+  const [extractDocId, setExtractDocId] = useState<string>('')
+
+  const addMaat = useMutation({
+    mutationFn: (body: typeof newRow) => apiFetch(`${base}/maten`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }); setNewRow({ kenmerk: '', nominaal: '', tolerantie: '', omschrijving: '' }); setAddOpen(false) },
+  })
+
+  const updateMaat = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Maat> }) =>
+      apiFetch(`${base}/maten/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }); setEditId(null) },
+  })
+
+  const deleteMaat = useMutation({
+    mutationFn: (id: string) => apiFetch(`${base}/maten/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }),
+  })
+
+  const handleEdit = (m: Maat) => {
+    setEditId(m.id)
+    setEditData({ kenmerk: m.kenmerk, nominaal: m.nominaal, tolerantie: m.tolerantie ?? '', omschrijving: m.omschrijving ?? '', gemetenWaarde: m.gemetenWaarde ?? '', status: m.status })
+  }
+
+  const handleSaveEdit = (m: Maat) => {
+    const data: Partial<Maat> = { ...editData }
+    // Auto-bereken status als gemeten waarde en tolerantie aanwezig
+    if (data.gemetenWaarde && data.gemetenWaarde !== m.gemetenWaarde) {
+      const auto = berekenStatus(data.nominaal ?? m.nominaal, data.tolerantie ?? m.tolerantie, data.gemetenWaarde)
+      if (auto !== null) data.status = auto
+    }
+    updateMaat.mutate({ id: m.id, data })
+  }
+
+  const handleExtract = async () => {
+    if (!extractDocId) return
+    setExtractLoading(true)
+    try {
+      const res = await apiFetch(`${base}/maten/extract`, { method: 'POST', body: JSON.stringify({ documentId: extractDocId }) }) as { fragments: string[] }
+      setExtractFragments(res.fragments ?? [])
+      setExtractSelected(new Set())
+    } catch { /* silent */ } finally { setExtractLoading(false) }
+  }
+
+  const handleOvernemen = async () => {
+    for (const fragment of extractFragments.filter(f => extractSelected.has(f))) {
+      await apiFetch(`${base}/maten`, { method: 'POST', body: JSON.stringify({ nominaal: fragment, kenmerk: '' }) })
+    }
+    qc.invalidateQueries({ queryKey: ['setup-maten', setupId] })
+    setExtractOpen(false)
+  }
+
+  // Samenvatting
+  const gemeten    = maten.filter(m => m.gemetenWaarde)
+  const goedCount  = gemeten.filter(m => m.status === 'goed').length
+  const afgekeurd  = gemeten.filter(m => m.status === 'afgekeurd').length
+
+  if (isLoading) return <div className="p-6 text-sm text-gray-400">Laden…</div>
+
+  return (
+    <div className="p-4 flex flex-col gap-3 h-full overflow-auto">
+      {/* Header met samenvatting + knoppen */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <ListChecks size={16} className="text-teal-600" />
+          <span className="text-sm font-medium text-gray-700">{maten.length} maten</span>
+          {gemeten.length > 0 && (
+            <span className="text-xs text-gray-500">
+              {gemeten.length} gemeten — <span className="text-green-600 font-medium">{goedCount} goed</span>
+              {afgekeurd > 0 && <>, <span className="text-red-600 font-medium">{afgekeurd} afgekeurd</span></>}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {tekeningen.length > 0 && (
+            <button onClick={() => setExtractOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
+              <Search size={12} /> Extraheer uit PDF
+            </button>
+          )}
+          <button onClick={() => setAddOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+            <Plus size={12} /> Maat toevoegen
+          </button>
+        </div>
+      </div>
+
+      {/* Toevoegen formulier */}
+      {addOpen && (
+        <div className="border border-teal-200 rounded-lg p-3 bg-teal-50 flex flex-wrap gap-2 items-end">
+          <div className="flex flex-col gap-1 min-w-[120px]">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase">Kenmerk</label>
+            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="diameter, lengte…" value={newRow.kenmerk} onChange={e => setNewRow(r => ({ ...r, kenmerk: e.target.value }))} />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[100px]">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase">Nominaal</label>
+            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="25.0" value={newRow.nominaal} onChange={e => setNewRow(r => ({ ...r, nominaal: e.target.value }))} />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[100px]">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase">Tolerantie</label>
+            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="±0.05 of H7" value={newRow.tolerantie} onChange={e => setNewRow(r => ({ ...r, tolerantie: e.target.value }))} />
+          </div>
+          <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase">Omschrijving</label>
+            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="optioneel" value={newRow.omschrijving} onChange={e => setNewRow(r => ({ ...r, omschrijving: e.target.value }))} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => addMaat.mutate(newRow)} disabled={!newRow.nominaal.trim()} className="px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">Opslaan</button>
+            <button onClick={() => setAddOpen(false)} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">Annuleren</button>
+          </div>
+        </div>
+      )}
+
+      {/* Tabel */}
+      {maten.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 text-sm">Nog geen maten. Voeg er een toe of extraheer uit de tekening.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500 w-8">#</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Kenmerk</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Nominaal</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Tolerantie</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Gemeten</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Status</th>
+                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Omschrijving</th>
+                <th className="py-2 px-2 w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {maten.map(m => (
+                <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-2 px-2 text-xs text-gray-400 font-mono">{m.balloonNr}</td>
+                  {editId === m.id ? (
+                    <>
+                      <td className="py-1 px-1"><input autoFocus className="border border-gray-300 rounded px-1.5 py-1 text-sm w-full" value={editData.kenmerk ?? ''} onChange={e => setEditData(d => ({ ...d, kenmerk: e.target.value }))} /></td>
+                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-24" value={editData.nominaal ?? ''} onChange={e => setEditData(d => ({ ...d, nominaal: e.target.value }))} /></td>
+                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-24" placeholder="±0.05" value={editData.tolerantie ?? ''} onChange={e => setEditData(d => ({ ...d, tolerantie: e.target.value }))} /></td>
+                      <td className="py-1 px-1">
+                        <input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-20" placeholder="gemeten" value={editData.gemetenWaarde ?? ''} onChange={e => setEditData(d => ({ ...d, gemetenWaarde: e.target.value || null }))} />
+                      </td>
+                      <td className="py-1 px-1">
+                        <select className="border border-gray-300 rounded px-1.5 py-1 text-xs" value={editData.status ?? ''} onChange={e => setEditData(d => ({ ...d, status: (e.target.value as 'goed' | 'afgekeurd') || null }))}>
+                          <option value="">—</option>
+                          <option value="goed">Goed</option>
+                          <option value="afgekeurd">Afgekeurd</option>
+                        </select>
+                      </td>
+                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-full" value={editData.omschrijving ?? ''} onChange={e => setEditData(d => ({ ...d, omschrijving: e.target.value }))} /></td>
+                      <td className="py-1 px-1 flex gap-1">
+                        <button onClick={() => handleSaveEdit(m)} className="p-1 text-teal-600 hover:bg-teal-50 rounded"><Check size={14} /></button>
+                        <button onClick={() => setEditId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X size={14} /></button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-2 px-2 text-gray-700">{m.kenmerk || <span className="text-gray-400 italic">—</span>}</td>
+                      <td className="py-2 px-2 font-medium text-gray-800">{m.nominaal}</td>
+                      <td className="py-2 px-2 text-gray-600 font-mono text-xs">{m.tolerantie ?? '—'}</td>
+                      <td className="py-2 px-2">
+                        {m.gemetenWaarde
+                          ? <div><span className="font-medium text-gray-800">{m.gemetenWaarde}</span>
+                              {m.gemetenDoorNaam && <div className="text-[10px] text-gray-400">{m.gemetenDoorNaam}</div>}
+                            </div>
+                          : <span className="text-gray-400 text-xs">niet gemeten</span>}
+                      </td>
+                      <td className="py-2 px-2"><StatusBadgeMaat status={m.status} /></td>
+                      <td className="py-2 px-2 text-gray-500 text-xs">{m.omschrijving ?? ''}</td>
+                      <td className="py-2 px-2 flex gap-1 justify-end">
+                        <button onClick={() => handleEdit(m)} className="p-1 text-gray-400 hover:text-teal-600 hover:bg-gray-100 rounded"><Pencil size={13} /></button>
+                        <button onClick={() => { if (confirm('Maat verwijderen?')) deleteMaat.mutate(m.id) }} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={13} /></button>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* PDF extractie modal */}
+      {extractOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-800">Extraheer maten uit tekening</h3>
+              <button onClick={() => setExtractOpen(false)}><X size={18} className="text-gray-400" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex gap-2">
+                <select className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" value={extractDocId} onChange={e => setExtractDocId(e.target.value)}>
+                  <option value="">Kies tekening…</option>
+                  {tekeningen.map(d => <option key={d.id} value={d.id}>{d.fileName}</option>)}
+                </select>
+                <button onClick={handleExtract} disabled={!extractDocId || extractLoading} className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">
+                  {extractLoading ? 'Laden…' : 'Analyseer'}
+                </button>
+              </div>
+              {extractFragments.length > 0 && (
+                <>
+                  <p className="text-xs text-gray-500">{extractFragments.length} waarden gevonden. Vink aan wat je wilt overnemen.</p>
+                  <div className="overflow-y-auto max-h-64 border border-gray-200 rounded-lg divide-y divide-gray-100">
+                    {extractFragments.map(f => (
+                      <label key={f} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" checked={extractSelected.has(f)} onChange={e => {
+                          setExtractSelected(s => { const n = new Set(s); e.target.checked ? n.add(f) : n.delete(f); return n })
+                        }} />
+                        <span className="text-sm font-mono text-gray-700">{f}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {extractFragments.length > 0 && (
+              <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+                <button onClick={() => setExtractOpen(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Annuleren</button>
+                <button onClick={handleOvernemen} disabled={extractSelected.size === 0} className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">
+                  {extractSelected.size} overnemen
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

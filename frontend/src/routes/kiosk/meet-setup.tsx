@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { MatenTab } from './product-setup'
 
 const CadViewer = lazy(() => import('@/components/viewer/CadViewer'))
 
@@ -514,7 +515,7 @@ function SetupDetail({
 }) {
   const qc = useQueryClient()
   const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
-  const [activeTab, setActiveTab]               = useState<'info' | 'rapportage' | 'bijlagen' | 'overdracht'>('info')
+  const [activeTab, setActiveTab]               = useState<'info' | 'rapportage' | 'bijlagen' | 'overdracht' | 'maten'>('info')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
@@ -628,7 +629,7 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'rapportage', 'bijlagen', 'overdracht'] as const).map(tab => (
+          {(['info', 'rapportage', 'bijlagen', 'overdracht', 'maten'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -640,7 +641,8 @@ function SetupDetail({
               {tab === 'info' ? 'Algemene informatie'
                 : tab === 'rapportage' ? 'Rapportage informatie'
                 : tab === 'bijlagen' ? 'Bijlagen'
-                : 'Overdracht'}
+                : tab === 'overdracht' ? 'Overdracht'
+                : 'Maten'}
             </button>
           ))}
         </div>
@@ -797,6 +799,9 @@ function SetupDetail({
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
             <OverdrachtTab stepId={selectedStep.id} />
+          )}
+          {activeTab === 'maten' && (
+            <MatenTab setupId={setupId} setupType="meet" />
           )}
         </div>
 

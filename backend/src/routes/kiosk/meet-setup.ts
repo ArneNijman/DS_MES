@@ -14,8 +14,10 @@ import {
   productSetupAttachments,
   productSetupOverdracht,
   productSetupOverdrachtPhotos,
+  productSetupMaten,
 } from '../../db/schema.js'
 import { parsePcdmisXml } from '../../cnc/pcdmisParser.js'
+import pdfParse from 'pdf-parse'
 
 export async function meetSetupRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: [fastify.requireAuth] }
@@ -637,5 +639,147 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
     const { photoId } = req.params as { photoId: string }
     await fastify.db.delete(productSetupOverdrachtPhotos).where(eq(productSetupOverdrachtPhotos.id, photoId))
     return { ok: true }
+  })
+
+  // ── Maten: ophalen ────────────────────────────────────────────────────────
+
+  fastify.get('/kiosk/meet-setups/:id/maten', auth, async (req) => {
+    const { id } = req.params as { id: string }
+    const rows = await fastify.db
+      .select({
+        id:             productSetupMaten.id,
+        balloonNr:      productSetupMaten.balloonNr,
+        kenmerk:        productSetupMaten.kenmerk,
+        nominaal:       productSetupMaten.nominaal,
+        tolerantie:     productSetupMaten.tolerantie,
+        omschrijving:   productSetupMaten.omschrijving,
+        gemetenWaarde:  productSetupMaten.gemetenWaarde,
+        status:         productSetupMaten.status,
+        gemetenOp:      productSetupMaten.gemetenOp,
+        sortOrder:      productSetupMaten.sortOrder,
+        createdAt:      productSetupMaten.createdAt,
+        gemetenDoorNaam:    employees.name,
+        aangemaaktDoorNaam: sql<string | null>`(SELECT name FROM employees WHERE id = ${productSetupMaten.aangemaaktDoor})`,
+      })
+      .from(productSetupMaten)
+      .leftJoin(employees, eq(employees.id, productSetupMaten.gemetenDoor))
+      .where(eq(productSetupMaten.setupId, id))
+      .orderBy(asc(productSetupMaten.sortOrder), asc(productSetupMaten.balloonNr))
+    return rows
+  })
+
+  fastify.post('/kiosk/meet-setups/:id/maten', auth, async (req) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { kenmerk?: string; nominaal?: string; tolerantie?: string; omschrijving?: string }
+
+    const [maxRow] = await fastify.db
+      .select({ maxNr: sql<number>`COALESCE(MAX(balloon_nr), 0)`, maxSort: sql<number>`COALESCE(MAX(sort_order), 0)` })
+      .from(productSetupMaten)
+      .where(eq(productSetupMaten.setupId, id))
+
+    const [row] = await fastify.db.insert(productSetupMaten).values({
+      setupId:        id,
+      balloonNr:      (maxRow?.maxNr ?? 0) + 1,
+      kenmerk:        body.kenmerk ?? '',
+      nominaal:       body.nominaal ?? '',
+      tolerantie:     body.tolerantie ?? null,
+      omschrijving:   body.omschrijving ?? null,
+      sortOrder:      (maxRow?.maxSort ?? 0) + 1,
+      aangemaaktDoor: req.user?.id ?? null,
+    }).returning()
+    return row
+  })
+
+  fastify.patch('/kiosk/meet-setups/:id/maten/:mid', auth, async (req, reply) => {
+    const { id, mid } = req.params as { id: string; mid: string }
+    const body = req.body as {
+      kenmerk?: string; nominaal?: string; tolerantie?: string; omschrijving?: string
+      gemetenWaarde?: string | null; status?: string | null
+    }
+
+    const updateData: Record<string, unknown> = {}
+    if (body.kenmerk      !== undefined) updateData.kenmerk      = body.kenmerk
+    if (body.nominaal     !== undefined) updateData.nominaal     = body.nominaal
+    if (body.tolerantie   !== undefined) updateData.tolerantie   = body.tolerantie
+    if (body.omschrijving !== undefined) updateData.omschrijving = body.omschrijving
+    if (body.status       !== undefined) updateData.status       = body.status
+
+    if (body.gemetenWaarde !== undefined) {
+      updateData.gemetenWaarde = body.gemetenWaarde
+      if (body.gemetenWaarde !== null) {
+        updateData.gemetenDoor = req.user?.id ?? null
+        updateData.gemetenOp   = new Date()
+      } else {
+        updateData.gemetenDoor = null
+        updateData.gemetenOp   = null
+      }
+    }
+
+    const [updated] = await fastify.db
+      .update(productSetupMaten)
+      .set(updateData)
+      .where(and(eq(productSetupMaten.id, mid), eq(productSetupMaten.setupId, id)))
+      .returning()
+
+    if (!updated) return reply.status(404).send({ error: 'Niet gevonden' })
+    return updated
+  })
+
+  fastify.delete('/kiosk/meet-setups/:id/maten/:mid', auth, async (req) => {
+    const { id, mid } = req.params as { id: string; mid: string }
+    await fastify.db
+      .delete(productSetupMaten)
+      .where(and(eq(productSetupMaten.id, mid), eq(productSetupMaten.setupId, id)))
+    return { ok: true }
+  })
+
+  fastify.post('/kiosk/meet-setups/:id/maten/extract', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { documentId } = req.body as { documentId: string }
+
+    const [doc] = await fastify.db
+      .select({ fileUrl: productSetupDocuments.fileUrl, mimeType: productSetupDocuments.mimeType })
+      .from(productSetupDocuments)
+      .where(and(eq(productSetupDocuments.id, documentId), eq(productSetupDocuments.setupId, id)))
+      .limit(1)
+
+    if (!doc) return reply.status(404).send({ error: 'Document niet gevonden' })
+
+    const filePath = `/app/uploads/${doc.fileUrl.replace(/^\/uploads\//, '')}`
+    let buf: Buffer
+    try { buf = await readFile(filePath) } catch { return reply.status(404).send({ error: 'Bestand niet gevonden op server' }) }
+
+    let text = ''
+    try {
+      const parsed = await pdfParse(buf)
+      text = parsed.text
+    } catch {
+      return reply.status(422).send({ error: 'Kon PDF niet verwerken. Alleen PDF-bestanden worden ondersteund.' })
+    }
+
+    const patterns = [
+      /Ø\s*\d+[.,]?\d*/g,
+      /[Rr]\s*\d+[.,]?\d*/g,
+      /±\s*\d+[.,]?\d*/g,
+      /\d+[.,]\d+\s*[+\-±]/g,
+      /[+\-]\d+[.,]\d+\s*\/\s*[+\-]\d+[.,]\d*/g,
+      /\b\d+[.,]\d+\b/g,
+      /[A-Z]{1,3}\d+/g,
+    ]
+
+    const seen = new Set<string>()
+    const fragments: string[] = []
+    for (const pattern of patterns) {
+      const matches = text.match(pattern) ?? []
+      for (const m of matches) {
+        const clean = m.trim()
+        if (clean.length >= 2 && !seen.has(clean)) {
+          seen.add(clean)
+          fragments.push(clean)
+        }
+      }
+    }
+
+    return { fragments: fragments.slice(0, 200) }
   })
 }

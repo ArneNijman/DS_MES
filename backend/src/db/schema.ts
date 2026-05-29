@@ -752,6 +752,26 @@ export const productSetupOverdrachtPhotos = pgTable('product_setup_overdracht_ph
 })
 
 
+export const productSetupMaten = pgTable('product_setup_maten', {
+  id:             uuid('id').primaryKey().defaultRandom(),
+  setupId:        uuid('setup_id').notNull().references(() => productSetups.id, { onDelete: 'cascade' }),
+  balloonNr:      integer('balloon_nr').notNull(),
+  kenmerk:        text('kenmerk').notNull().default(''),
+  nominaal:       text('nominaal').notNull().default(''),
+  tolerantie:     text('tolerantie'),
+  omschrijving:   text('omschrijving'),
+  gemetenWaarde:  text('gemeten_waarde'),
+  status:         text('status'),
+  gemetenDoor:    uuid('gemeten_door').references(() => employees.id, { onDelete: 'set null' }),
+  gemetenOp:      timestamp('gemeten_op', { withTimezone: true }),
+  aangemaaktDoor: uuid('aangemaakt_door').references(() => employees.id, { onDelete: 'set null' }),
+  sortOrder:      integer('sort_order').notNull().default(0),
+  createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type ProductSetupMaat    = typeof productSetupMaten.$inferSelect
+export type NewProductSetupMaat = typeof productSetupMaten.$inferInsert
+
 // ── Rol-module toegang ───────────────────────────────────────────────────────
 
 export const roleModulePermissions = pgTable('role_module_permissions', {
