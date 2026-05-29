@@ -144,6 +144,7 @@ interface SetupDetail {
   equipmentNumber:   string | null
   drawingNumber:     string | null
   rapportageInfo:    string | null
+  matenNiveau:       string
   steps:             Step[]
   documents:         Document[]
 }
@@ -801,7 +802,7 @@ function SetupDetail({
             <OverdrachtTab stepId={selectedStep.id} />
           )}
           {activeTab === 'maten' && (
-            <MatenTab setupId={setupId} setupType="meet" />
+            <MatenTab setupId={setupId} setupType="meet" matenNiveau={setup.matenNiveau} onNiveauChange={v => patchSetup.mutate({ matenNiveau: v })} />
           )}
         </div>
 

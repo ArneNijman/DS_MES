@@ -152,7 +152,10 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     const q       = req.query  as { limit?: string; eventType?: string }
     const limit   = Math.min(parseInt(q.limit ?? '100', 10), 500)
 
-    const conditions = [eq(cncMachineEvents.machineId, id)]
+    const conditions = [
+      eq(cncMachineEvents.machineId, id),
+      sql`NOT (${cncMachineEvents.eventType} = 'ALARM_TRIGGERED' AND ${cncMachineEvents.eventData}->>'alarmText' LIKE 'W100%')`,
+    ]
     if (q.eventType) conditions.push(eq(cncMachineEvents.eventType, q.eventType))
 
     return fastify.db

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense, Fragment } from 'react'
+﻿import { useState, useRef, useEffect, ChangeEvent, lazy, Suspense, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, ChevronLeft, Plus, Upload, Trash2, X, Check, Pencil,
@@ -9,6 +9,10 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import PdfViewer from '@/components/PdfViewer'
+import BallonOverlay, { type BallonData } from '@/components/BallonOverlay'
+import { type TextItem } from '@/lib/pdfjs'
+import { detectMaatAnnotaties } from '@/lib/tekening-detectie'
 
 const CadViewer = lazy(() => import('@/components/viewer/CadViewer'))
 
@@ -163,6 +167,7 @@ interface SetupDetail {
   origin:            string
   createdAt:         string
   updatedAt:         string
+  matenNiveau:       string
   steps:             Step[]
   documents:         Document[]
 }
@@ -856,6 +861,7 @@ function SetupDetail({
   const [showMachinePicker, setShowMachinePicker] = useState(false)
   const [openPortal, setOpenPortal] = useState<'tekening' | 'cad' | 'meting' | 'hypermill' | 'aanpak_frezen' | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [matenPanelOpen, setMatenPanelOpen] = useState(false)
   const [selectedCadUrl, setSelectedCadUrl] = useState<string | null>(null)
   const [compareCadUrl, setCompareCadUrl]   = useState<string | null>(null)
   const [inspectionPoints, setInspectionPoints] = useState<InspectionFeature[]>([])
@@ -961,10 +967,10 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'cnc', 'bijlagen', 'overdracht', 'maten'] as const).map(tab => (
+          {(['info', 'cnc', 'bijlagen', 'overdracht', ...(setup.matenNiveau !== 'setup' ? ['maten'] : [])] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(tab as typeof activeTab)}
               className={cn(
                 'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
@@ -1160,7 +1166,7 @@ function SetupDetail({
             <OverdrachtTab stepId={selectedStep.id} />
           )}
           {activeTab === 'maten' && (
-            <MatenTab setupId={setupId} setupType="product" />
+            <MatenTab setupId={setupId} setupType="product" matenNiveau={setup.matenNiveau} onNiveauChange={v => patchSetup.mutate({ matenNiveau: v })} />
           )}
         </div>
 
@@ -1294,6 +1300,26 @@ function SetupDetail({
 
       {/* Content: Bewerkingstappen */}
       <div className="flex-1 overflow-auto p-6">
+        {/* Setup-niveau maten sectie */}
+        {setup.matenNiveau === 'setup' && (
+          <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setMatenPanelOpen(o => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <ListChecks size={15} className="text-teal-600" />
+                <span className="text-sm font-semibold text-gray-700">Maten (setup-niveau)</span>
+              </div>
+              <ChevronDown size={15} className={cn('text-gray-400 transition-transform', matenPanelOpen && 'rotate-180')} />
+            </button>
+            {matenPanelOpen && (
+              <div className="bg-white">
+                <MatenTab setupId={setupId} setupType="product" matenNiveau={setup.matenNiveau} onNiveauChange={v => patchSetup.mutate({ matenNiveau: v })} />
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {setup.steps.map(step => (
               <div key={step.id} className="group relative">
@@ -2229,6 +2255,8 @@ interface Maat {
   kenmerk: string
   nominaal: string
   tolerantie: string | null
+  tolPlus: string | null
+  tolMin: string | null
   omschrijving: string | null
   gemetenWaarde: string | null
   status: 'goed' | 'afgekeurd' | null
@@ -2236,24 +2264,32 @@ interface Maat {
   gemetenDoorNaam: string | null
   aangemaaktDoorNaam: string | null
   sortOrder: number
+  xPct: number | null
+  yPct: number | null
+  paginaNummer: number | null
+  drawingDocId: string | null
+  balloonType: string | null
+  gdtType: string | null
 }
 
 function parseTolerantie(tolerantie: string | null): { min: number; max: number } | null {
   if (!tolerantie) return null
-  // ±0.05
   const pm = tolerantie.match(/^[±]\s*([\d.,]+)$/)
   if (pm) { const v = parseFloat(pm[1].replace(',', '.')); return { min: -v, max: v } }
-  // +0.05/-0.02
   const asym = tolerantie.match(/^[+]([\d.,]+)\s*\/\s*[-]([\d.,]+)$/)
   if (asym) return { min: -parseFloat(asym[2].replace(',', '.')), max: parseFloat(asym[1].replace(',', '.')) }
   return null
 }
 
-function berekenStatus(nominaal: string, tolerantie: string | null, gemeten: string): 'goed' | 'afgekeurd' | null {
-  const nom = parseFloat(nominaal.replace(',', '.').replace(/[^0-9.,\-]/g, ''))
+function berekenStatus(m: Pick<Maat, 'nominaal' | 'tolerantie' | 'tolPlus' | 'tolMin'>, gemeten: string): 'goed' | 'afgekeurd' | null {
+  const nom = parseFloat(m.nominaal.replace(',', '.').replace(/[^0-9.,\-]/g, ''))
   const gem = parseFloat(gemeten.replace(',', '.'))
   if (isNaN(nom) || isNaN(gem)) return null
-  const tol = parseTolerantie(tolerantie)
+  if (m.tolPlus !== null && m.tolMin !== null) {
+    const p = parseFloat(m.tolPlus), n = parseFloat(m.tolMin)
+    if (!isNaN(p) && !isNaN(n)) return (gem >= nom - n && gem <= nom + p) ? 'goed' : 'afgekeurd'
+  }
+  const tol = parseTolerantie(m.tolerantie)
   if (!tol) return null
   return (gem >= nom + tol.min && gem <= nom + tol.max) ? 'goed' : 'afgekeurd'
 }
@@ -2267,7 +2303,49 @@ function StatusBadgeMaat({ status }: { status: 'goed' | 'afgekeurd' | null }) {
   )
 }
 
-export function MatenTab({ setupId, setupType }: { setupId: string; setupType: 'product' | 'meet' }) {
+const GDT_OPTIES = [
+  { value: 'straightness',     label: '⏤ Rechtheid' },
+  { value: 'flatness',         label: '⏥ Vlakheid' },
+  { value: 'circularity',      label: '○ Rondheid' },
+  { value: 'cylindricity',     label: '⌭ Cilindriciteit' },
+  { value: 'profile_line',     label: '⌒ Profielzuiverheid lijn' },
+  { value: 'profile_surface',  label: '⌓ Profielzuiverheid vlak' },
+  { value: 'parallelism',      label: '∥ Parallelliteit' },
+  { value: 'perpendicularity', label: '⊥ Loodrechtheid' },
+  { value: 'angularity',       label: '∠ Hoekigheid' },
+  { value: 'position',         label: '⊕ Positie' },
+  { value: 'concentricity',    label: '◎ Concentriciteit' },
+  { value: 'symmetry',         label: '⌯ Symmetrie' },
+  { value: 'circular_runout',  label: '↗ Radiale uitslag' },
+  { value: 'total_runout',     label: '⌰ Totale uitslag' },
+] as const
+
+function maatToBallonData(m: Maat): BallonData {
+  return {
+    id:           m.id,
+    nummer:       m.balloonNr,
+    paginaNummer: m.paginaNummer ?? 1,
+    xPct:         m.xPct ?? 50,
+    yPct:         m.yPct ?? 50,
+    type:         (m.balloonType as BallonData['type']) ?? 'dimensional',
+    nominaalMaat: m.nominaal || null,
+    tolPlus:      m.tolPlus,
+    tolMinus:     m.tolMin,
+    isoPassing:   null,
+    meetmiddel:   null,
+    gdtType:      null,
+    gemetenWaarde: m.gemetenWaarde,
+    status:       m.status,
+    stapId:       null,
+  }
+}
+
+export function MatenTab({ setupId, setupType, matenNiveau, onNiveauChange }: {
+  setupId: string
+  setupType: 'product' | 'meet'
+  matenNiveau?: string
+  onNiveauChange?: (niveau: string) => void
+}) {
   const qc = useQueryClient()
   const base = setupType === 'product' ? `/kiosk/product-setups/${setupId}` : `/kiosk/meet-setups/${setupId}`
 
@@ -2276,81 +2354,245 @@ export function MatenTab({ setupId, setupType }: { setupId: string; setupType: '
     queryFn: () => apiFetch(`${base}/maten`) as Promise<Maat[]>,
   })
 
-  const [editId, setEditId]       = useState<string | null>(null)
-  const [editData, setEditData]   = useState<Partial<Maat>>({})
-  const [addOpen, setAddOpen]     = useState(false)
-  const [newRow, setNewRow]       = useState({ kenmerk: '', nominaal: '', tolerantie: '', omschrijving: '' })
-  const [extractOpen, setExtractOpen] = useState(false)
-  const [extractFragments, setExtractFragments] = useState<string[]>([])
-  const [extractSelected, setExtractSelected]   = useState<Set<string>>(new Set())
-  const [extractLoading, setExtractLoading]     = useState(false)
-  const [extractError, setExtractError]         = useState<string | null>(null)
-
-  // Tekeningen ophalen voor extract-dropdown
-  const { data: setupData } = useQuery<{ documents: { id: string; documentType: string; fileName: string }[] }>({
-    queryKey: ['product-setup', setupId],
+  const { data: setupData } = useQuery<{ documents: { id: string; documentType: string; fileName: string; fileUrl: string }[] }>({
+    queryKey: [setupType === 'product' ? 'product-setup' : 'meet-setup', setupId],
     queryFn:  () => apiFetch(setupType === 'product' ? `/kiosk/product-setups/${setupId}` : `/kiosk/meet-setups/${setupId}`) as Promise<any>,
     staleTime: 60_000,
   })
   const tekeningen = (setupData?.documents ?? []).filter(d => d.documentType === 'tekening')
-  const [extractDocId, setExtractDocId] = useState<string>('')
+
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string>('')
+  const [selectedId, setSelectedId]               = useState<string | null>(null)
+  const [bewerkmodus, setBewerkmodus]             = useState(false)
+  const [currentPage, setCurrentPage]             = useState(1)
+  const [autoDetecting, setAutoDetecting]         = useState(false)
+  const [autoProgress, setAutoProgress]           = useState('')
+  const [editGemeten, setEditGemeten]             = useState<Record<string, string>>({})
+  const [splitPct, setSplitPct]                   = useState(55)
+  const splitContainerRef = useRef<HTMLDivElement | null>(null)
+  const isDividerDragging = useRef(false)
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null)
+  const listRef            = useRef<HTMLDivElement | null>(null)
+
+  // Text-overlay selectie
+  const [pageTextItems, setPageTextItems] = useState<Record<number, TextItem[]>>({})
+  const [selectedTextKeys, setSelectedTextKeys] = useState<Set<string>>(new Set())
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const dragStartRef    = useRef<{ x: number; y: number } | null>(null)
+  const wasDraggingRef  = useRef(false)
+
+  // Auto-selecteer eerste tekening
+  useEffect(() => {
+    if (!selectedDrawingId && tekeningen.length > 0) setSelectedDrawingId(tekeningen[0].id)
+  }, [tekeningen, selectedDrawingId])
+
+  const selectedDrawing       = tekeningen.find(d => d.id === selectedDrawingId)
+  const ballonnenOpTekening   = selectedDrawingId
+    ? maten.filter(m => m.drawingDocId === selectedDrawingId && m.xPct !== null)
+    : []
 
   const addMaat = useMutation({
-    mutationFn: (body: typeof newRow) => apiFetch(`${base}/maten`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }); setNewRow({ kenmerk: '', nominaal: '', tolerantie: '', omschrijving: '' }); setAddOpen(false) },
+    mutationFn: (body: Partial<Maat> & { xPct?: number; yPct?: number; paginaNummer?: number; drawingDocId?: string }) =>
+      apiFetch(`${base}/maten`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['setup-maten', setupId] })
+      setSelectedId(data?.id ?? null)
+    },
   })
 
   const updateMaat = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Maat> }) =>
       apiFetch(`${base}/maten/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }); setEditId(null) },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }),
   })
 
   const deleteMaat = useMutation({
     mutationFn: (id: string) => apiFetch(`${base}/maten/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setup-maten', setupId] }); setSelectedId(null) },
   })
 
-  const handleEdit = (m: Maat) => {
-    setEditId(m.id)
-    setEditData({ kenmerk: m.kenmerk, nominaal: m.nominaal, tolerantie: m.tolerantie ?? '', omschrijving: m.omschrijving ?? '', gemetenWaarde: m.gemetenWaarde ?? '', status: m.status })
+  const handleCanvasClick = (xPct: number, yPct: number) => {
+    if (bewerkmodus || !selectedDrawingId) return
+    addMaat.mutate({ xPct, yPct, paginaNummer: currentPage, drawingDocId: selectedDrawingId, kenmerk: '', nominaal: '' })
   }
 
-  const handleSaveEdit = (m: Maat) => {
-    const data: Partial<Maat> = { ...editData }
-    // Auto-bereken status als gemeten waarde en tolerantie aanwezig
-    if (data.gemetenWaarde && data.gemetenWaarde !== m.gemetenWaarde) {
-      const auto = berekenStatus(data.nominaal ?? m.nominaal, data.tolerantie ?? m.tolerantie, data.gemetenWaarde)
-      if (auto !== null) data.status = auto
-    }
-    updateMaat.mutate({ id: m.id, data })
+  const handleDragEnd = (id: string, xPct: number, yPct: number) => {
+    updateMaat.mutate({ id, data: { xPct, yPct } })
   }
 
-  const handleExtract = async () => {
-    if (!extractDocId) return
-    setExtractLoading(true)
-    setExtractError(null)
+  const handleGemetenBlur = (m: Maat, val: string) => {
+    if (val === (m.gemetenWaarde ?? '')) return
+    const status = val ? berekenStatus(m, val) : null
+    updateMaat.mutate({ id: m.id, data: { gemetenWaarde: val || null, status } })
+  }
+
+  const handleAutoDetect = async () => {
+    if (!selectedDrawing) return
+    setAutoDetecting(true)
+    setAutoProgress('Laden…')
     try {
-      const res = await apiFetch(`${base}/maten/extract`, { method: 'POST', body: JSON.stringify({ documentId: extractDocId }) }) as { fragments?: string[]; error?: string }
-      if (res.error) { setExtractError(res.error); return }
-      setExtractFragments(res.fragments ?? [])
-      setExtractSelected(new Set())
-    } catch (e: any) {
-      setExtractError(e?.message ?? 'Onbekende fout')
+      const { autoDetecteerBallonnen } = await import('@/lib/tekening-detectie')
+      const count = await autoDetecteerBallonnen(
+        setupId, setupType,
+        selectedDrawingId,
+        selectedDrawing.fileUrl,
+        (label, page, total) => setAutoProgress(`${label} ${page}/${total}`),
+      )
+      qc.invalidateQueries({ queryKey: ['setup-maten', setupId] })
+      setAutoProgress(`${count} gevonden`)
+      setTimeout(() => setAutoProgress(''), 3000)
+    } catch (err: any) {
+      setAutoProgress(`Fout: ${err?.message ?? 'onbekend'}`)
     } finally {
-      setExtractLoading(false)
+      setAutoDetecting(false)
     }
   }
 
-  const handleOvernemen = async () => {
-    for (const fragment of extractFragments.filter(f => extractSelected.has(f))) {
-      await apiFetch(`${base}/maten`, { method: 'POST', body: JSON.stringify({ nominaal: fragment, kenmerk: '' }) })
-    }
+  const handleResetDrawing = async () => {
+    if (!selectedDrawingId || !confirm('Alle ballonnen van deze tekening verwijderen?')) return
+    await apiFetch(`${base}/maten/byDrawing/${selectedDrawingId}`, { method: 'DELETE' })
     qc.invalidateQueries({ queryKey: ['setup-maten', setupId] })
-    setExtractOpen(false)
+    setSelectedId(null)
   }
 
-  // Samenvatting
+  // Tekst-items per pagina bijhouden
+  const handleTextExtracted = (pageNum: number, items: TextItem[]) => {
+    setPageTextItems(prev => ({ ...prev, [pageNum]: items }))
+  }
+
+  // Reset text items en selectie bij nieuw tekening
+  useEffect(() => {
+    setPageTextItems({})
+    setSelectedTextKeys(new Set())
+    setSelectionBox(null)
+  }, [selectedDrawingId])
+
+  // Drag-to-select handlers (op de canvas container)
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (bewerkmodus || !selectedDrawingId) return
+    // Alleen als NIET op een tekst-item of ballon geklikt wordt (die stoppen propagation)
+    const rect = e.currentTarget.getBoundingClientRect()
+    dragStartRef.current = {
+      x: ((e.clientX - rect.left) / rect.width)  * 100,
+      y: ((e.clientY - rect.top)  / rect.height) * 100,
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const curX = ((e.clientX - rect.left) / rect.width)  * 100
+    const curY = ((e.clientY - rect.top)  / rect.height) * 100
+    const dx = curX - dragStartRef.current.x
+    const dy = curY - dragStartRef.current.y
+    if (Math.abs(dx) > 0.8 || Math.abs(dy) > 0.8) {
+      wasDraggingRef.current = true
+      setSelectionBox({
+        x: Math.min(dragStartRef.current.x, curX),
+        y: Math.min(dragStartRef.current.y, curY),
+        w: Math.abs(dx),
+        h: Math.abs(dy),
+      })
+    }
+  }
+
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current) return
+    dragStartRef.current = null
+    const wasDragging = wasDraggingRef.current
+    wasDraggingRef.current = false
+
+    if (wasDragging) {
+      // Selecteer alle tekst-items in het geselecteerde kader
+      setSelectionBox(prev => {
+        if (!prev) return null
+        const items = pageTextItems[currentPage] ?? []
+        const keys = items.reduce<string[]>((acc, item, i) => {
+          const cx = item.xPct + item.widthPct / 2
+          const cy = item.yPct + item.heightPct / 2
+          if (cx >= prev.x && cx <= prev.x + prev.w && cy >= prev.y && cy <= prev.y + prev.h) {
+            acc.push(`${currentPage}-${i}`)
+          }
+          return acc
+        }, [])
+        if (keys.length > 0) {
+          setSelectedTextKeys(existing => {
+            const next = new Set(existing)
+            keys.forEach(k => next.add(k))
+            return next
+          })
+        }
+        return null
+      })
+    } else {
+      setSelectionBox(null)
+      const rect = e.currentTarget.getBoundingClientRect()
+      handleCanvasClick(
+        ((e.clientX - rect.left) / rect.width)  * 100,
+        ((e.clientY - rect.top)  / rect.height) * 100,
+      )
+    }
+  }
+
+  // Voeg geselecteerde tekst-items toe als ballonnen
+  const handleAddFromSelection = async () => {
+    if (selectedTextKeys.size === 0 || !selectedDrawingId) return
+    const items = Array.from(selectedTextKeys).flatMap(key => {
+      const [pageStr, idxStr] = key.split('-')
+      const item = pageTextItems[parseInt(pageStr)]?.[parseInt(idxStr)]
+      if (!item) return []
+      return [{ item, page: parseInt(pageStr) }]
+    })
+
+    // Groepeer dicht bij elkaar liggende items (binnen 3% y-afstand) per maat
+    const grouped: Array<{ items: TextItem[]; page: number }> = []
+    const used = new Set<number>()
+    for (let i = 0; i < items.length; i++) {
+      if (used.has(i)) continue
+      const group = [items[i].item]
+      used.add(i)
+      for (let j = i + 1; j < items.length; j++) {
+        if (used.has(j) || items[j].page !== items[i].page) continue
+        if (Math.abs(items[j].item.yPct - items[i].item.yPct) < 3) {
+          group.push(items[j].item)
+          used.add(j)
+        }
+      }
+      grouped.push({ items: group, page: items[i].page })
+    }
+
+    const ballonnen = grouped.map(({ items: grp, page }) => {
+      const combinedStr = grp.map(t => t.str).join(' ')
+      const centerX = grp.reduce((s, t) => s + t.xPct + t.widthPct / 2, 0) / grp.length
+      const centerY = grp.reduce((s, t) => s + t.yPct + t.heightPct / 2, 0) / grp.length
+      const detected = detectMaatAnnotaties(combinedStr, centerX, centerY, page)
+      return {
+        paginaNummer: page,
+        xPct: centerX,
+        yPct: centerY,
+        nominaalMaat: detected?.nominaalMaat ?? combinedStr,
+        tolPlus:  detected?.tolPlus,
+        tolMinus: detected?.tolMinus,
+      }
+    })
+
+    await apiFetch(`${base}/maten/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ drawingDocId: selectedDrawingId, ballonnen }),
+    })
+    qc.invalidateQueries({ queryKey: ['setup-maten', setupId] })
+    setSelectedTextKeys(new Set())
+  }
+
+  // Scroll geselecteerde ballon in beeld
+  useEffect(() => {
+    if (selectedId && listRef.current) {
+      const el = listRef.current.querySelector(`[data-maat-id="${selectedId}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [selectedId])
+
   const gemeten    = maten.filter(m => m.gemetenWaarde)
   const goedCount  = gemeten.filter(m => m.status === 'goed').length
   const afgekeurd  = gemeten.filter(m => m.status === 'afgekeurd').length
@@ -2358,105 +2600,385 @@ export function MatenTab({ setupId, setupType }: { setupId: string; setupType: '
   if (isLoading) return <div className="p-6 text-sm text-gray-400">Laden…</div>
 
   return (
-    <div className="p-4 flex flex-col gap-3 h-full overflow-auto">
-      {/* Header met samenvatting + knoppen */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <ListChecks size={16} className="text-teal-600" />
-          <span className="text-sm font-medium text-gray-700">{maten.length} maten</span>
-          {gemeten.length > 0 && (
-            <span className="text-xs text-gray-500">
-              {gemeten.length} gemeten — <span className="text-green-600 font-medium">{goedCount} goed</span>
-              {afgekeurd > 0 && <>, <span className="text-red-600 font-medium">{afgekeurd} afgekeurd</span></>}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {tekeningen.length > 0 && (
-            <button onClick={() => setExtractOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
-              <Search size={12} /> Extraheer uit PDF
+    <div className="flex flex-col" style={{ minHeight: 520 }}>
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-white flex-wrap shrink-0">
+        <ListChecks size={15} className="text-teal-600 shrink-0" />
+        <span className="text-sm font-medium text-gray-700 mr-1">{maten.length} maten</span>
+        {gemeten.length > 0 && (
+          <span className="text-xs text-gray-500">
+            {gemeten.length} gemeten · <span className="text-green-600 font-medium">{goedCount} goed</span>
+            {afgekeurd > 0 && <> · <span className="text-red-600 font-medium">{afgekeurd} afgekeurd</span></>}
+          </span>
+        )}
+        <div className="flex-1" />
+        {tekeningen.length > 0 && (
+          <select
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white min-w-[150px] min-h-[36px]"
+            value={selectedDrawingId}
+            onChange={e => { setSelectedDrawingId(e.target.value); setSelectedId(null) }}
+          >
+            <option value="">Geen tekening</option>
+            {tekeningen.map(d => <option key={d.id} value={d.id}>{d.fileName}</option>)}
+          </select>
+        )}
+        {selectedDrawingId && (
+          <>
+            <button
+              onClick={() => setBewerkmodus(b => !b)}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors min-h-[36px]',
+                bewerkmodus ? 'bg-orange-100 border-orange-300 text-orange-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}
+            >
+              {bewerkmodus ? <Lock size={12} /> : <Unlock size={12} />}
+              {bewerkmodus ? 'Bewerken' : 'Weergave'}
             </button>
-          )}
-          <button onClick={() => setAddOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700">
-            <Plus size={12} /> Maat toevoegen
+            <button
+              onClick={handleAutoDetect}
+              disabled={autoDetecting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-40 min-h-[36px]"
+            >
+              <Search size={12} />
+              {autoDetecting ? (autoProgress || 'Detecteren…') : (autoProgress || 'Auto-detect')}
+            </button>
+            {selectedTextKeys.size > 0 && (
+              <button
+                onClick={handleAddFromSelection}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[36px] animate-pulse"
+              >
+                <Plus size={12} />
+                {selectedTextKeys.size} toevoegen
+              </button>
+            )}
+            {/* Layout presets */}
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+              {([
+                { pct: 80, icon: '◧', title: 'Tekening groot' },
+                { pct: 55, icon: '▣', title: 'Gelijk'         },
+                { pct: 20, icon: '◨', title: 'Lijst groot'    },
+              ] as const).map(({ pct, icon, title }) => (
+                <button
+                  key={pct}
+                  onClick={() => setSplitPct(pct)}
+                  title={title}
+                  className={cn(
+                    'px-2.5 py-1.5 text-sm min-h-[36px] transition-colors',
+                    splitPct === pct
+                      ? 'bg-teal-600 text-white'
+                      : 'text-gray-500 hover:bg-gray-50',
+                  )}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+            {ballonnenOpTekening.length > 0 && (
+              <button
+                onClick={handleResetDrawing}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg min-h-[36px]"
+                title="Reset ballonnen van deze tekening"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </>
+        )}
+        {onNiveauChange && (
+          <button
+            onClick={() => onNiveauChange(matenNiveau === 'setup' ? 'stap' : 'setup')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-500 min-h-[36px]"
+            title={matenNiveau === 'setup' ? 'Schakel naar stap-niveau' : 'Schakel naar setup-niveau'}
+          >
+            <Layers size={12} />
+            {matenNiveau === 'setup' ? 'Setup' : 'Stap'}
           </button>
-        </div>
+        )}
+        <button
+          onClick={() => addMaat.mutate({ kenmerk: '', nominaal: '', drawingDocId: selectedDrawingId || undefined })}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 min-h-[36px]"
+        >
+          <Plus size={12} /> Maat
+        </button>
       </div>
 
-      {/* Toevoegen formulier */}
-      {addOpen && (
-        <div className="border border-teal-200 rounded-lg p-3 bg-teal-50 flex flex-wrap gap-2 items-end">
-          <div className="flex flex-col gap-1 min-w-[120px]">
-            <label className="text-[10px] font-semibold text-gray-500 uppercase">Kenmerk</label>
-            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="diameter, lengte…" value={newRow.kenmerk} onChange={e => setNewRow(r => ({ ...r, kenmerk: e.target.value }))} />
+      {/* Body: split-view (tekening gekozen) of eenvoudige tabel */}
+      {selectedDrawing ? (
+        <div
+          ref={splitContainerRef}
+          className="flex flex-1 overflow-hidden select-none"
+          style={{ minHeight: 460 }}
+        >
+          {/* Links: PDF viewer */}
+          <div
+            className="min-h-0 overflow-hidden flex flex-col"
+            style={{ width: `${splitPct}%`, minWidth: '15%', maxWidth: '85%' }}
+          >
+            <PdfViewer
+              pdfUrl={selectedDrawing.fileUrl}
+              currentPage={currentPage}
+              canvasContainerRef={canvasContainerRef}
+              onPageChange={setCurrentPage}
+              onTextExtracted={handleTextExtracted}
+            >
+              {/* Tekst-selectie overlay: drag-to-select + klik op tekst-items */}
+              {!bewerkmodus && (
+                <div
+                  className="absolute inset-0"
+                  style={{ zIndex: 2, cursor: 'crosshair', touchAction: 'none' }}
+                  onPointerDown={handleCanvasPointerDown}
+                  onPointerMove={handleCanvasPointerMove}
+                  onPointerUp={handleCanvasPointerUp}
+                >
+                  {(pageTextItems[currentPage] ?? []).map((item, i) => {
+                    const key = `${currentPage}-${i}`
+                    const isSelected = selectedTextKeys.has(key)
+                    return (
+                      <div
+                        key={key}
+                        style={{
+                          position: 'absolute',
+                          left:   `${item.xPct}%`,
+                          top:    `${item.yPct}%`,
+                          width:  `${Math.max(item.widthPct, 1.5)}%`,
+                          height: `${Math.max(item.heightPct, 1.2)}%`,
+                          cursor: 'pointer',
+                        }}
+                        className={cn(
+                          'border transition-colors',
+                          isSelected
+                            ? 'bg-blue-400/40 border-blue-500'
+                            : 'bg-transparent border-transparent hover:bg-blue-100/30 hover:border-blue-300/60',
+                        )}
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => {
+                          e.stopPropagation()
+                          setSelectedTextKeys(prev => {
+                            const next = new Set(prev)
+                            next.has(key) ? next.delete(key) : next.add(key)
+                            return next
+                          })
+                        }}
+                      />
+                    )
+                  })}
+                  {/* Drag selectie-kader */}
+                  {selectionBox && (
+                    <div
+                      className="absolute border-2 border-blue-500 bg-blue-400/20 pointer-events-none"
+                      style={{
+                        left:   `${selectionBox.x}%`,
+                        top:    `${selectionBox.y}%`,
+                        width:  `${selectionBox.w}%`,
+                        height: `${selectionBox.h}%`,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Balloon overlays: boven de tekst-overlay (z-index 10+) */}
+              {ballonnenOpTekening
+                .filter(m => (m.paginaNummer ?? 1) === currentPage)
+                .map(m => (
+                  <BallonOverlay
+                    key={m.id}
+                    ballon={maatToBallonData(m)}
+                    containerRef={canvasContainerRef}
+                    bewerkmodus={bewerkmodus}
+                    selected={selectedId === m.id}
+                    onSelect={setSelectedId}
+                    onDragEnd={handleDragEnd}
+                    onDelete={id => { if (confirm('Ballon verwijderen?')) deleteMaat.mutate(id) }}
+                  />
+                ))}
+            </PdfViewer>
           </div>
-          <div className="flex flex-col gap-1 min-w-[100px]">
-            <label className="text-[10px] font-semibold text-gray-500 uppercase">Nominaal</label>
-            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="25.0" value={newRow.nominaal} onChange={e => setNewRow(r => ({ ...r, nominaal: e.target.value }))} />
+
+          {/* Versleepbare scheiding */}
+          <div
+            className="w-2 shrink-0 bg-gray-100 hover:bg-teal-200 active:bg-teal-400 cursor-col-resize flex items-center justify-center group transition-colors"
+            onPointerDown={e => {
+              isDividerDragging.current = true
+              e.currentTarget.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={e => {
+              if (!isDividerDragging.current || !splitContainerRef.current) return
+              const rect = splitContainerRef.current.getBoundingClientRect()
+              const pct = Math.round(((e.clientX - rect.left) / rect.width) * 100)
+              setSplitPct(Math.min(85, Math.max(15, pct)))
+            }}
+            onPointerUp={() => { isDividerDragging.current = false }}
+          >
+            <div className="w-0.5 h-8 bg-gray-300 group-hover:bg-teal-400 rounded-full transition-colors" />
           </div>
-          <div className="flex flex-col gap-1 min-w-[100px]">
-            <label className="text-[10px] font-semibold text-gray-500 uppercase">Tolerantie</label>
-            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="±0.05 of H7" value={newRow.tolerantie} onChange={e => setNewRow(r => ({ ...r, tolerantie: e.target.value }))} />
-          </div>
-          <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
-            <label className="text-[10px] font-semibold text-gray-500 uppercase">Omschrijving</label>
-            <input className="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="optioneel" value={newRow.omschrijving} onChange={e => setNewRow(r => ({ ...r, omschrijving: e.target.value }))} />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => addMaat.mutate(newRow)} disabled={!newRow.nominaal.trim()} className="px-3 py-1.5 text-xs bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">Opslaan</button>
-            <button onClick={() => setAddOpen(false)} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">Annuleren</button>
+
+          {/* Rechts: ballon lijst */}
+          <div
+            ref={listRef}
+            className="overflow-y-auto bg-white flex flex-col flex-1"
+          >
+            {maten.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-gray-400 p-6 text-center">
+                Klik op de tekening om ballonnen te plaatsen
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {maten.map(m => {
+                  const isSelected = selectedId === m.id
+                  const tolLabel   = m.tolPlus !== null && m.tolMin !== null
+                    ? `+${m.tolPlus} / −${m.tolMin}`
+                    : (m.tolerantie ?? '—')
+                  const gemetenVal = editGemeten[m.id] ?? (m.gemetenWaarde ?? '')
+                  return (
+                    <div
+                      key={m.id}
+                      data-maat-id={m.id}
+                      className={cn('px-3 py-2.5 cursor-pointer transition-colors', isSelected ? 'bg-teal-50' : 'hover:bg-gray-50')}
+                      onClick={() => {
+                        setSelectedId(id => id === m.id ? null : m.id)
+                        if (m.paginaNummer) setCurrentPage(m.paginaNummer)
+                      }}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className={cn(
+                          'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5',
+                          !m.gemetenWaarde ? 'bg-gray-400' :
+                          m.status === 'goed' ? 'bg-green-500' :
+                          m.status === 'afgekeurd' ? 'bg-red-500' : 'bg-orange-400',
+                        )}>
+                          {m.balloonNr}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="font-medium text-gray-800 text-sm">{m.nominaal || <span className="text-gray-400 italic text-xs">—</span>}</span>
+                            <span className="text-xs text-gray-500 font-mono">{tolLabel}</span>
+                            {m.gdtType && <span className="text-xs text-gray-500">{GDT_OPTIES.find(o => o.value === m.gdtType)?.label ?? m.gdtType}</span>}
+                            {m.kenmerk && !m.gdtType && <span className="text-xs text-gray-500 truncate">{m.kenmerk}</span>}
+                            {m.xPct === null && <span className="text-[10px] text-gray-400 italic">geen pos.</span>}
+                          </div>
+                          {m.gemetenWaarde && (
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-sm font-medium text-gray-700">{m.gemetenWaarde}</span>
+                              <StatusBadgeMaat status={m.status} />
+                              {m.gemetenDoorNaam && <span className="text-[10px] text-gray-400">{m.gemetenDoorNaam}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {isSelected && (
+                        <div className="mt-2.5 ml-8 space-y-2" onClick={e => e.stopPropagation()}>
+                          <div className="flex gap-2 flex-wrap">
+                            <div className="flex flex-col gap-0.5 min-w-[90px]">
+                              <label className="text-[10px] font-semibold text-gray-500 uppercase">Nominaal</label>
+                              <input
+                                className="border border-gray-300 rounded px-2 py-1.5 text-sm min-h-[36px] w-full"
+                                defaultValue={m.nominaal}
+                                onBlur={e => { if (e.target.value !== m.nominaal) updateMaat.mutate({ id: m.id, data: { nominaal: e.target.value } }) }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-0.5 min-w-[70px]">
+                              <label className="text-[10px] font-semibold text-gray-500 uppercase">Tol +</label>
+                              <input
+                                className="border border-gray-300 rounded px-2 py-1.5 text-sm min-h-[36px] w-full"
+                                defaultValue={m.tolPlus ?? ''}
+                                placeholder="0.05"
+                                onBlur={e => updateMaat.mutate({ id: m.id, data: { tolPlus: e.target.value || null } })}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-0.5 min-w-[70px]">
+                              <label className="text-[10px] font-semibold text-gray-500 uppercase">Tol −</label>
+                              <input
+                                className="border border-gray-300 rounded px-2 py-1.5 text-sm min-h-[36px] w-full"
+                                defaultValue={m.tolMin ?? ''}
+                                placeholder="0.05"
+                                onBlur={e => updateMaat.mutate({ id: m.id, data: { tolMin: e.target.value || null } })}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <div className="flex flex-col gap-0.5 flex-1 min-w-[140px]">
+                              <label className="text-[10px] font-semibold text-gray-500 uppercase">Kenmerk</label>
+                              <input
+                                className="border border-gray-300 rounded px-2 py-1.5 text-sm min-h-[36px] w-full"
+                                defaultValue={m.kenmerk}
+                                placeholder="diameter, lengte…"
+                                onBlur={e => { if (e.target.value !== m.kenmerk) updateMaat.mutate({ id: m.id, data: { kenmerk: e.target.value } }) }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-0.5 min-w-[160px]">
+                              <label className="text-[10px] font-semibold text-gray-500 uppercase">GD&amp;T type</label>
+                              <select
+                                className="border border-gray-300 rounded px-2 py-1.5 text-sm min-h-[36px] bg-white"
+                                defaultValue={m.gdtType ?? ''}
+                                onBlur={e => updateMaat.mutate({ id: m.id, data: { gdtType: e.target.value || null } })}
+                                onChange={e => updateMaat.mutate({ id: m.id, data: { gdtType: e.target.value || null } })}
+                              >
+                                <option value="">— Geen —</option>
+                                {GDT_OPTIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[10px] font-semibold text-gray-500 uppercase">Gemeten waarde</label>
+                            <input
+                              className="border border-gray-300 rounded px-2 py-1.5 text-base min-h-[44px]"
+                              value={gemetenVal}
+                              placeholder="voer in…"
+                              onChange={e => setEditGemeten(v => ({ ...v, [m.id]: e.target.value }))}
+                              onBlur={e => handleGemetenBlur(m, e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            />
+                          </div>
+                          {m.aangemaaktDoorNaam && (
+                            <p className="text-[10px] text-gray-400">Aangemaakt door: {m.aangemaaktDoorNaam}</p>
+                          )}
+                          {bewerkmodus && (
+                            <button
+                              onClick={() => { if (confirm('Ballon verwijderen?')) deleteMaat.mutate(m.id) }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 min-h-[36px]"
+                            >
+                              <Trash2 size={12} /> Verwijderen
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
-      )}
-
-      {/* Tabel */}
-      {maten.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 text-sm">Nog geen maten. Voeg er een toe of extraheer uit de tekening.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500 w-8">#</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Kenmerk</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Nominaal</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Tolerantie</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Gemeten</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Status</th>
-                <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Omschrijving</th>
-                <th className="py-2 px-2 w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {maten.map(m => (
-                <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-2 px-2 text-xs text-gray-400 font-mono">{m.balloonNr}</td>
-                  {editId === m.id ? (
-                    <>
-                      <td className="py-1 px-1"><input autoFocus className="border border-gray-300 rounded px-1.5 py-1 text-sm w-full" value={editData.kenmerk ?? ''} onChange={e => setEditData(d => ({ ...d, kenmerk: e.target.value }))} /></td>
-                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-24" value={editData.nominaal ?? ''} onChange={e => setEditData(d => ({ ...d, nominaal: e.target.value }))} /></td>
-                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-24" placeholder="±0.05" value={editData.tolerantie ?? ''} onChange={e => setEditData(d => ({ ...d, tolerantie: e.target.value }))} /></td>
-                      <td className="py-1 px-1">
-                        <input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-20" placeholder="gemeten" value={editData.gemetenWaarde ?? ''} onChange={e => setEditData(d => ({ ...d, gemetenWaarde: e.target.value || null }))} />
+        /* Geen tekening gekozen: eenvoudige tabel */
+        <div className="flex-1 overflow-auto p-4">
+          {maten.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 text-sm">
+              Nog geen maten. Voeg er een toe of upload een tekening voor balloon-annotaties.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500 w-8">#</th>
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Nominaal</th>
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Tol + / −</th>
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Kenmerk</th>
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Gemeten</th>
+                    <th className="py-2 px-2 text-left text-xs font-semibold text-gray-500">Status</th>
+                    <th className="py-2 px-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {maten.map(m => (
+                    <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-2 text-xs text-gray-400 font-mono">{m.balloonNr}</td>
+                      <td className="py-2 px-2 font-medium text-gray-800">{m.nominaal || '—'}</td>
+                      <td className="py-2 px-2 text-gray-600 font-mono text-xs">
+                        {m.tolPlus !== null && m.tolMin !== null ? `+${m.tolPlus} / −${m.tolMin}` : (m.tolerantie ?? '—')}
                       </td>
-                      <td className="py-1 px-1">
-                        <select className="border border-gray-300 rounded px-1.5 py-1 text-xs" value={editData.status ?? ''} onChange={e => setEditData(d => ({ ...d, status: (e.target.value as 'goed' | 'afgekeurd') || null }))}>
-                          <option value="">—</option>
-                          <option value="goed">Goed</option>
-                          <option value="afgekeurd">Afgekeurd</option>
-                        </select>
-                      </td>
-                      <td className="py-1 px-1"><input className="border border-gray-300 rounded px-1.5 py-1 text-sm w-full" value={editData.omschrijving ?? ''} onChange={e => setEditData(d => ({ ...d, omschrijving: e.target.value }))} /></td>
-                      <td className="py-1 px-1 flex gap-1">
-                        <button onClick={() => handleSaveEdit(m)} className="p-1 text-teal-600 hover:bg-teal-50 rounded"><Check size={14} /></button>
-                        <button onClick={() => setEditId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X size={14} /></button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
                       <td className="py-2 px-2 text-gray-700">{m.kenmerk || <span className="text-gray-400 italic">—</span>}</td>
-                      <td className="py-2 px-2 font-medium text-gray-800">{m.nominaal}</td>
-                      <td className="py-2 px-2 text-gray-600 font-mono text-xs">{m.tolerantie ?? '—'}</td>
                       <td className="py-2 px-2">
                         {m.gemetenWaarde
                           ? <div><span className="font-medium text-gray-800">{m.gemetenWaarde}</span>
@@ -2465,70 +2987,26 @@ export function MatenTab({ setupId, setupType }: { setupId: string; setupType: '
                           : <span className="text-gray-400 text-xs">niet gemeten</span>}
                       </td>
                       <td className="py-2 px-2"><StatusBadgeMaat status={m.status} /></td>
-                      <td className="py-2 px-2 text-gray-500 text-xs">{m.omschrijving ?? ''}</td>
-                      <td className="py-2 px-2 flex gap-1 justify-end">
-                        <button onClick={() => handleEdit(m)} className="p-1 text-gray-400 hover:text-teal-600 hover:bg-gray-100 rounded"><Pencil size={13} /></button>
-                        <button onClick={() => { if (confirm('Maat verwijderen?')) deleteMaat.mutate(m.id) }} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 size={13} /></button>
+                      <td className="py-2 px-2">
+                        <button
+                          onClick={() => { if (confirm('Maat verwijderen?')) deleteMaat.mutate(m.id) }}
+                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* PDF extractie modal */}
-      {extractOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-800">Extraheer maten uit tekening</h3>
-              <button onClick={() => setExtractOpen(false)}><X size={18} className="text-gray-400" /></button>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="p-4 space-y-3 overflow-y-auto flex-1">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase">Tekening</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={extractDocId} onChange={e => { setExtractDocId(e.target.value); setExtractError(null) }}>
-                  <option value="">Kies tekening…</option>
-                  {tekeningen.map(d => <option key={d.id} value={d.id}>{d.fileName}</option>)}
-                </select>
-                <button onClick={handleExtract} disabled={!extractDocId || extractLoading} className="w-full px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">
-                  {extractLoading ? 'Analyseren…' : 'Analyseer'}
-                </button>
-                {extractError && <p className="text-xs text-red-600">{extractError}</p>}
-              </div>
-              {extractFragments.length > 0 && (
-                <>
-                  <p className="text-xs text-gray-500">{extractFragments.length} waarden gevonden. Vink aan wat je wilt overnemen.</p>
-                  <div className="overflow-y-auto max-h-56 border border-gray-200 rounded-lg divide-y divide-gray-100">
-                    {extractFragments.map(f => (
-                      <label key={f} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50">
-                        <input type="checkbox" checked={extractSelected.has(f)} onChange={e => {
-                          setExtractSelected(s => { const n = new Set(s); e.target.checked ? n.add(f) : n.delete(f); return n })
-                        }} />
-                        <span className="text-sm font-mono text-gray-700">{f}</span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            {extractFragments.length > 0 && (
-              <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
-                <button onClick={() => setExtractOpen(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Annuleren</button>
-                <button onClick={handleOvernemen} disabled={extractSelected.size === 0} className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40">
-                  {extractSelected.size} overnemen
-                </button>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       )}
     </div>
   )
 }
+
 
 // ── NC bestand portaal modal ─────────────────────────────────────────────────
 

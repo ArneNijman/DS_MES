@@ -10,6 +10,7 @@ import {
   integer,
   numeric,
   doublePrecision,
+  real,
   primaryKey,
 } from 'drizzle-orm/pg-core'
 
@@ -547,6 +548,7 @@ export const productSetups = pgTable('product_setups', {
   equipmentNumber:   text('equipment_number'),
   drawingNumber:     text('drawing_number'),
   rapportageInfo:    text('rapportage_info'),
+  matenNiveau:       text('maten_niveau').notNull().default('stap'),
   createdBy:         uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -767,6 +769,16 @@ export const productSetupMaten = pgTable('product_setup_maten', {
   aangemaaktDoor: uuid('aangemaakt_door').references(() => employees.id, { onDelete: 'set null' }),
   sortOrder:      integer('sort_order').notNull().default(0),
   createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // Ballon-positie op tekening
+  xPct:           real('x_pct'),
+  yPct:           real('y_pct'),
+  paginaNummer:   integer('pagina_nummer'),
+  drawingDocId:   uuid('drawing_doc_id').references(() => productSetupDocuments.id, { onDelete: 'set null' }),
+  tolPlus:        text('tol_plus'),
+  tolMin:         text('tol_min'),
+  balloonType:    text('balloon_type').default('dimensional'),
+  meetmiddel:     text('meetmiddel'),
+  gdtType:        text('gdt_type'),
 })
 
 export type ProductSetupMaat    = typeof productSetupMaten.$inferSelect

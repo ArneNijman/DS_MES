@@ -236,6 +236,7 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
       equipmentNumber?:   string | null
       drawingNumber?:     string | null
       rapportageInfo?:    string | null
+      matenNiveau?:       string
     }
 
     const [updated] = await fastify.db
@@ -249,6 +250,7 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
         ...(body.equipmentName     !== undefined && { equipmentName:     body.equipmentName?.trim() || null }),
         ...(body.equipmentNumber   !== undefined && { equipmentNumber:   body.equipmentNumber?.trim() || null }),
         ...(body.drawingNumber     !== undefined && { drawingNumber:     body.drawingNumber?.trim() || null }),
+        ...(body.matenNiveau       !== undefined && { matenNiveau:       body.matenNiveau }),
         ...(body.rapportageInfo    !== undefined && { rapportageInfo:    body.rapportageInfo?.trim() || null }),
         updatedAt: new Date(),
       })
@@ -660,6 +662,15 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
         gemetenOp:      productSetupMaten.gemetenOp,
         sortOrder:      productSetupMaten.sortOrder,
         createdAt:      productSetupMaten.createdAt,
+        xPct:           productSetupMaten.xPct,
+        yPct:           productSetupMaten.yPct,
+        paginaNummer:   productSetupMaten.paginaNummer,
+        drawingDocId:   productSetupMaten.drawingDocId,
+        tolPlus:        productSetupMaten.tolPlus,
+        tolMin:         productSetupMaten.tolMin,
+        balloonType:    productSetupMaten.balloonType,
+        meetmiddel:     productSetupMaten.meetmiddel,
+        gdtType:        productSetupMaten.gdtType,
         gemetenDoorNaam:    employees.name,
         aangemaaktDoorNaam: sql<string | null>`(SELECT name FROM employees WHERE id = ${productSetupMaten.aangemaaktDoor})`,
       })
@@ -672,7 +683,12 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
 
   fastify.post('/kiosk/meet-setups/:id/maten', auth, async (req) => {
     const { id } = req.params as { id: string }
-    const body = req.body as { kenmerk?: string; nominaal?: string; tolerantie?: string; omschrijving?: string }
+    const body = req.body as {
+      kenmerk?: string; nominaal?: string; tolerantie?: string; omschrijving?: string
+      xPct?: number | null; yPct?: number | null; paginaNummer?: number | null
+      drawingDocId?: string | null; tolPlus?: string | null; tolMin?: string | null
+      balloonType?: string | null; meetmiddel?: string | null; gdtType?: string | null
+    }
 
     const [maxRow] = await fastify.db
       .select({ maxNr: sql<number>`COALESCE(MAX(balloon_nr), 0)`, maxSort: sql<number>`COALESCE(MAX(sort_order), 0)` })
@@ -688,6 +704,15 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
       omschrijving:   body.omschrijving ?? null,
       sortOrder:      (maxRow?.maxSort ?? 0) + 1,
       aangemaaktDoor: (req as any).employee?.employeeId ?? null,
+      xPct:           body.xPct         ?? null,
+      yPct:           body.yPct         ?? null,
+      paginaNummer:   body.paginaNummer ?? null,
+      drawingDocId:   body.drawingDocId ?? null,
+      tolPlus:        body.tolPlus      ?? null,
+      tolMin:         body.tolMin       ?? null,
+      balloonType:    body.balloonType  ?? 'dimensional',
+      meetmiddel:     body.meetmiddel   ?? null,
+      gdtType:        body.gdtType      ?? null,
     }).returning()
     return row
   })
@@ -697,6 +722,9 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
     const body = req.body as {
       kenmerk?: string; nominaal?: string; tolerantie?: string; omschrijving?: string
       gemetenWaarde?: string | null; status?: string | null
+      xPct?: number | null; yPct?: number | null; paginaNummer?: number | null
+      drawingDocId?: string | null; tolPlus?: string | null; tolMin?: string | null
+      balloonType?: string | null; meetmiddel?: string | null; gdtType?: string | null
     }
 
     const updateData: Record<string, unknown> = {}
@@ -705,6 +733,15 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
     if (body.tolerantie   !== undefined) updateData.tolerantie   = body.tolerantie
     if (body.omschrijving !== undefined) updateData.omschrijving = body.omschrijving
     if (body.status       !== undefined) updateData.status       = body.status
+    if (body.xPct         !== undefined) updateData.xPct         = body.xPct
+    if (body.yPct         !== undefined) updateData.yPct         = body.yPct
+    if (body.paginaNummer !== undefined) updateData.paginaNummer = body.paginaNummer
+    if (body.drawingDocId !== undefined) updateData.drawingDocId = body.drawingDocId
+    if (body.tolPlus      !== undefined) updateData.tolPlus      = body.tolPlus
+    if (body.tolMin       !== undefined) updateData.tolMin       = body.tolMin
+    if (body.balloonType  !== undefined) updateData.balloonType  = body.balloonType
+    if (body.meetmiddel   !== undefined) updateData.meetmiddel   = body.meetmiddel
+    if (body.gdtType      !== undefined) updateData.gdtType      = body.gdtType
 
     if (body.gemetenWaarde !== undefined) {
       updateData.gemetenWaarde = body.gemetenWaarde
@@ -785,5 +822,59 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
     }
 
     return { fragments: fragments.slice(0, 200) }
+  })
+
+  // ── Maten: bulk toevoegen (auto-detect resultaat) ─────────────────────────
+
+  fastify.post('/kiosk/meet-setups/:id/maten/bulk', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { drawingDocId, ballonnen } = req.body as {
+      drawingDocId: string
+      ballonnen: Array<{
+        paginaNummer: number; xPct: number; yPct: number
+        nominaalMaat?: string; tolPlus?: string; tolMinus?: string; isoPassing?: string
+      }>
+    }
+
+    if (!Array.isArray(ballonnen) || ballonnen.length === 0) {
+      return reply.status(400).send({ error: 'Geen ballonnen aangeleverd' })
+    }
+
+    const [maxRow] = await fastify.db
+      .select({ maxNr: sql<number>`COALESCE(MAX(balloon_nr), 0)`, maxSort: sql<number>`COALESCE(MAX(sort_order), 0)` })
+      .from(productSetupMaten)
+      .where(eq(productSetupMaten.setupId, id))
+
+    const rows = ballonnen.map((b, i) => ({
+      setupId:        id,
+      balloonNr:      (maxRow?.maxNr ?? 0) + i + 1,
+      kenmerk:        '',
+      nominaal:       b.nominaalMaat ?? '',
+      tolPlus:        b.tolPlus      ?? null,
+      tolMin:         b.tolMinus     ?? null,
+      paginaNummer:   b.paginaNummer,
+      xPct:           b.xPct,
+      yPct:           b.yPct,
+      drawingDocId:   drawingDocId,
+      balloonType:    'dimensional' as const,
+      sortOrder:      (maxRow?.maxSort ?? 0) + i + 1,
+      aangemaaktDoor: (req as any).employee?.employeeId ?? null,
+    }))
+
+    const inserted = await fastify.db.insert(productSetupMaten).values(rows).returning()
+    return inserted
+  })
+
+  // ── Maten: alles van een tekening verwijderen ─────────────────────────────
+
+  fastify.delete('/kiosk/meet-setups/:id/maten/byDrawing/:docId', auth, async (req) => {
+    const { id, docId } = req.params as { id: string; docId: string }
+    await fastify.db
+      .delete(productSetupMaten)
+      .where(and(
+        eq(productSetupMaten.setupId, id),
+        eq(productSetupMaten.drawingDocId, docId as any),
+      ))
+    return { ok: true }
   })
 }

@@ -429,6 +429,7 @@ const IGNORED_ALARM_TEXTS = [
   'w100 het gereedschap handmatig uit de spindel wegnemen',
   '010 werkruimte is open !',
   'handwiel in laadstation plaatsen',
+  '039 gereedschap ontklemmen a.u.b!',
 ]
 
 /**
@@ -511,7 +512,9 @@ async function readMachineState(machine) {
                 const textBuf = data.slice(8)
                 const nullEnd = textBuf.indexOf(0)
                 const text = (nullEnd >= 0 ? textBuf.slice(0, nullEnd) : textBuf).toString('latin1').trim()
-                if (text.length > 0 && !IGNORED_ALARM_TEXTS.includes(text.toLowerCase()))
+                const textLower = text.toLowerCase().replace(/\s+/g, ' ')
+                const isIgnoredText = IGNORED_ALARM_TEXTS.some(t => textLower.startsWith(t) || textLower === t)
+                if (text.length > 0 && !isIgnoredText)
                   alarmText = text
               }
             }
@@ -637,6 +640,7 @@ function extractLogTimestamp(line) {
 const IGNORED_ALARM_CODES = new Set([
   'N938',   // Toets zonder functie — toetsdruk in verkeerde modus, geen alarm
   'P99',    // Melding in PLC venster — periodiek PLC-statusbericht (Fooke), geen storing
+  'W100',   // Gereedschap handmatig uit spindel wegnemen — operator-actie, geen storing
 ])
 
 /**
