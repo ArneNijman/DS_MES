@@ -33,6 +33,7 @@ import { rolePermissionRoutes } from './routes/role-permissions.js'
 import { ncrImportRoutes } from './routes/admin/ncr-import.js'
 import { cncEventsRoutes } from './routes/admin/cnc-events.js'
 import { cncMetricsRoutes } from './routes/admin/cnc-metrics.js'
+import smtpRoutes from './routes/admin/smtp.js'
 import { ncrStatsRoutes } from './routes/kiosk/ncr-stats.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
@@ -40,6 +41,7 @@ import { validateEncryptionKey } from './utils/crypto.js'
 import { migrateClientSecrets } from './utils/migrate-secrets.js'
 import { startPolling, stopPolling } from './bc/poller.js'
 import { startMaintenanceIntervalChecker, stopMaintenanceIntervalChecker } from './jobs/maintenanceIntervalChecker.js'
+import { startEmailReminders, stopEmailReminders } from './jobs/emailReminders.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -92,11 +94,15 @@ async function main() {
   await fastify.register(ncrStatsRoutes,  { prefix: '/api' })
   await fastify.register(cncEventsRoutes,  { prefix: '/api' })
   await fastify.register(cncMetricsRoutes, { prefix: '/api' })
+  await fastify.register(smtpRoutes,       { prefix: '/api' })
+
+  startEmailReminders(fastify)
 
   // Graceful shutdown
   const shutdown = async () => {
     stopPolling()
     stopMaintenanceIntervalChecker()
+    stopEmailReminders()
     await fastify.close()
     process.exit(0)
   }

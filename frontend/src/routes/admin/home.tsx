@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Link2, Users, Map } from 'lucide-react'
+import { Link2, Users, Map, Mail } from 'lucide-react'
 import AdminSidebar from '@/components/AdminSidebar'
 
 const cards = [
@@ -26,6 +26,14 @@ const cards = [
     description: 'Automatisch gedetecteerde BC veldnamen controleren',
     color: 'text-purple-600',
     bg: 'bg-purple-50',
+  },
+  {
+    to: '/admin/smtp-settings',
+    icon: Mail,
+    title: 'Email instellingen',
+    description: 'SMTP configureren voor notificaties en herinneringen',
+    color: 'text-orange-600',
+    bg: 'bg-orange-50',
   },
 ]
 

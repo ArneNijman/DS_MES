@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { ncrRegistrations, ncrAttachments, statusLogs } from '../../db/schema.js'
 import { eq, desc, asc, and, inArray } from 'drizzle-orm'
+import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
@@ -147,6 +148,23 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
       .returning()
 
     await logStatusChange(fastify, 'ncr', ncr.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
+
+    // Broadcast naar quality + admin
+    const qualityTeam = await getNotifiableEmployees(fastify.db, { role: ['quality', 'admin'] })
+    if (qualityTeam.length > 0) {
+      sendMail(fastify.db, {
+        to: qualityTeam.map(e => e.email),
+        subject: `Nieuwe NCR ${ncr.ncrId} aangemaakt`,
+        html: mailLayout('Nieuwe NCR', `
+          <p>Er is een nieuwe NCR aangemaakt:</p>
+          <div class="section">
+            <div class="item"><strong>NCR-nummer:</strong> ${ncr.ncrId}</div>
+            ${ncr.shortDescription ? `<div class="item"><strong>Omschrijving:</strong> ${ncr.shortDescription}</div>` : ''}
+          </div>
+        `),
+      }).catch(() => {})
+    }
+
     return ncr
   })
 
@@ -181,7 +199,7 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
 
     // Is de NCR al afgesloten en mag de gebruiker het überhaupt bewerken?
     const [existing] = await fastify.db
-      .select({ status: ncrRegistrations.status })
+      .select({ status: ncrRegistrations.status, assignedToId: ncrRegistrations.assignedToId, ncrId: ncrRegistrations.ncrId, shortDescription: ncrRegistrations.shortDescription })
       .from(ncrRegistrations)
       .where(eq(ncrRegistrations.id, id))
       .limit(1)
@@ -201,6 +219,24 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
 
     if (existing && body.data.status && existing.status !== body.data.status) {
       await logStatusChange(fastify, 'ncr', id, existing.status, body.data.status, employee?.name ?? null, employee?.employeeId ?? null)
+    }
+
+    // Email bij nieuwe toewijzing
+    const nieuweAssignee = body.data.assignedToId
+    if (nieuweAssignee && nieuweAssignee !== existing?.assignedToId) {
+      const ontvangers = await getNotifiableEmployees(fastify.db, { ids: [nieuweAssignee] })
+      if (ontvangers.length > 0) {
+        const [ontvanger] = ontvangers
+        sendMail(fastify.db, {
+          to: ontvanger.email,
+          subject: `NCR ${ncr.ncrId} aan jou toegewezen`,
+          html: mailLayout('NCR toegewezen', `
+            <p>Hallo ${ontvanger.name},</p>
+            <p>NCR <strong>${ncr.ncrId}</strong> is aan jou toegewezen.</p>
+            ${ncr.shortDescription ? `<div class="section"><div class="item">${ncr.shortDescription}</div></div>` : ''}
+          `),
+        }).catch(() => {})
+      }
     }
 
     return ncr

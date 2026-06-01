@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { customerComplaints, customerComplaintDocuments, statusLogs } from '../../db/schema.js'
 import { eq, desc, and } from 'drizzle-orm'
+import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
@@ -102,6 +103,24 @@ export async function kioskKlantmeldingRoutes(fastify: FastifyInstance) {
       .returning()
 
     await logStatusChange(fastify, 'klantmelding', complaint.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
+
+    // Broadcast naar quality + admin
+    const qualityTeam = await getNotifiableEmployees(fastify.db, { role: ['quality', 'admin'] })
+    if (qualityTeam.length > 0) {
+      sendMail(fastify.db, {
+        to: qualityTeam.map(e => e.email),
+        subject: `Nieuwe klantmelding ${complaint.ctrId} ontvangen`,
+        html: mailLayout('Nieuwe klantmelding', `
+          <p>Er is een nieuwe klantmelding ontvangen:</p>
+          <div class="section">
+            <div class="item"><strong>Nummer:</strong> ${complaint.ctrId}</div>
+            ${complaint.klant ? `<div class="item"><strong>Klant:</strong> ${complaint.klant}</div>` : ''}
+            ${complaint.omschrijving ? `<div class="item"><strong>Omschrijving:</strong> ${complaint.omschrijving}</div>` : ''}
+          </div>
+        `),
+      }).catch(() => {})
+    }
+
     return complaint
   })
 

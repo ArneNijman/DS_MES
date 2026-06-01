@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { machines, maintenanceTasks, breakdowns, employees, maintenanceLogs, maintenanceAttachments, breakdownAttachments, machineServiceVisits, machineServiceContracts, machineDocuments, machineInvoices } from '../../db/schema.js'
 import { eq, asc, desc } from 'drizzle-orm'
+import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
@@ -272,6 +273,26 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
       .insert(maintenanceTasks)
       .values({ ...body.data, machineId: id })
       .returning()
+
+    // Email bij toewijzing
+    if (task.assignedToId) {
+      const ontvangers = await getNotifiableEmployees(fastify.db, { ids: [task.assignedToId] })
+      if (ontvangers.length > 0) {
+        const [ontvanger] = ontvangers
+        sendMail(fastify.db, {
+          to: ontvanger.email,
+          subject: `Nieuwe onderhoudstaak toegewezen: ${task.title}`,
+          html: mailLayout('Onderhoudstaak', `
+            <p>Hallo ${ontvanger.name},</p>
+            <p>Er is een onderhoudstaak aan jou toegewezen:</p>
+            <div class="section">
+              <div class="item"><strong>${task.title}</strong></div>
+              ${task.description ? `<div class="item">${task.description}</div>` : ''}
+            </div>
+          `),
+        }).catch(() => {})
+      }
+    }
 
     return task
   })

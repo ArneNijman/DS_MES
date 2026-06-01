@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { tasks, employees } from '../../db/schema.js'
 import { eq, and, or, inArray, desc } from 'drizzle-orm'
+import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
 
 const taskSchema = z.object({
   title: z.string().min(1),
@@ -215,6 +216,26 @@ export async function kioskTaskRoutes(fastify: FastifyInstance) {
       })
       .where(eq(tasks.id, id))
       .returning()
+
+    // Email notificatie naar toegewezene
+    const ontvangers = await getNotifiableEmployees(fastify.db, { ids: [assignedToId] })
+    if (ontvangers.length > 0) {
+      const [ontvanger] = ontvangers
+      sendMail(fastify.db, {
+        to: ontvanger.email,
+        subject: `Nieuwe taak toegewezen: ${existing.title}`,
+        html: mailLayout('Nieuwe taak', `
+          <p>Hallo ${ontvanger.name},</p>
+          <p>Er is een taak aan jou toegewezen:</p>
+          <div class="section">
+            <div class="item"><strong>${existing.title}</strong></div>
+            ${existing.description ? `<div class="item">${existing.description}</div>` : ''}
+            <div class="item">Prioriteit: <span class="badge badge-orange">${existing.priority}</span></div>
+          </div>
+          <p>Log in op het MES-systeem om de taak te bekijken.</p>
+        `),
+      }).catch(() => {})
+    }
 
     return updated
   })

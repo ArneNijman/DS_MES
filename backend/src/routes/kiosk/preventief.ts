@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { preventiveActions, statusLogs } from '../../db/schema.js'
 import { eq, desc, and } from 'drizzle-orm'
+import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
 
 const preventiveSchema = z.object({
   ncrId:                z.string().optional().nullable(),
@@ -88,6 +89,24 @@ export async function kioskPreventiefRoutes(fastify: FastifyInstance) {
       .returning()
 
     await logStatusChange(fastify, 'preventief', action.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
+
+    // Email bij toewijzing
+    if (action.assignedToId) {
+      const ontvangers = await getNotifiableEmployees(fastify.db, { ids: [action.assignedToId] })
+      if (ontvangers.length > 0) {
+        const [ontvanger] = ontvangers
+        sendMail(fastify.db, {
+          to: ontvanger.email,
+          subject: `Nieuwe preventieve maatregel toegewezen: ${action.prevId}`,
+          html: mailLayout('Preventieve maatregel', `
+            <p>Hallo ${ontvanger.name},</p>
+            <p>Er is een preventieve maatregel aan jou toegewezen (<strong>${action.prevId}</strong>).</p>
+            ${action.description ? `<div class="section"><div class="item">${action.description}</div></div>` : ''}
+          `),
+        }).catch(() => {})
+      }
+    }
+
     return action
   })
 

@@ -13,6 +13,7 @@ interface Employee {
   isClockedIn: boolean
   role: string
   bcId: string | null
+  emailNotificaties: boolean
 }
 
 const ROLES = [
@@ -55,6 +56,12 @@ export default function AdminEmployees() {
     mutationFn: ({ id, role }: { id: string; role: string }) =>
       apiFetch(`/admin/employees/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
     onSuccess: (_, { id }) => { qc.invalidateQueries({ queryKey: ['admin-employees'] }); showFeedback(id, 'Rol opgeslagen') },
+  })
+
+  const notifM = useMutation({
+    mutationFn: ({ id, emailNotificaties }: { id: string; emailNotificaties: boolean }) =>
+      apiFetch(`/admin/employees/${id}/email-notificaties`, { method: 'PUT', body: JSON.stringify({ emailNotificaties }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-employees'] }),
   })
 
   const pinM = useMutation({
@@ -144,6 +151,15 @@ export default function AdminEmployees() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-500">{emp.email ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => notifM.mutate({ id: emp.id, emailNotificaties: !emp.emailNotificaties })}
+                        title={emp.emailNotificaties ? 'Email notificaties aan — klik om uit te zetten' : 'Email notificaties uit — klik om aan te zetten'}
+                        className={`w-8 h-5 rounded-full transition-colors relative ${emp.emailNotificaties ? 'bg-teal-500' : 'bg-gray-200'}`}
+                      >
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${emp.emailNotificaties ? 'left-3.5' : 'left-0.5'}`} />
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <select
                         value={emp.role}

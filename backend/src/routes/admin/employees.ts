@@ -149,6 +149,19 @@ export async function adminEmployeeRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // PUT email notificaties toggle
+  fastify.put(
+    '/admin/employees/:id/email-notificaties',
+    { preHandler: [fastify.requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const { emailNotificaties } = req.body as { emailNotificaties: boolean }
+      if (typeof emailNotificaties !== 'boolean') return reply.status(400).send({ error: 'Ongeldig' })
+      await fastify.db.update(employees).set({ emailNotificaties }).where(eq(employees.id, id))
+      return { ok: true }
+    },
+  )
+
   // POST medewerker handmatig aanmaken
   fastify.post(
     '/admin/employees',

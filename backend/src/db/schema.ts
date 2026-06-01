@@ -25,8 +25,9 @@ export const employees = pgTable('employees', {
   pinHash: text('pin_hash'),
   role: text('role').default('operator_frezen').notNull(),
   bcData: jsonb('bc_data'),
-  syncedAt: timestamp('synced_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  syncedAt:            timestamp('synced_at', { withTimezone: true }),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  emailNotificaties:   boolean('email_notificaties').default(true).notNull(),
 })
 
 export const adminUsers = pgTable('admin_users', {
@@ -49,13 +50,15 @@ export const bcConfig = pgTable('bc_config', {
 })
 
 export const smtpSettings = pgTable('smtp_settings', {
-  id: serial('id').primaryKey(),
-  host: text('host').notNull(),
-  port: text('port').notNull(),
-  user: text('user').notNull(),
-  password: text('password').notNull(),
-  from: text('from').notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  id:               serial('id').primaryKey(),
+  host:             text('host').notNull().default(''),
+  port:             text('port').notNull().default('25'),
+  user:             text('user').notNull().default(''),
+  password:         text('password').notNull().default(''),
+  fromEmail:        text('from').notNull().default('mes@dutch-shape.nl'),
+  fromName:         text('from_name').notNull().default('Dutch Shape MES'),
+  reminderInterval: text('reminder_interval').notNull().default('dagelijks'),
+  updatedAt:        timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const bcFieldMap = pgTable(
