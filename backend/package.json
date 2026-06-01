@@ -20,6 +20,7 @@
     "@fastify/multipart": "^8.3.0",
     "@fastify/static": "^7.0.4",
     "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.34.0",
     "drizzle-orm": "^0.38.0",
@@ -32,6 +33,7 @@
     "nodemailer": "^8.0.10",
     "occt-import-js": "^0.0.23",
     "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.18.0",
     "postgres": "^3.4.4",
     "zod": "^3.24.1"
   },

@@ -39,10 +39,16 @@ export function invalidateSmtpCache() {
   cacheExpiry = 0
 }
 
+export interface MailAttachment {
+  filename: string
+  content: Buffer
+}
+
 export interface MailOptions {
   to: string | string[]
   subject: string
   html: string
+  attachments?: MailAttachment[]
 }
 
 export async function sendMail(db: FastifyInstance['db'], opts: MailOptions): Promise<boolean> {
@@ -59,10 +65,15 @@ export async function sendMail(db: FastifyInstance['db'], opts: MailOptions): Pr
 
   try {
     await transporter.sendMail({
-      from:    `"${cfg.fromName}" <${cfg.fromEmail}>`,
-      to:      Array.isArray(opts.to) ? opts.to.join(', ') : opts.to,
-      subject: opts.subject,
-      html:    opts.html,
+      from:        `"${cfg.fromName}" <${cfg.fromEmail}>`,
+      to:          Array.isArray(opts.to) ? opts.to.join(', ') : opts.to,
+      subject:     opts.subject,
+      html:        opts.html,
+      attachments: opts.attachments?.map(a => ({
+        filename:    a.filename,
+        content:     a.content,
+        contentType: 'application/pdf' as const,
+      })),
     })
     return true
   } catch (err) {
