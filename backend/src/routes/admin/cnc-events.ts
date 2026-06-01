@@ -14,10 +14,23 @@ const STILSTAND_THRESHOLD_SEC = 600    // 10 minuten gap voor stilstand
 const OFFLINE_MIN_SEC         = 300    // offline perioden korter dan 5 min worden genegeerd (monitoring-ruis)
 const WACHTTIJD_MIN_SEC       = 30     // spindel min 30 sec stil tijdens programma voor wachttijd
 
-const WORK_HOURS_PER_DAY = 24
-
-function workingHoursSeconds(start: Date, end: Date): number {
-  return Math.max(0, (end.getTime() - start.getTime()) / 1000)
+/** Telt seconden die vallen op werkdagen (ma=1 t/m vr=5). Weekend wordt overgeslagen. */
+function weekdaySeconds(start: Date, end: Date): number {
+  if (end <= start) return 0
+  let seconds = 0
+  const cursor = new Date(start)
+  while (cursor < end) {
+    const dow = cursor.getDay()
+    if (dow >= 1 && dow <= 5) {
+      const eod = new Date(cursor)
+      eod.setHours(23, 59, 59, 999)
+      const dayEnd = eod < end ? eod : end
+      seconds += Math.round((dayEnd.getTime() - cursor.getTime()) / 1000)
+    }
+    cursor.setDate(cursor.getDate() + 1)
+    cursor.setHours(0, 0, 0, 0)
+  }
+  return seconds
 }
 
 // ── Downtime derivation ────────────────────────────────────────────────────
@@ -116,7 +129,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   }
 
   const summary = { offline: 0, alarmstilstand: 0, stilstand: 0, wachttijd: 0 }
-  for (const p of periods) summary[p.type] += workingHoursSeconds(p.startedAt, p.endedAt ?? now)
+  for (const p of periods) summary[p.type] += weekdaySeconds(p.startedAt, p.endedAt ?? now)
 
   return {
     periods: periods.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()),
@@ -333,9 +346,9 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           .orderBy(asc(cncMachineEvents.occurredAt))
 
         const { periods, summary } = deriveDowntimePeriods(events)
-        const periodMinutes        = days * WORK_HOURS_PER_DAY * 60
+        const periodWorkSec        = weekdaySeconds(since, new Date())
         const totalDowntimeSec     = summary.offline + summary.alarmstilstand + summary.stilstand
-        const availabilityPct      = totalDowntimeSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / (periodMinutes * 60)) * 100))
+        const availabilityPct      = periodWorkSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / periodWorkSec) * 100))
         const ongoingPeriod        = periods.find(p => p.isOngoing) ?? null
 
         // Actief gereedschap: meest recente TOOL_CHANGED event → naam opzoeken in tool-magazijn
