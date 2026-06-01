@@ -1,6 +1,6 @@
 export const SIDEBAR_MODULES = [
-  { key: 'mijn_todo',        label: 'Mijn taken'              },
-  { key: 'mijn_taken',       label: 'Mijn meldingen'          },
+  { key: 'mijn_taken',       label: 'Mijn taken'              },
+  { key: 'mijn_meldingen',   label: 'Mijn meldingen'          },
   { key: 'ncr',              label: 'NCR registratie'         },
   { key: 'preventief',       label: 'Preventieve maatregelen' },
   { key: 'klantmelding',     label: 'Klantmeldingen'          },

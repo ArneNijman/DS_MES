@@ -24,7 +24,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_todo' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup' | 'machine_dashboard'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_meldingen' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup' | 'machine_dashboard'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -122,7 +122,7 @@ function NavBtn({
 export default function KioskDashboard() {
   const navigate = useNavigate()
   const [user, setUser] = useState<UserInfo | null>(null)
-  const [active, setActive] = useState<NavKey>('machines')
+  const [active, setActive] = useState<NavKey>('mijn_meldingen')
   const [pendingNcr, setPendingNcr] = useState<MyTaskNcr | null>(null)
   const [pendingPreventief, setPendingPreventief] = useState<Record<string, unknown> | null>(null)
   const [pendingToolId, setPendingToolId] = useState<string | null>(null)
@@ -207,8 +207,8 @@ export default function KioskDashboard() {
 
         {/* Navigatie */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {canSee('mijn_todo') && (
-            <NavBtn active={active === 'mijn_todo'} onClick={() => setActive('mijn_todo')}>
+          {canSee('mijn_taken') && (
+            <NavBtn active={active === 'mijn_taken'} onClick={() => setActive('mijn_taken')}>
               <ListTodo size={15} />
               <span className="flex-1 text-left">Mijn taken</span>
               {rood > 0 && <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{rood > 9 ? '9+' : rood}</span>}
@@ -216,8 +216,8 @@ export default function KioskDashboard() {
             </NavBtn>
           )}
 
-          {canSee('mijn_taken') && (
-            <NavBtn active={active === 'mijn_taken'} onClick={() => setActive('mijn_taken')}>
+          {canSee('mijn_meldingen') && (
+            <NavBtn active={active === 'mijn_meldingen'} onClick={() => setActive('mijn_meldingen')}>
               <CheckSquare size={15} />
               <span className="flex-1 text-left">Mijn meldingen</span>
               {myTaskCount > 0 && <span className="text-xs bg-red-500 text-white font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">{myTaskCount > 9 ? '9+' : myTaskCount}</span>}
@@ -342,8 +342,8 @@ export default function KioskDashboard() {
         {active === 'preventief'   && <PreventiefContent initialAction={pendingPreventief} onPendingConsumed={() => setPendingPreventief(null)} onGoToNcr={handleGoToNcr} />}
         {active === 'klantmelding'  && <KlantmeldingContent />}
         {active === 'meetmiddelen'  && <MeetmiddelenContent openToolId={pendingToolId ?? undefined} onPendingConsumed={() => setPendingToolId(null)} />}
-        {active === 'mijn_taken'   && <MijnTakenContent onOpenNcr={handleOpenNcr} onNavigateToTool={(id) => { setPendingToolId(id); setActive('meetmiddelen') }} />}
-        {active === 'mijn_todo'      && <MijnTakenTodoContent />}
+        {active === 'mijn_meldingen'   && <MijnTakenContent onOpenNcr={handleOpenNcr} onNavigateToTool={(id) => { setPendingToolId(id); setActive('meetmiddelen') }} />}
+        {active === 'mijn_taken'            && <MijnTakenTodoContent />}
         {active === 'cnc_machining'  && <CncMachiningContent />}
         {active === 'tooling'        && <ToolingContent />}
         {active === 'product_setup'  && <ProductSetupContent />}
