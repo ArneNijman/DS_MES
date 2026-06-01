@@ -386,7 +386,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           },
           ongoingPeriod,
           currentTool,
-          periods,
+          periods: periods.filter(p => weekdaySeconds(p.startedAt, p.endedAt ?? new Date()) > 0),
         }
       })
     )
