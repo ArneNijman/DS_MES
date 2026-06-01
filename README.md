@@ -363,9 +363,10 @@ Het script slaat regels zonder geldig `NCR_`-prefix automatisch over (lege regel
 |--------|--------|
 | BC Configuratie + OAuth2 koppeling | Beschikbaar |
 | BC Veldmapping (auto-detectie) | Beschikbaar |
-| Medewerkersbeheer (CRUD, PIN, sync) | Beschikbaar |
+| Medewerkersbeheer (CRUD, PIN, sync, email toggle) | Beschikbaar |
 | Machines beheer | Beschikbaar |
 | CNC Machining (tooling beheer) | Beschikbaar |
+| Email instellingen (SMTP + per-categorie reminder-interval) | Beschikbaar |
 
 ---
 

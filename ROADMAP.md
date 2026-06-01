@@ -16,7 +16,14 @@ De architectuur scheidt vier lagen:
 
 ## Phase 1 — MVP Inspectieviewer
 
-**Status: In ontwikkeling**
+**Status: Gedeeltelijk gebouwd**
+
+Gebouwd (2026-05/06):
+- Meetmaten tab in Product Setup + Meet Setup (balloon-annotaties op tekening, PDF split-view)
+- Balloon positie opslaan in DB (`product_setup_maten`, migration 0059–0060)
+- PDF viewer met sidebar voor maten-overzicht
+
+Nog te bouwen:
 
 ### Wat de gebruiker ziet
 - "Meet bestanden" portal in Product Setup (naast Tekeningen en CAD bestanden)

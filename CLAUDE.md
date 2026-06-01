@@ -32,7 +32,7 @@ Drizzle genereert **geen** migraties automatisch. Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0059_beschrijving.sql` (oplopend nummer, huidig laatste: 0058)
+   - Naamconventie: `0063_beschrijving.sql` (oplopend nummer, huidig laatste: 0062)
 3. Drizzle past alle `.sql` bestanden in die map toe bij opstarten
 
 Voorbeeld migratie:
@@ -55,6 +55,11 @@ backend/src/
   cnc/
     toolTableParser.ts  # Parser voor Heidenhain TOOL.T bestanden
     ncProgramParser.ts  # Parser voor NC-programma's (TOOL CALL regels)
+  lib/
+    mailer.ts           # nodemailer wrapper — SMTP uit DB (5min cache), sendMail, getNotifiableEmployees, mailLayout
+    pdf-generator.ts    # pdfkit rapport-generator — genereerRapportPdf(titel, datum, secties[])
+  jobs/
+    emailReminders.ts   # Dagelijkse reminder cron (07:30 werkdagen) — per-categorie interval, PDF bijlagen
   worker/               # BullMQ job handlers
 ```
 
@@ -149,13 +154,15 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 | Machines (admin) | `routes/admin/machines.tsx` | `routes/admin/machines.ts` |
 | Medewerkers | `routes/admin/employees.tsx` | `routes/admin/employees.ts` |
 | Machine Dashboard | `routes/admin/machine-dashboard.tsx` (exporteert ook `MachineDashboardContent` voor kiosk) | `routes/admin/cnc-events.ts` + `cnc-metrics.ts` |
+| Email instellingen (admin) | `routes/admin/smtp-settings.tsx` | `routes/admin/smtp.ts` |
 
 ## Sleuteltabellen in de DB
 
 | Tabel | Omschrijving |
 |-------|-------------|
 | `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal); `spindle_hours` = cumulatief spindeluren |
-| `employees` | Medewerkers (PIN, rol, inklokstatus) |
+| `employees` | Medewerkers (PIN, rol, inklokstatus); `email` + `email_notificaties` voor reminder-emails |
+| `smtp_settings` | Enkelvoudige rij (id=1) met SMTP-config + per-categorie reminder-interval (taken/ncr/onderhoud/kalibratie/kwaliteit) |
 | `cnc_tool_entries` | Toolmagazijn per machine (gesynchroniseerd via TOOL.T upload) |
 | `cnc_sync_logs` | Log van TOOL.T syncs per machine |
 | `cnc_machine_events` | CNC event-stroom (MACHINE_OFFLINE/ONLINE, ALARM_TRIGGERED/CLEARED, PROGRAM_STARTED/STOPPED) per machine |
