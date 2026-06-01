@@ -967,18 +967,25 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'cnc', 'bijlagen', 'overdracht', ...(setup.matenNiveau !== 'setup' ? ['maten'] : [])] as const).map(tab => (
+          {(['info', 'cnc', 'bijlagen', 'overdracht'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab as typeof activeTab)}
+              onClick={() => setActiveTab(tab)}
               className={cn(
                 'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
               )}
             >
-              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : tab === 'overdracht' ? 'Overdracht' : 'Maten'}
+              {tab === 'info' ? 'Algemene informatie' : tab === 'cnc' ? 'CNC informatie' : tab === 'bijlagen' ? 'Bijlagen' : 'Overdracht'}
             </button>
           ))}
+          <button
+            disabled
+            className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-300 cursor-not-allowed"
+            title="Binnenkort beschikbaar"
+          >
+            Maten
+          </button>
         </div>
 
         {/* Tab inhoud */}
@@ -1300,8 +1307,8 @@ function SetupDetail({
 
       {/* Content: Bewerkingstappen */}
       <div className="flex-1 overflow-auto p-6">
-        {/* Setup-niveau maten sectie */}
-        {setup.matenNiveau === 'setup' && (
+        {/* Setup-niveau maten sectie — tijdelijk uitgeschakeld */}
+        {false && (
           <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
             <button
               onClick={() => setMatenPanelOpen(o => !o)}
@@ -1315,7 +1322,7 @@ function SetupDetail({
             </button>
             {matenPanelOpen && (
               <div className="bg-white">
-                <MatenTab setupId={setupId} setupType="product" matenNiveau={setup.matenNiveau} onNiveauChange={v => patchSetup.mutate({ matenNiveau: v })} />
+                <MatenTab setupId={setupId} setupType="product" matenNiveau={setup?.matenNiveau} onNiveauChange={v => patchSetup.mutate({ matenNiveau: v })} />
               </div>
             )}
           </div>

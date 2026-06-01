@@ -630,10 +630,10 @@ function SetupDetail({
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-          {(['info', 'rapportage', 'bijlagen', 'overdracht', 'maten'] as const).map(tab => (
+          {(['info', 'rapportage', 'bijlagen', 'overdracht'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(tab as typeof activeTab)}
               className={cn(
                 'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab ? 'border-teal-500 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
@@ -642,8 +642,7 @@ function SetupDetail({
               {tab === 'info' ? 'Algemene informatie'
                 : tab === 'rapportage' ? 'Rapportage informatie'
                 : tab === 'bijlagen' ? 'Bijlagen'
-                : tab === 'overdracht' ? 'Overdracht'
-                : 'Maten'}
+                : 'Overdracht'}
             </button>
           ))}
         </div>
