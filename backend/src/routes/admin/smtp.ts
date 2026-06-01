@@ -14,15 +14,22 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
       host: '', port: '25', user: '', password: '',
       fromEmail: 'mes@dutch-shape.nl', fromName: 'Dutch Shape MES',
       reminderInterval: 'dagelijks',
+      intervalTaken: 'dagelijks', intervalNcr: 'dagelijks',
+      intervalOnderhoud: 'wekelijks', intervalKalibratie: 'wekelijks', intervalKwaliteit: 'dagelijks',
     }
     return {
-      host:             row.host,
-      port:             row.port,
-      user:             row.user,
-      password:         row.password ? '••••••••' : '',
-      fromEmail:        row.fromEmail,
-      fromName:         row.fromName,
-      reminderInterval: row.reminderInterval,
+      host:               row.host,
+      port:               row.port,
+      user:               row.user,
+      password:           row.password ? '••••••••' : '',
+      fromEmail:          row.fromEmail,
+      fromName:           row.fromName,
+      reminderInterval:   row.reminderInterval,
+      intervalTaken:      row.intervalTaken,
+      intervalNcr:        row.intervalNcr,
+      intervalOnderhoud:  row.intervalOnderhoud,
+      intervalKalibratie: row.intervalKalibratie,
+      intervalKwaliteit:  row.intervalKwaliteit,
     }
   })
 
@@ -32,6 +39,8 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
     const body = req.body as {
       host: string; port: string; user?: string; password?: string
       fromEmail: string; fromName: string; reminderInterval: string
+      intervalTaken: string; intervalNcr: string
+      intervalOnderhoud: string; intervalKalibratie: string; intervalKwaliteit: string
     }
 
     const [existing] = await fastify.db.select({ password: smtpSettings.password })
@@ -52,20 +61,30 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
         password,
         fromEmail:        body.fromEmail.trim(),
         fromName:         body.fromName.trim(),
-        reminderInterval: body.reminderInterval,
-        updatedAt:        new Date(),
+        reminderInterval:   body.reminderInterval,
+        intervalTaken:      body.intervalTaken ?? 'dagelijks',
+        intervalNcr:        body.intervalNcr ?? 'dagelijks',
+        intervalOnderhoud:  body.intervalOnderhoud ?? 'wekelijks',
+        intervalKalibratie: body.intervalKalibratie ?? 'wekelijks',
+        intervalKwaliteit:  body.intervalKwaliteit ?? 'dagelijks',
+        updatedAt:          new Date(),
       })
       .onConflictDoUpdate({
         target: smtpSettings.id,
         set: {
-          host:             body.host.trim(),
-          port:             body.port.trim(),
-          user:             body.user?.trim() ?? '',
+          host:               body.host.trim(),
+          port:               body.port.trim(),
+          user:               body.user?.trim() ?? '',
           password,
-          fromEmail:        body.fromEmail.trim(),
-          fromName:         body.fromName.trim(),
-          reminderInterval: body.reminderInterval,
-          updatedAt:        new Date(),
+          fromEmail:          body.fromEmail.trim(),
+          fromName:           body.fromName.trim(),
+          reminderInterval:   body.reminderInterval,
+          intervalTaken:      body.intervalTaken ?? 'dagelijks',
+          intervalNcr:        body.intervalNcr ?? 'dagelijks',
+          intervalOnderhoud:  body.intervalOnderhoud ?? 'wekelijks',
+          intervalKalibratie: body.intervalKalibratie ?? 'wekelijks',
+          intervalKwaliteit:  body.intervalKwaliteit ?? 'dagelijks',
+          updatedAt:          new Date(),
         },
       })
 

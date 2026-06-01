@@ -12,12 +12,25 @@ interface SmtpConfig {
   fromEmail: string
   fromName: string
   reminderInterval: string
+  intervalTaken: string
+  intervalNcr: string
+  intervalOnderhoud: string
+  intervalKalibratie: string
+  intervalKwaliteit: string
 }
 
 const INTERVAL_OPTIES = [
   { value: 'dagelijks',    label: 'Dagelijks (elke werkdag)' },
   { value: 'wekelijks',   label: 'Wekelijks (maandag)' },
   { value: 'maandelijks', label: 'Maandelijks (1e van de maand)' },
+]
+
+const CATEGORIE_INTERVALS: { key: keyof SmtpConfig; label: string; hint: string }[] = [
+  { key: 'intervalTaken',      label: 'Taken',              hint: 'Open taken per medewerker' },
+  { key: 'intervalNcr',        label: 'NCR registraties',   hint: 'Open NCRs per medewerker' },
+  { key: 'intervalOnderhoud',  label: 'Machine onderhoud',  hint: 'Open onderhoudstaken per medewerker' },
+  { key: 'intervalKalibratie', label: 'Kalibratie',         hint: 'Meetmiddelen die binnenkort vervallen' },
+  { key: 'intervalKwaliteit',  label: 'Kwaliteitsoverzicht', hint: 'Alle open NCRs + klantmeldingen (quality/admin)' },
 ]
 
 export default function SmtpSettings() {
@@ -36,6 +49,11 @@ export default function SmtpSettings() {
     fromEmail: 'mes@dutch-shape.nl',
     fromName: 'Dutch Shape MES',
     reminderInterval: 'dagelijks',
+    intervalTaken: 'dagelijks',
+    intervalNcr: 'dagelijks',
+    intervalOnderhoud: 'wekelijks',
+    intervalKalibratie: 'wekelijks',
+    intervalKwaliteit: 'dagelijks',
   })
   const [initialized, setInitialized] = useState(false)
 
@@ -110,17 +128,24 @@ export default function SmtpSettings() {
           {field('Gebruikersnaam (optioneel)', 'user')}
           {field('Wachtwoord (optioneel)', 'password', 'password')}
 
-          <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2 pt-2">Herinnering</h2>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Interval</label>
-            <select
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-              value={form.reminderInterval}
-              onChange={e => setForm(f => ({ ...f, reminderInterval: e.target.value }))}
-            >
-              {INTERVAL_OPTIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <p className="text-xs text-gray-400">Herinnerings-emails worden om 07:30 verstuurd</p>
+          <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2 pt-2">Herinnerings-interval per categorie</h2>
+          <p className="text-xs text-gray-400 -mt-2">Emails worden verstuurd om 07:30 op werkdagen. Stel per categorie in hoe vaak.</p>
+          <div className="space-y-3">
+            {CATEGORIE_INTERVALS.map(cat => (
+              <div key={cat.key} className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-700">{cat.label}</p>
+                  <p className="text-xs text-gray-400">{cat.hint}</p>
+                </div>
+                <select
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                  value={form[cat.key]}
+                  onChange={e => setForm(f => ({ ...f, [cat.key]: e.target.value }))}
+                >
+                  {INTERVAL_OPTIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            ))}
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -57,8 +57,13 @@ export const smtpSettings = pgTable('smtp_settings', {
   password:         text('password').notNull().default(''),
   fromEmail:        text('from').notNull().default('mes@dutch-shape.nl'),
   fromName:         text('from_name').notNull().default('Dutch Shape MES'),
-  reminderInterval: text('reminder_interval').notNull().default('dagelijks'),
-  updatedAt:        timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  reminderInterval:    text('reminder_interval').notNull().default('dagelijks'),
+  intervalTaken:       text('interval_taken').notNull().default('dagelijks'),
+  intervalNcr:         text('interval_ncr').notNull().default('dagelijks'),
+  intervalOnderhoud:   text('interval_onderhoud').notNull().default('wekelijks'),
+  intervalKalibratie:  text('interval_kalibratie').notNull().default('wekelijks'),
+  intervalKwaliteit:   text('interval_kwaliteit').notNull().default('dagelijks'),
+  updatedAt:           timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const bcFieldMap = pgTable(

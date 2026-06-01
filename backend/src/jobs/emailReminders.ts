@@ -31,17 +31,26 @@ export function startEmailReminders(fastify: FastifyInstance) {
 export function stopEmailReminders() { cronJob?.stop() }
 
 async function verzendReminders(fastify: FastifyInstance) {
-  const [smtp] = await fastify.db.select({ reminderInterval: smtpSettings.reminderInterval })
-    .from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1)
+  const [smtp] = await fastify.db.select({
+    reminderInterval:   smtpSettings.reminderInterval,
+    intervalTaken:      smtpSettings.intervalTaken,
+    intervalNcr:        smtpSettings.intervalNcr,
+    intervalOnderhoud:  smtpSettings.intervalOnderhoud,
+    intervalKalibratie: smtpSettings.intervalKalibratie,
+    intervalKwaliteit:  smtpSettings.intervalKwaliteit,
+  }).from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1)
   if (!smtp) return
 
-  const now  = new Date()
-  const dag  = now.getDay()
+  const now   = new Date()
+  const dag   = now.getDay()
   const datum = now.getDate()
-  const interval = smtp.reminderInterval
 
-  if (interval === 'wekelijks'   && dag   !== 1) return
-  if (interval === 'maandelijks' && datum !== 1) return
+  /** Geeft true als het interval van vandaag verstuurd moet worden. */
+  function moetVerzenden(interval: string): boolean {
+    if (interval === 'wekelijks'   && dag   !== 1) return false
+    if (interval === 'maandelijks' && datum !== 1) return false
+    return true
+  }
 
   const datumLabel = now.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const alleEmployees = await getNotifiableEmployees(fastify.db)
@@ -51,10 +60,10 @@ async function verzendReminders(fastify: FastifyInstance) {
     const samenvatting: string[] = []
 
     // ── Open taken ────────────────────────────────────────────────────────
-    const openTaken = await fastify.db
+    const openTaken = moetVerzenden(smtp.intervalTaken) ? await fastify.db
       .select({ id: tasks.id, title: tasks.title, priority: tasks.priority, dueDate: tasks.dueDate, status: tasks.status })
       .from(tasks)
-      .where(and(eq(tasks.assignedToId, emp.id), ne(tasks.status, 'gearchiveerd')))
+      .where(and(eq(tasks.assignedToId, emp.id), ne(tasks.status, 'gearchiveerd'))) : []
     if (openTaken.length > 0) {
       samenvatting.push(`${openTaken.length} open ${openTaken.length === 1 ? 'taak' : 'taken'}`)
       const pdf = await genereerRapportPdf('Taken overzicht', datumLabel, [{
@@ -69,10 +78,10 @@ async function verzendReminders(fastify: FastifyInstance) {
     }
 
     // ── Open NCRs (persoonlijk) ────────────────────────────────────────
-    const openNcrs = await fastify.db
+    const openNcrs = moetVerzenden(smtp.intervalNcr) ? await fastify.db
       .select({ ncrId: ncrRegistrations.ncrId, shortDescription: ncrRegistrations.shortDescription, status: ncrRegistrations.status })
       .from(ncrRegistrations)
-      .where(and(eq(ncrRegistrations.assignedToId, emp.id), sql`${ncrRegistrations.status} NOT IN ('gesloten','vervallen')`))
+      .where(and(eq(ncrRegistrations.assignedToId, emp.id), sql`${ncrRegistrations.status} NOT IN ('gesloten','vervallen')`)) : []
     if (openNcrs.length > 0) {
       samenvatting.push(`${openNcrs.length} open NCR${openNcrs.length > 1 ? 's' : ''}`)
       const pdf = await genereerRapportPdf('NCR overzicht', datumLabel, [{
@@ -83,10 +92,10 @@ async function verzendReminders(fastify: FastifyInstance) {
     }
 
     // ── Open onderhoudstaken ──────────────────────────────────────────
-    const openOnderhoud = await fastify.db
+    const openOnderhoud = moetVerzenden(smtp.intervalOnderhoud) ? await fastify.db
       .select({ id: maintenanceTasks.id, title: maintenanceTasks.title, status: maintenanceTasks.status })
       .from(maintenanceTasks)
-      .where(and(eq(maintenanceTasks.assignedToId, emp.id), sql`${maintenanceTasks.status} NOT IN ('voltooid','geannuleerd')`))
+      .where(and(eq(maintenanceTasks.assignedToId, emp.id), sql`${maintenanceTasks.status} NOT IN ('voltooid','geannuleerd')`)) : []
     if (openOnderhoud.length > 0) {
       samenvatting.push(`${openOnderhoud.length} onderhoudstaak${openOnderhoud.length > 1 ? 'en' : ''}`)
       const pdf = await genereerRapportPdf('Onderhoud overzicht', datumLabel, [{
@@ -97,19 +106,21 @@ async function verzendReminders(fastify: FastifyInstance) {
     }
 
     // ── Kalibratie vervalt binnenkort ─────────────────────────────────
-    const mijnTools = await fastify.db
-      .select({ id: measuringTools.id, toolId: measuringTools.toolId, artikelnaam: measuringTools.artikelnaam, interval: measuringTools.interval })
-      .from(measuringTools)
-      .where(and(eq(measuringTools.teamleiderId, emp.id), eq(measuringTools.kalibratiePlicht, true)))
-    const over30 = new Date(now.getTime() + 30 * 86_400_000)
     const vervallend: { toolId: string; naam: string; vervalt: string }[] = []
-    for (const tool of mijnTools) {
-      const [last] = await fastify.db.select({ datum: calibrationRecords.datum })
-        .from(calibrationRecords).where(eq(calibrationRecords.toolId, tool.id))
-        .orderBy(sql`${calibrationRecords.datum} DESC`).limit(1)
-      const volgende = nextKalibratieDate(last?.datum ?? null, tool.interval)
-      if (volgende && volgende <= over30)
-        vervallend.push({ toolId: tool.toolId, naam: tool.artikelnaam ?? '', vervalt: volgende.toLocaleDateString('nl-NL') })
+    if (moetVerzenden(smtp.intervalKalibratie)) {
+      const mijnTools = await fastify.db
+        .select({ id: measuringTools.id, toolId: measuringTools.toolId, artikelnaam: measuringTools.artikelnaam, interval: measuringTools.interval })
+        .from(measuringTools)
+        .where(and(eq(measuringTools.teamleiderId, emp.id), eq(measuringTools.kalibratiePlicht, true)))
+      const over30 = new Date(now.getTime() + 30 * 86_400_000)
+      for (const tool of mijnTools) {
+        const [last] = await fastify.db.select({ datum: calibrationRecords.datum })
+          .from(calibrationRecords).where(eq(calibrationRecords.toolId, tool.id))
+          .orderBy(sql`${calibrationRecords.datum} DESC`).limit(1)
+        const volgende = nextKalibratieDate(last?.datum ?? null, tool.interval)
+        if (volgende && volgende <= over30)
+          vervallend.push({ toolId: tool.toolId, naam: tool.artikelnaam ?? '', vervalt: volgende.toLocaleDateString('nl-NL') })
+      }
     }
     if (vervallend.length > 0) {
       samenvatting.push(`${vervallend.length} kalibratie${vervallend.length > 1 ? 's' : ''} vervalt binnenkort`)
@@ -122,7 +133,7 @@ async function verzendReminders(fastify: FastifyInstance) {
 
     // ── Extra voor quality/admin ──────────────────────────────────────
     const [empData] = await fastify.db.select({ role: employees.role }).from(employees).where(eq(employees.id, emp.id)).limit(1)
-    if (empData?.role === 'quality' || empData?.role === 'admin') {
+    if ((empData?.role === 'quality' || empData?.role === 'admin') && moetVerzenden(smtp.intervalKwaliteit)) {
       const alleNcrs = await fastify.db
         .select({ ncrId: ncrRegistrations.ncrId, shortDescription: ncrRegistrations.shortDescription, status: ncrRegistrations.status })
         .from(ncrRegistrations)
