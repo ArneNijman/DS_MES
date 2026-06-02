@@ -5,6 +5,7 @@ export const SIDEBAR_MODULES = [
   { key: 'preventief',       label: 'Preventieve maatregelen' },
   { key: 'klantmelding',     label: 'Klantmeldingen'          },
   { key: 'machines',         label: 'Machines'                },
+  { key: 'machine_dashboard', label: 'Machine Dashboard'       },
   { key: 'meetmiddelen',     label: 'Meetmiddelen'            },
   { key: 'cnc_machining',    label: 'CNC Machining'           },
   { key: 'tooling',          label: 'Tooling beheer'          },
