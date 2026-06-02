@@ -27,7 +27,6 @@ services:
       BC_CLIENT_SECRET: ${BC_CLIENT_SECRET}
       BC_BASE_URL: ${BC_BASE_URL}
       CNC_AGENT_URL: http://host.docker.internal:3099  # meerdere agents: komma-gescheiden, bv. http://pc1:3099,http://pc2:3099
-      HYPERMILL_AGENT_URL: http://host.docker.internal:3098  # PC waar HyperMill geïnstalleerd is
     volumes:
       - uploads:/app/uploads
     depends_on:

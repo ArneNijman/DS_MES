@@ -43,9 +43,8 @@ en programma-runs in het Machine Dashboard.
 6. [WinTool synchronisatie](#wintool-synchronisatie)
 7. [CNC Events & machinestatus](#cnc-events--machinestatus)
 8. [TNCremo logboek monitoring](#tncremo-logboek-monitoring)
-9. [HyperMill bestanden openen vanuit het MES](#hypermill-bestanden-openen-vanuit-het-mes)
-10. [Hoe werkt de sync?](#hoe-werkt-de-sync)
-11. [Probleemoplossing](#probleemoplossing)
+9. [Hoe werkt de sync?](#hoe-werkt-de-sync)
+10. [Probleemoplossing](#probleemoplossing)
 
 ---
 
@@ -368,56 +367,6 @@ TNCREMO_POLL_INTERVAL_MS=60000
 ```
 
 > **Opmerking:** het logboekpad verschilt per Windows-gebruiker. Als de agent onder een ander account draait, pas het pad aan. Standaard wordt `%TEMP%\TNCremo\Logbook` gebruikt.
-
----
-
-## HyperMill bestanden openen vanuit het MES
-
-In het MES kun je per product setup een HyperMill bestand koppelen (netwerkpad naar een `.hmc` of `.hmr` bestand).
-Klikken op het pijltje-icoon opent het bestand **direct in HyperMill op jouw eigen PC** — zonder downloaden, zonder kopiëren.
-
-Dit werkt via een Windows custom URL-protocol (`hmopen://`). De installatie is éénmalig per PC en vereist **geen beheerdersrechten**.
-
-### Éénmalige installatie per PC
-
-1. Open de gedeelde map van het MES-project
-2. Dubbelklik op **`tools\hypermill-protocol-install.reg`**
-3. Klik **Ja** bij de Windows-bevestiging
-4. Klaar — het protocol is geregistreerd
-
-> De `.reg` schrijft uitsluitend naar `HKEY_CURRENT_USER\Software\Classes\hmopen` — alleen voor de huidige gebruiker, geen systeembrede wijzigingen, geen beheerdersrechten nodig.
-
-### Hoe het werkt
-
-Wanneer je op een HyperMill-link klikt in het MES:
-
-1. De browser ziet een `hmopen://` link en vraagt Windows om het bijbehorende programma
-2. Windows zoekt in de registry: `HKCU\Software\Classes\hmopen\shell\open\command`
-3. Windows voert het geregistreerde commando uit:
-   ```
-   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -Command
-     "$p = [Uri]::UnescapeDataString($args[0] -replace '^hmopen://', '') -replace '/', '\\'; Start-Process $p"
-   ```
-4. PowerShell decodeert het netwerkpad (bijv. `\\server\share\project\bestand.hmc`)
-5. Windows opent het bestand met het gekoppelde programma — HyperMill
-
-### Vereisten
-
-| Vereiste | Toelichting |
-|----------|-------------|
-| HyperMill geïnstalleerd op de PC | De `.hmc`/`.hmr` bestandsextensie moet gekoppeld zijn aan HyperMill — dit doet de HyperMill-installatie automatisch |
-| Netwerkpad bereikbaar | De PC moet het opgegeven UNC-pad kunnen bereiken (bijv. `\\server\share\...`) |
-| `.reg` geïnstalleerd | Éénmalig per Windows-gebruikersaccount op die PC |
-
-### Bestand koppelen in het MES
-
-1. Open een product setup in het MES
-2. Klik op **HyperMill** (naast de andere documenttypes)
-3. Voer het volledige netwerkpad in, bijv.: `\\server\CAM\projecten\onderdeel.hmc`
-4. Opslaan — het pijltje-icoon verschijnt
-5. Klikken op het icoon opent het bestand direct in HyperMill
-
-> **Let op:** het pad wordt opgeslagen zoals ingevoerd. Gebruik altijd UNC-paden (`\\server\share\...`) zodat het pad werkt vanaf elke PC in het netwerk.
 
 ---
 
