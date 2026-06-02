@@ -43,6 +43,7 @@ export async function adminEmployeeRoutes(fastify: FastifyInstance) {
           isClockedIn: employees.isClockedIn,
           role: employees.role,
           bcId: employees.bcId,
+          emailNotificaties: employees.emailNotificaties,
         })
         .from(employees)
         .orderBy(asc(employees.name))
