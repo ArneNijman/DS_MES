@@ -287,6 +287,8 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     postprocessor: initial.postprocessor ?? '',
   })
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const formRef = useRef<{ current: typeof form }>({ current: form })
+  formRef.current = { current: form }
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
@@ -297,10 +299,29 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
       fd.append('file', file)
       const res = await apiFetch<{ photoUrl: string }>('/admin/machines/photo-upload', { method: 'POST', body: fd })
       setForm((f) => ({ ...f, photoUrl: res.photoUrl }))
+      // Bij bestaande machine: direct opslaan zodat de foto zichtbaar is in de lijst
+      if (initial.id) {
+        onSave({ ...formRef.current.current, photoUrl: res.photoUrl,
+          yearOfPurchase: formRef.current.current.yearOfPurchase ? parseInt(formRef.current.current.yearOfPurchase) : null,
+          cncMaxTools: formRef.current.current.cncMaxTools ? parseInt(formRef.current.current.cncMaxTools) : null,
+        })
+      }
     } finally {
       setUploadingPhoto(false)
     }
   }
+
+  // Ctrl+V paste support
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.items ?? [])
+        .find(item => item.type.startsWith('image/'))
+        ?.getAsFile()
+      if (file) { e.preventDefault(); handlePhotoUpload(file) }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -351,11 +372,14 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
                   className="text-xs text-red-500 hover:underline">Verwijderen</button>
               </div>
             ) : (
-              <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-teal-400 hover:text-teal-600">
-                {uploadingPhoto ? 'Bezig...' : 'Foto kiezen'}
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f) }} />
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-teal-400 hover:text-teal-600">
+                  {uploadingPhoto ? 'Bezig...' : 'Foto kiezen'}
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f) }} />
+                </label>
+                <span className="text-xs text-gray-400">of Ctrl+V om te plakken</span>
+              </div>
             )}
           </div>
           {/* Basisgegevens */}

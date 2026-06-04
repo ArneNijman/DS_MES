@@ -606,9 +606,14 @@ function ComponentBrowser() {
   // Reset expanded state en foutmelding als een nieuw item geselecteerd wordt
   useEffect(() => { setExpanded(new Set()); setSchroefError(null) }, [selected?.id])
 
-  async function handleComponentPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !selected) return
+  function pasteImageFile(e: React.ClipboardEvent): File | null {
+    return Array.from(e.clipboardData?.items ?? [])
+      .find(item => item.type.startsWith('image/'))
+      ?.getAsFile() ?? null
+  }
+
+  async function uploadComponentPhoto(file: File) {
+    if (!selected) return
     setUploadingPhoto(true)
     try {
       const fd = new FormData()
@@ -618,13 +623,11 @@ function ComponentBrowser() {
       queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
     } finally {
       setUploadingPhoto(false)
-      e.target.value = ''
     }
   }
 
-  async function handleWisselplaatPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !selected) return
+  async function uploadWisselplaatPhoto(file: File) {
+    if (!selected) return
     setUploadingWisselplaatPhoto(true)
     try {
       const fd = new FormData()
@@ -634,13 +637,21 @@ function ComponentBrowser() {
       queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', selected.id] })
     } finally {
       setUploadingWisselplaatPhoto(false)
-      e.target.value = ''
     }
   }
 
-  async function handleSchroefPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+  async function handleComponentPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file || !selected) return
+    if (file) { await uploadComponentPhoto(file); e.target.value = '' }
+  }
+
+  async function handleWisselplaatPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) { await uploadWisselplaatPhoto(file); e.target.value = '' }
+  }
+
+  async function uploadSchroefPhoto(file: File) {
+    if (!selected) return
     setUploadingSchroefPhoto(true)
     setSchroefError(null)
     try {
@@ -658,8 +669,12 @@ function ComponentBrowser() {
       )
     } finally {
       setUploadingSchroefPhoto(false)
-      e.target.value = ''
     }
+  }
+
+  async function handleSchroefPhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) { await uploadSchroefPhoto(file); e.target.value = '' }
   }
 
   async function handleSchroefSave() {
@@ -831,7 +846,12 @@ function ComponentBrowser() {
             {/* Foto */}
             <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-start gap-6">
               {/* Freeslichaam foto */}
-              <div className="flex flex-col items-center gap-1.5">
+              <div
+                className="flex flex-col items-center gap-1.5 outline-none"
+                tabIndex={0}
+                onPaste={(e) => { const f = pasteImageFile(e); if (f) { e.preventDefault(); uploadComponentPhoto(f) } }}
+                title="Klik hier, dan Ctrl+V om te plakken"
+              >
                 <span className="text-xs font-medium text-gray-500">Freeslichaam</span>
                 <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
                   {detail.item.photoUrl
@@ -843,11 +863,17 @@ function ComponentBrowser() {
                   <input type="file" accept="image/*" className="hidden" onChange={handleComponentPhotoUpload} />
                   {uploadingPhoto ? 'Bezig...' : (detail.item.photoUrl ? 'Wijzigen' : 'Uploaden')}
                 </label>
+                <span className="text-xs text-gray-300">Ctrl+V</span>
               </div>
 
               {/* Wisselplaat foto — alleen tonen als comment WP: bevat */}
               {parseWisselplaat(detail.item.comment) !== null && (
-                <div className="flex flex-col items-center gap-1.5">
+                <div
+                  className="flex flex-col items-center gap-1.5 outline-none"
+                  tabIndex={0}
+                  onPaste={(e) => { const f = pasteImageFile(e); if (f) { e.preventDefault(); uploadWisselplaatPhoto(f) } }}
+                  title="Klik hier, dan Ctrl+V om te plakken"
+                >
                   <span className="text-xs font-medium text-gray-500">Wisselplaat</span>
                   <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
                     {detail.item.wisselplaatPhotoUrl
@@ -859,6 +885,7 @@ function ComponentBrowser() {
                     <input type="file" accept="image/*" className="hidden" onChange={handleWisselplaatPhotoUpload} />
                     {uploadingWisselplaatPhoto ? 'Bezig...' : (detail.item.wisselplaatPhotoUrl ? 'Wijzigen' : 'Uploaden')}
                   </label>
+                  <span className="text-xs text-gray-300">Ctrl+V</span>
                 </div>
               )}
             </div>
@@ -869,7 +896,12 @@ function ComponentBrowser() {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Schroef</p>
                 <div className="flex items-start gap-6">
                   {/* Foto */}
-                  <div className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="flex flex-col items-center gap-1.5 outline-none"
+                    tabIndex={0}
+                    onPaste={(e) => { const f = pasteImageFile(e); if (f) { e.preventDefault(); uploadSchroefPhoto(f) } }}
+                    title="Klik hier, dan Ctrl+V om te plakken"
+                  >
                     <div className="rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center" style={{ width: 100, height: 100 }}>
                       {detail.item.schroefPhotoUrl
                         ? <img src={detail.item.schroefPhotoUrl} alt="" style={{ width: 100, height: 100, objectFit: 'contain', display: 'block' }} />
@@ -880,6 +912,7 @@ function ComponentBrowser() {
                       <input type="file" accept="image/*" className="hidden" onChange={handleSchroefPhotoUpload} />
                       {uploadingSchroefPhoto ? 'Bezig...' : (detail.item.schroefPhotoUrl ? 'Wijzigen' : 'Uploaden')}
                     </label>
+                    <span className="text-xs text-gray-300">Ctrl+V</span>
                   </div>
 
                   {/* Artikelnummer */}
