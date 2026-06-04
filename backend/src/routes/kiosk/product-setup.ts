@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { eq, desc, asc, ilike, or, and, sql, inArray, max } from 'drizzle-orm'
+import { eq, desc, asc, ilike, or, and, sql, inArray, max, isNull } from 'drizzle-orm'
 import { extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
@@ -95,6 +95,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
     const conditions: ReturnType<typeof eq>[] = [
       eq(productSetups.setupType, 'product') as unknown as ReturnType<typeof eq>,
+      isNull(productSetups.archivedAt) as unknown as ReturnType<typeof eq>,
     ]
 
     if (isNoneMachine) {

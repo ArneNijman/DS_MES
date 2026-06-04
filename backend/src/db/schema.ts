@@ -556,10 +556,12 @@ export const productSetups = pgTable('product_setups', {
   equipmentNumber:   text('equipment_number'),
   drawingNumber:     text('drawing_number'),
   rapportageInfo:    text('rapportage_info'),
-  matenNiveau:       text('maten_niveau').notNull().default('stap'),
-  createdBy:         uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
-  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  matenNiveau:         text('maten_niveau').notNull().default('stap'),
+  archivedAt:          timestamp('archived_at', { withTimezone: true }),
+  archivedOrderStatus: text('archived_order_status'),
+  createdBy:           uuid('created_by').references(() => employees.id, { onDelete: 'set null' }),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:           timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const productSetupSteps = pgTable('product_setup_steps', {

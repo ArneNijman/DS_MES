@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3, Activity } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3, Activity, Archive } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { MachinesContent } from '@/routes/admin/machines'
@@ -17,6 +17,7 @@ import { ProductSetupContent } from '@/routes/kiosk/product-setup'
 import { MeetSetupContent } from '@/routes/kiosk/meet-setup'
 import { NcrStatistiekenContent } from '@/routes/kiosk/ncr-statistieken'
 import { MachineDashboardContent } from '@/routes/admin/machine-dashboard'
+import { SetupArchiefContent } from '@/routes/kiosk/setup-archief'
 import { cn } from '@/lib/utils'
 
 interface UserInfo {
@@ -24,7 +25,7 @@ interface UserInfo {
   role: string
 }
 
-type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_meldingen' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup' | 'machine_dashboard'
+type NavKey = 'machines' | 'ncr' | 'preventief' | 'klantmelding' | 'ncr_statistieken' | 'mijn_taken' | 'mijn_meldingen' | 'meetmiddelen' | 'cnc_machining' | 'tooling' | 'product_setup' | 'meet_setup' | 'machine_dashboard' | 'setup_archief'
 
 const ROLE_LABEL: Record<string, string> = {
   admin:               'Beheerder',
@@ -126,6 +127,7 @@ export default function KioskDashboard() {
   const [pendingNcr, setPendingNcr] = useState<MyTaskNcr | null>(null)
   const [pendingPreventief, setPendingPreventief] = useState<Record<string, unknown> | null>(null)
   const [pendingToolId, setPendingToolId] = useState<string | null>(null)
+  const [pendingArchiefSetupId, setPendingArchiefSetupId] = useState<string | null>(null)
   const KWAL_KEYS: NavKey[] = ['ncr', 'preventief', 'klantmelding', 'ncr_statistieken']
   const [kwalOpen, setKwalOpen] = useState(false)
   const kwalCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -312,6 +314,12 @@ export default function KioskDashboard() {
               <Ruler size={15} /><span className="flex-1 text-left">Meet Setup</span>
             </NavBtn>
           )}
+
+          {canSee('setup_archief') && (
+            <NavBtn active={active === 'setup_archief'} onClick={() => setActive('setup_archief')}>
+              <Archive size={15} /><span className="flex-1 text-left">Setup Archief</span>
+            </NavBtn>
+          )}
         </nav>
 
         {/* Gebruikersinfo + uitloggen onderaan */}
@@ -346,10 +354,28 @@ export default function KioskDashboard() {
         {active === 'mijn_taken'            && <MijnTakenTodoContent />}
         {active === 'cnc_machining'  && <CncMachiningContent />}
         {active === 'tooling'        && <ToolingContent />}
-        {active === 'product_setup'  && <ProductSetupContent />}
-        {active === 'meet_setup'        && <MeetSetupContent />}
+        {active === 'product_setup'  && (
+          <ProductSetupContent
+            initialSetupId={pendingArchiefSetupId ?? undefined}
+            onBack={pendingArchiefSetupId ? () => { setPendingArchiefSetupId(null); setActive('setup_archief') } : undefined}
+          />
+        )}
+        {active === 'meet_setup'        && (
+          <MeetSetupContent
+            initialSetupId={pendingArchiefSetupId ?? undefined}
+            onBack={pendingArchiefSetupId ? () => { setPendingArchiefSetupId(null); setActive('setup_archief') } : undefined}
+          />
+        )}
         {active === 'ncr_statistieken'   && <NcrStatistiekenContent />}
         {active === 'machine_dashboard'  && <MachineDashboardContent />}
+        {active === 'setup_archief'      && (
+          <SetupArchiefContent
+            onOpenSetup={(setupId, type) => {
+              setPendingArchiefSetupId(setupId)
+              setActive(type === 'product' ? 'product_setup' : 'meet_setup')
+            }}
+          />
+        )}
       </div>
     </div>
   )

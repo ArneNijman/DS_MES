@@ -27,6 +27,7 @@ import { cncRoutes } from './routes/admin/cnc.js'
 import { kioskToolingRoutes } from './routes/kiosk/tooling.js'
 import { productSetupRoutes } from './routes/kiosk/product-setup.js'
 import { meetSetupRoutes } from './routes/kiosk/meet-setup.js'
+import { setupArchiefRoutes } from './routes/kiosk/setup-archief.js'
 import { kioskCadRoutes } from './routes/kiosk/cad.js'
 import { bcLookupRoutes } from './routes/kiosk/bc-lookup.js'
 import { rolePermissionRoutes } from './routes/role-permissions.js'
@@ -42,6 +43,8 @@ import { migrateClientSecrets } from './utils/migrate-secrets.js'
 import { startPolling, stopPolling } from './bc/poller.js'
 import { startMaintenanceIntervalChecker, stopMaintenanceIntervalChecker } from './jobs/maintenanceIntervalChecker.js'
 import { startEmailReminders, stopEmailReminders } from './jobs/emailReminders.js'
+import { startStaleRunChecker, stopStaleRunChecker } from './jobs/staleRunChecker.js'
+import { startBcOrderArchiver, stopBcOrderArchiver } from './jobs/bcOrderArchiver.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -68,6 +71,8 @@ async function main() {
   await syncToolingArticles(fastify.db)
   startPolling(fastify)
   startMaintenanceIntervalChecker(fastify)
+  startStaleRunChecker(fastify)
+  startBcOrderArchiver(fastify)
 
   // Routes
   await fastify.register(healthRoutes)
@@ -87,6 +92,7 @@ async function main() {
   await fastify.register(kioskToolingRoutes, { prefix: '/api' })
   await fastify.register(productSetupRoutes, { prefix: '/api' })
   await fastify.register(meetSetupRoutes, { prefix: '/api' })
+  await fastify.register(setupArchiefRoutes, { prefix: '/api' })
   await fastify.register(kioskCadRoutes, { prefix: '/api' })
   await fastify.register(bcLookupRoutes, { prefix: '/api' })
   await fastify.register(rolePermissionRoutes, { prefix: '/api' })
@@ -102,6 +108,8 @@ async function main() {
   const shutdown = async () => {
     stopPolling()
     stopMaintenanceIntervalChecker()
+    stopStaleRunChecker()
+    stopBcOrderArchiver()
     stopEmailReminders()
     await fastify.close()
     process.exit(0)

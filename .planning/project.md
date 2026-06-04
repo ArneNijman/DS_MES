@@ -1,189 +1,291 @@
-# Factory Assistant — Project Context
+# DS MES — Systeembeschrijving
 
-## Wat is dit
+**Dutch Shape Manufacturing Execution System**  
+Programma-eigenaar: Arne Nijman | Versie: v2.0 | Status: actief in gebruik
 
-Een event-driven Manufacturing Execution System (MES) dat als **operationele intelligentielaag** bovenop Business Central (BC Online/SaaS) functioneert. Factory Assistant maakt wachttijd, projectflow, kwaliteitsafwijkingen en machinestatus objectief meetbaar — volledig op basis van events uit BC, zonder extra handmatige invoer van operators.
+---
 
-**Naam in UI:** Factory Assistant  
-**Subtitle:** Manufacturing Execution System  
-**Programma-eigenaar:** Arne Nijman (Dutch Shape)  
-**Versie:** v2.0 Kwaliteitsverdieping (gestart 2026-03-09)
+## Visie
 
-## Tijdsinvestering (schatting)
+Dutch Shape werkt met enkelstuks precisie-onderdelen. Elk order is uniek, elke machine heeft zijn eigen gereedschapsopstelling, en elke operator moet exact weten wat er van hem verwacht wordt — zonder dat hij daarvoor een ERP-systeem hoeft te begrijpen.
 
-> Gebaseerd op bekende opleverdata, git history (vanaf 2026-04-22) en het feit dat v1.0 in 11 werkdagen is gebouwd. Sessies zijn Claude-ondersteund — traditionele ontwikkeltijd zou 5–10× hoger liggen.
+De kern van het probleem: **Business Central (ERP) beheert orders en financiën, maar spreekt de taal van de werkvloer niet.** Operators werken met machines, gereedschappen, bewerkingsstappen en kwaliteitsregistraties — niet met boekingen en inkooporders.
 
-| Fase / Module | Periode | Geschatte sessies | Uren (ca.) |
-|---------------|---------|-------------------|------------|
-| v1.0 Fundament + Beheer (Fase 1–6.1) | feb–mrt 2026 | ~11 dagen | ~55 uur |
-| v1 Fixes (Fase 7) | 2026-03-10 | 1 sessie | ~2 uur |
-| Tekening Ballonnen (Fase 8) | 2026-03-10 t/m 03-14 | 2–3 sessies | ~8 uur |
-| NCR Statistieken (Fase 9) | 2026-03-14 t/m 03-16 | 1–2 sessies | ~4 uur |
-| Preventieve Maatregelen | mrt–apr 2026 | 2–3 sessies | ~8 uur |
-| Klantmeldingen | apr 2026 | 1–2 sessies | ~4 uur |
-| CNC Machining — Tool tabel | 2026-04-16 t/m 04-21 | 3–4 sessies | ~12 uur |
-| CNC — Wisselplaat, schroef, tooling kiosk | 2026-04-22 t/m 04-23 | 2 sessies | ~6 uur |
-| Product Setup (volledig) | 2026-04-23 t/m 04-29 | 4–5 sessies | ~16 uur |
-| Product Setup uitbr. + Demonteren + multi-format parser | 2026-04-30 | 1–2 sessies | ~5 uur |
-| NCR verbeteringen (human factor velden) | mei 2026 | 1 sessie | ~3 uur |
-| Machine categorieën + Meetmiddelen serie + opmerkingen stap | 2026-05-11 | 1 sessie | ~3 uur |
-| Meet Setup module | 2026-05-11 | 1 sessie | ~4 uur |
-| CNC Agent monitoring + Machine Dashboard | 2026-05-18 | 2 sessies | ~8 uur |
-| **Totaal** | **feb 2026 – mei 2026** | **~39–46 sessies** | **~138 uur** |
+Het DS MES vult precies die ruimte op. Het is geen vervanger van Business Central, maar een **operationele intelligentielaag erboven**: het haalt relevante informatie uit BC, combineert dat met machine-data en geeft de werkvloer een interface die aansluit op hoe ze werken.
 
-*v1.0 (12.661 regels TypeScript/TSX, 186 bestanden) in ~11 werkdagen — gemiddeld ~5 uur/dag.*  
-*v2.0 t/m Meet Setup: ~75 uur aanvullende ontwikkeling over ~26–33 sessies.*  
-*Gemiddeld per sessie: ~3–4 uur. Totale doorlooptijd: ~10 weken (2026-03-09 t/m 2026-05-11).*
+**Doel:** elke medewerker op de werkvloer — van operator tot kwaliteitsmedewerker tot CNC-programmeur — heeft altijd de juiste informatie op het juiste moment, zonder afhankelijk te zijn van papier, e-mail of mondelinge overdracht.
 
-## Bredere visie
+---
 
-Factory Assistant is het volledige bedrijfsbesturingssysteem voor de werkvloer:
-- Werkbonnen, productieplanning, kwaliteitsregistraties
-- Machinebeheer: onderhoud, storingen, CNC-configuratie, energie
-- Koppeling met ERP (Business Central), machines
-- Bereikbaar via browser op iPad, telefoon, pc
-- Wekelijks verder uitgebouwd
+## Wat het systeem doet
 
-## Wie gebruikt het
+Het MES bestaat uit drie informatiestromen die samenkomen:
 
-| Rol | Wat ze nodig hebben |
-|-----|---------------------|
-| **Operators (werkvloer)** | Grote touch-interface, zien direct hun werkopdrachten |
-| **Werkvoorbereiders** | Productsetups, NC-bestanden, toolvalidatie |
-| **Kwaliteitsverantwoordelijke** | NCR-registratie, preventieve acties, klantmeldingen |
-| **CNC-medewerkers** | Toolmagazijn per machine, samenstellingen, wisselplaten |
-| **Management** | Dashboards: wachttijd, planningbetrouwbaarheid, bottlenecks |
-| **Beheerder** | Medewerkers, rollen, BC-koppeling, machinebeheer |
+**1. ERP-data (Business Central)**  
+Productieorders, artikelen en medewerkersinformatie worden periodiek gesynchroniseerd vanuit BC. Operators hoeven geen ordernummer over te typen — ze kiezen uit een lijst van actieve orders die het systeem automatisch bijhoudt.
 
-## Tech stack
+**2. Machine-data (CNC Agent)**  
+Een lichte Windows-applicatie (de CNC Agent) bewaakt continu alle CNC-machines via het LSV2-protocol. Het registreert wanneer een machine start, stopt, een alarm geeft of offline gaat. Ook haalt het automatisch de gereedschapstabellen (TOOL.T) op. Alles wordt doorgestuurd naar het MES zonder dat er iemand iets handmatig hoeft te doen.
 
-| Laag | Technologie |
-|------|-------------|
-| Frontend | React 18 + TypeScript + Vite + Tailwind CSS + TanStack Query v5 |
-| Backend | Node.js + Fastify + Drizzle ORM + PostgreSQL 16 |
-| Worker | BullMQ (Redis-backed job queue) |
-| BC-koppeling | Microsoft MSAL (OAuth2 client credentials flow) |
-| Deployment | Docker Compose + Nginx |
+**3. Werkvloer-data (operators)**  
+Wat operators zelf invoeren: productiesetups, kwaliteitsregistraties, overdrachtsnotities, meetresultaten. Dit is de data die nergens anders vandaan komt — het is de kennis van de werkvloer vastgelegd in het systeem.
 
-## Navigatiestructuur
+---
 
-### Kiosk (touch-first, operators)
-- Medewerkerstegels + PIN-login
-- Dashboard met module-kaarten:
-  - **Product Setup** — stappen per machine, NC-bestanden, toolvalidatie, opmerkingen, overdracht
-  - **Meet Setup** — meetstappen per 3D-meetapparaat, meetbestanden (XML/rapport), CAD, overdracht
-  - **CNC Machining** — toolmagazijn, samenstellingen, wisselplaten, TOOL.T sync
-  - **Tooling Library** — toolbeheer, componentenbeheer, samenstellingen
-  - **NCR** — non-conformiteit kanban + detail
-  - **Preventieve Maatregelen** — kanban + uitvoerder + datum
-  - **Klantmeldingen** — kanban + detail (klant, oorzaak, artikel)
-  - **Meetmiddelen** — kalibratiebeheer, serie suffix, vervaldatum melding
-  - **Machine Dashboard** — beschikbaarheid % per Freesmachine, downtime-verdeling, spindeluren (voor management)
-  - **Mijn Taken** — takenlijst per medewerker
-  - **Mijn Meldingen** — eigen NCR-overzicht
+## Hoe het is opgebouwd
 
-### Admin (beveiligd, sidebar)
-- Dashboard / Overzicht
-- Medewerkers (CRUD, PIN, rol, foto, BC-sync)
-- Machines (overzicht, CNC-configuratie, IP-adres)
-- CNC Machining (toolbeheer, upload TOOL.T, samenstellingen, zoeken)
-- Machine Dashboard (beschikbaarheid %, downtime, spindeluren per Freesmachine)
-- BC Configuratie (OAuth2, test)
-- Veldmapping (auto-detectie BC-velden)
+### Twee interfaces
 
-## Actieve modules — detail
+Het systeem heeft twee ingangen die voor verschillende doelgroepen zijn bedoeld:
 
-### Product Setup (`routes/kiosk/product-setup.tsx`)
-Koppelt productieorders aan machines via opgedeelde stappen.
+**Kiosk** — de werkvloer-interface  
+Touch-first, grote knoppen, minimale tekst. Ontworpen voor gebruik met handschoenen, op een tablet of industrieel scherm naast de machine. Operators loggen in met hun PIN-code op een persoonlijke tegel. Alles wat ze nodig hebben is binnen twee tikken bereikbaar.
 
-Lijst-niveau:
-- Zoek op productieorder, artikel of omschrijving
-- Aanmaken met optioneel omschrijvingsveld; productieorder is de enige verplichte invoer
-- Setup verwijderen (met bevestigingsdialoog)
+**Admin** — het beheerpaneel  
+Standaard web-interface met sidebar. Bedoeld voor beheerders, werkvoorbereiders en management. Hier worden medewerkers en machines beheerd, BC-koppelingen geconfigureerd en dashboards bekeken.
 
-Per stap:
-- **Bewerkingsnummer** — optioneel bewerkingsnr. naast de stapnaam (bewerkingNr in DB)
-- **Algemene informatie** — nulpunt X/Y/Z (tekst), beschrijving; portaal voor tekeningen en CAD-bestanden
-- **CNC informatie** — NC-bestanden (portaal, hernoemen, actief selecteren), importeer samenstellingen, SYNC + validatietimestamp, toolvalidatietabel; **opmerkingen** veld naast nulpunt
-- **Bijlagen** — foto's en documenten per stap met bijschrift, lightbox
-- **Overdracht** — vrij-tekst log met naam + timestamp + foto's, lightbox, bewerken/verwijderen
+### Technische lagen
 
-Toolvalidatietabel kolommen: dot · TOOL (T-slot of —) · NAME · DOC · L · DL · DR · TIME2 · CUR.TIME · LIFE% · LOCK
+```
+Browser (React + TypeScript)
+    │
+    ▼
+Backend API (Fastify + Node.js)
+    │
+    ├── PostgreSQL 16 (alle data)
+    ├── Redis (achtergrondtaken via BullMQ)
+    └── Business Central (REST API via MSAL OAuth2)
 
-### CNC Machining (`routes/admin/cnc-machining.tsx` + `routes/kiosk/`)
-- Upload TOOL.T bestand → parser vult `cnc_tool_entries`; formaat per machine instelbaar
-- Toolmagazijn per machine met LIFE%, LOCK-status, sync-log, TIME2 / CUR.TIME kolommen
-- Samenstellingen (toolbibliotheek) inclusief wisselplaat/schroef-opsplitsing
-- Zoeken over alle machines (MACHINE · TOOL · NAME · DOC · TIME · LIFE% · LOCK)
-- Component-instanties: toont in welke machine en op welk slot een component zit
+CNC Agent (Windows PC, apart proces)
+    │
+    ├── LSV2 → machinestatus elke 10 sec
+    └── TNCcmd → TOOL.T bestanden elke 30 min
+```
 
-### Tooling Library (`routes/kiosk/tooling.tsx`)
-Twee tabs: **Artikelen** en **Demonteren**.
+De server draait volledig in Docker Compose en is bereikbaar via poort 8080 in de browser. De CNC Agent draait op een gewone Windows PC in het netwerk — niet op de machine zelf, geen speciale software op de CNC-controllers.
 
-- **Artikelen** — toolbeheer: componenten, samenstellingen, WinTool XML import
-  - WP-componenten: splits naar houder / freeslichaam / wisselplaat / schroef
-  - Schroef-artikelnummer en foto direct invoerbaar
-- **Demonteren** — zoek een assemblage op naam/ncName, zie alle componenten (houder / frees / wisselplaat) met voorraadlocaties; pas voorraad direct aan per locatie-knop (+/−)
+---
 
-### Kwaliteitsmodule
-- **NCR** — kanban (open → gesloten), detail met tabs (Afwijking / Oplossing / Bijlages), PDF rapport, "Start preventieve maatregel" knop
-- **Preventieve Maatregelen** — kanban, uitvoerder via EmployeePickerModal, datum + resultaat veld
-- **Klantmeldingen** — kanban, detail Tab Melding (klant, ordernummers, contactpersoon, artikel, oorzaak/foutcode)
+## Modules — wat ze doen en waarom
 
-### Meet Setup (`routes/kiosk/meet-setup.tsx`)
-Identiek aan Product Setup maar gericht op 3D-meetapparaten. Geen CNC-tab.
+### Product Setup
 
-- Toont alleen machines met categorie `3D-meetapparaat`
-- Data gescheiden via `setup_type = 'meet'` op de gedeelde `product_setups` tabel
-- Per stap drie tabs: **Algemene informatie** (nulpunt, opmerkingen), **Bijlagen**, **Overdracht**
-- **Meet bestanden** portaal: XML meetbestanden uploaden + parsen (features, deviaties, pass/fail), rapporten (PDF/HTML)
-- **Tekeningen** en **CAD** portaal identiek aan Product Setup
-- Rapportage types: Inmeten · Controle · Eindmeting (geen "Frezen")
+**Waarvoor:** werkvoorbereiders leggen hier vast hoe een productieorder uitgevoerd moet worden. Operators raadplegen dit tijdens de productie.
 
-### Machine Dashboard (`routes/admin/machine-dashboard.tsx`)
-Beschikbaarheids- en stilstandsoverzicht voor alle Freesmachines. Beschikbaar in admin-panel én kiosk (via geëxporteerde `MachineDashboardContent`).
+**Hoe het werkt:**  
+Een setup is gekoppeld aan een productieorder en bestaat uit één of meerdere stappen. Elke stap staat voor een bewerking op een specifieke machine. Per stap zijn er vier tabs:
 
-- Periode-filter: Vandaag / 7 dagen / Maand / Kwartaal / Jaar
-- Beschikbaarheids-bars per machine (groen/amber/rood), type-breakdown op tweede regel
-- 100% beschikbaarheid alleen bij letterlijk nul stilstand (Math.floor, niet Math.round)
-- Gecombineerde downtime-tabel: alle machines, nieuwste perioden eerst
-- Spindeluren lijndiagram per machine (per dag ≤14 dagen, per ISO-week bij langere perioden)
-- Downtime-perioden worden on-the-fly afgeleid uit `cnc_machine_events` (geen extra tabel)
-- Drempelwaarden: offline ≥ 5 min, stilstand ≥ 10 min gap PROGRAM_STOPPED → PROGRAM_STARTED
+- *Algemene informatie* — nulpunten (X/Y/Z als vrije tekst), omschrijving, tekeningen en CAD-bestanden
+- *CNC informatie* — NC-programmabestanden, automatische toolvalidatie (zie hieronder), opmerkingen
+- *Bijlagen* — foto's en documenten met bijschrift
+- *Overdracht* — vrij-tekst logboek zodat ploegwisselingen soepel verlopen
 
-Per machine ook in Admin > Machines:
-- Tab "Downtime" — samenvatting (4 kaartjes) + periodentabel + pulserende badge bij lopend
-- Tab "Programma Runs" — naam, starttijd, duur, status (afgerond/gestopt/onderbroken/fout)
-  - Artikel-zoekbalk: filter op mapnaam (bijv. `22073-3201-11`)
-  - Totale verspaantijd per artikel via lifetime-aggregatie (geen 50-runs limiet)
+**Toolvalidatie — hoe het werkt:**  
+Bij het uploaden van een NC-programma (.h bestand) parseert het systeem automatisch alle `TOOL CALL` regels. Die worden vergeleken met het live toolmagazijn van de machine (gesynchroniseerd via TOOL.T). De operator ziet direct welke tools al in de machine zitten (groene dot) en welke nog opgebouwd moeten worden (streepje). Matching is case-insensitive om naamverschillen te voorkomen.
 
-### Meetmiddelen (`routes/kiosk/meetmiddelen.tsx`)
-Kalibratiebeheer van meetgereedschappen.
+**Postprocessor-validatie:**  
+Per machine is een postprocessor ingesteld (bijv. `04-MTE_BF4200_iTNC530`). Als een NC-bestand voor een andere postprocessor is gegenereerd, toont het systeem een oranje waarschuwing en blokkeert de "Stuur naar machine" knop. Dit voorkomt dat een operator per ongeluk een NC-bestand naar de verkeerde machine stuurt.
 
-- Overzicht per categorie, vervaldatum-badges (verlopen = rood, binnenkort = oranje)
-- Velden: naam, serienummer, **serie suffix** (laatste 5 cijfers), afmeting, locatie, kalibratie-interval
-- Categorieën machines: Meetapparaat en 3D-meetapparaat beschikbaar
+---
 
-## Key Decisions
+### Meet Setup
 
-| Beslissing | Redenering |
-|------------|-----------|
-| BC Online via REST API + polling | Polling elke 5 min; webhooks uitgesteld naar later |
-| On-premise Docker Compose | Data blijft lokaal, IT beheert zelf |
-| PostgreSQL + Drizzle ORM | Open-source, gefaseerd uitbreidbaar schema |
-| Fastify backend | Lichtgewicht, plugin-based, native TypeScript |
-| Touch-first kiosk | Operators hebben minimale IT-ervaring — grote knoppen, weinig tekst |
-| AES-256-GCM voor BC clientSecret | Geen plain-text credentials in database |
-| Handmatige Drizzle migraties | Volledige controle over SQL; geen auto-generate risico's |
-| Lichte toolvalidatie in Product Setup | NC-bestand vergelijken met live toolmagazijn zonder extra invoer van operators |
-| Case-insensitive toolnaam-matching | Voorkomt valse negatieven bij TOOL CALL vs. toolbibliotheek naamverschillen |
-| Event-stream derivatie voor downtime | Geen extra DB-tabel; stilstandsperioden worden on-the-fly berekend uit bestaande `cnc_machine_events` — werkt direct met handmatig geposte test-events |
-| LSV2 read-only voor state polling | TNCcmd is voor bestandsoverdracht; LSV2 is het lees-protocol voor machinestatus (ingebouwd in TNCremo, geen extra licentie) |
-| Exponential backoff voor offline machines | Voorkomt onnodige netwerklast bij uitgeschakelde machines; reset bij eerste succesvolle respons |
+**Waarvoor:** hetzelfde principe als Product Setup, maar dan voor 3D-meetapparaten. Meetstappen per opdracht vastleggen, inclusief meetbestanden en resultaten.
+
+**Hoe het werkt:**  
+Identieke structuur als Product Setup, maar zonder CNC-tab. Toont alleen machines met categorie *3D-meetapparaat*. De data zit in dezelfde databasetabellen als Product Setup, gescheiden via een `setup_type` veld — zo hoeft er geen dubbele infrastructuur te zijn.
+
+Het meet bestanden portaal accepteert PC-DMIS XML exports. Het systeem parseert deze automatisch naar een feature-tabel met nominale waarden, gemeten waarden, deviatie en pass/fail status per feature.
+
+---
+
+### Metrologie — 3D Inspectieviewer
+
+**Waarvoor:** meetresultaten visueel terugzien op het 3D CAD model. Niet alleen een tabel, maar direct zien waar op het onderdeel afwijkingen zitten.
+
+**Hoe het werkt:**  
+Het systeem laadt het STEP-model van het onderdeel en projecteert de meetpunten erop. De visualisatie is opgebouwd in vier lagen die stap voor stap zijn uitgebouwd:
+
+- *Phase 1* — Gekleurde bollen op de meetpunten (groen = OK, rood = FAIL), hover-tooltip met details
+- *Phase 2* — Kleurheatmap over het STEP-oppervlak (blauw/groen/rood), deviatievectoren als pijlen, GD&T overlays
+- *Phase 3* — Puntenwolk (XYZ) en scan mesh (STL/OBJ) overlay op het nominale STEP model
+- *Phase 4 (gepland)* — Cross-project analyse: drift per machine, tool-wear correlatie, revisievergelijking over meerdere projecten
+
+**Waarom deze aanpak:**  
+Traditionele SPC (Cp/Cpk) werkt niet bij enkelstuks productie — je hebt maar één meting per feature per project. Phase 4 lost dit op door over projecten heen te analyseren: dezelfde feature op dezelfde machine over 20 projecten geeft wél statistische waarde.
+
+---
+
+### CNC Machining — Toolmagazijn
+
+**Waarvoor:** operators en CNC-medewerkers zien exact welke gereedschappen er in elke machine zitten, wat de slijtage is en welke wisselplaten er gebruikt worden.
+
+**Hoe het werkt:**  
+De CNC Agent haalt automatisch het TOOL.T bestand op van elke machine (elke 30 minuten). Het backend parseert dit bestand naar individuele toolregels. De kiosk-interface toont per machine een overzicht met LIFE%-balk, LOCK-status en levensduurkolommen (TIME2 / CUR.TIME).
+
+De parser ondersteunt meerdere TOOL.T formaten (Heidenhain klassiek, Fooke/modern, Ronin, 3200, Portaal) omdat verschillende machines een andere kolomindeling gebruiken. Per machine is het formaat instelbaar in de admin.
+
+**Samenstellingen:**  
+Wisselplaattools bestaan uit meerdere componenten (houder, freeslichaam, wisselplaat, schroef). Het systeem splitst deze op via het WP:-patroon in de tool-comment. Per component is een artikelnummer en foto opslaan, zodat operators direct weten wat ze moeten bestellen.
+
+---
+
+### Tooling Library
+
+**Waarvoor:** het volledige toolbeheer los van de CNC-machines. Componentenregistratie, voorraadlocaties en demonteren.
+
+**Hoe het werkt:**  
+Twee tabs:
+- *Artikelen* — alle toolcomponenten en samenstellingen, inclusief WinTool XML import
+- *Demonteren* — zoek een assemblage op naam, zie alle componenten met voorraadlocaties en pas de voorraad direct aan
+
+De WinTool koppeling werkt via de CNC Agent: als een WinTool .db bestand is ingesteld, detecteert de agent wijzigingen en synchroniseert automatisch naar het MES.
+
+---
+
+### Kwaliteitsmodules (NCR / Preventief / Klantmeldingen)
+
+**Waarvoor:** het registreren, opvolgen en analyseren van kwaliteitsafwijkingen — intern (NCR), extern (klantmeldingen) en structureel (preventieve maatregelen).
+
+**Hoe het werkt:**  
+Alle drie werken als kanban-bord. De koppeling tussen modules is bewust ingebouwd: vanuit een NCR kan direct een preventieve maatregel worden gestart. Zo blijft de opvolgketen zichtbaar en aantoonbaar.
+
+- *NCR* — registratie met foutcode, oorzaak, human factor velden; PDF rapport genereren; statuslog per NCR
+- *Preventieve Maatregelen* — PCM_XX nummering, uitvoerder toewijzen, resultaat vastleggen
+- *Klantmeldingen* — CTR_10001+ nummering, klantgegevens, oorzaak/foutcode
+
+**NCR Statistieken:**  
+Aparte pagina met grafieken over NCR-trends: per categorie, per periode, per status. Geeft inzicht in welke afwijkingen terugkeren.
+
+---
+
+### Meetmiddelen & Kalibratie
+
+**Waarvoor:** alle meetgereedschappen beheren en de kalibratieplanning bewaken.
+
+**Hoe het werkt:**  
+Elk meetmiddel heeft een kalibratie-interval. Het systeem berekent automatisch wanneer de kalibratie verloopt en toont badges: rood bij verlopen, oranje bij binnenkort. Kalibratierapport uploaden, kalibratielog per instrument, koppeling aan de medewerker die heeft gecalibreerd.
+
+Het *serie suffix* veld (laatste 5 cijfers serienummer) maakt het snel scannen en terugvinden van instrumenten op de werkvloer mogelijk.
+
+---
+
+### Machine Dashboard
+
+**Waarvoor:** management en productiecoördinatie zien in één oogopslag hoe beschikbaar de CNC-machines zijn geweest.
+
+**Hoe het werkt:**  
+De CNC Agent stuurt continu machinestatus-events naar het MES. Het backend leidt hieruit stilstandsperioden af (on-the-fly, geen aparte tabel nodig):
+
+- Offline perioden korter dan 5 minuten worden genegeerd (monitoring-ruis)
+- Een gap van meer dan 10 minuten tussen programma-stop en volgende start telt als stilstand
+- Beschikbaarheid % wordt berekend met `Math.floor` — 100% alleen bij letterlijk nul stilstand
+
+Het dashboard toont beschikbaarheids-bars per machine, een gecombineerde downtime-tabel en een spindeluren lijndiagram. Aggregatie is per dag (≤14 dagen) of per ISO-week (langere perioden).
+
+Het dashboard is beschikbaar in zowel de kiosk als het admin-panel via een gedeeld React-component.
+
+---
+
+### Mijn Taken & Mijn Meldingen
+
+**Waarvoor:** elke operator ziet zijn eigen taken en meldingen direct na inloggen, zonder door het hele systeem te zoeken.
+
+- *Mijn Taken* — persoonlijk takoverzicht, aangemaakt en toegewezen via het takenbeheer
+- *Mijn Meldingen* — openstaande NCR-acties en kalibratiemeldingen die aan de ingelogde medewerker zijn gekoppeld
+
+---
+
+### Admin — Medewerkers & Machines
+
+**Medewerkers:**  
+CRUD met PIN-beheer, roltoewijzing (operator / kwaliteit / admin), profielfoto en e-mail voor reminders. BC-synchronisatie haalt namen en functies automatisch op uit Business Central.
+
+**Machines:**  
+CRUD met categorie (Freesmachine, Meetapparaat, 3D-meetapparaat, etc.), CNC IP-adres, controller-type, TOOL.T formaat en postprocessor. Per machine is een downtime-tab en programma-runs tab beschikbaar.
+
+---
+
+### BC Configuratie & Veldmapping
+
+**Waarvoor:** de koppeling met Business Central instellen en beheren.
+
+**Hoe het werkt:**  
+OAuth2 client credentials flow via Microsoft MSAL. Het client secret wordt versleuteld opgeslagen (AES-256-GCM) — nooit plain-text in de database. De verbinding is testbaar via een knop in de admin UI.
+
+De veldmapping detecteert automatisch welke BC-velden beschikbaar zijn en laat de beheerder configureren welk veld de medewerkersnaam en functie bevat. Dit is nodig omdat BC-installaties per klant kunnen verschillen.
+
+---
+
+### Email / SMTP
+
+**Waarvoor:** automatische reminder-e-mails sturen naar medewerkers met openstaande acties.
+
+**Hoe het werkt:**  
+SMTP-configuratie is volledig via de admin UI instelbaar (geen .env aanpassing nodig). Per categorie is een reminder-interval instelbaar: taken, NCR, onderhoud, kalibratie en kwaliteit kunnen elk een eigen frequentie hebben. De dagelijkse cron draait om 07:30 op werkdagen en stuurt PDF bijlagen mee waar relevant.
+
+---
+
+## CNC Agent — hoe het werkt
+
+De CNC Agent is een lichte Node.js applicatie die op één Windows PC in het netwerk draait. Hij doet twee dingen tegelijkertijd:
+
+**TOOL.T synchronisatie (elke 30 minuten):**  
+Verbindt via TNCcmd.exe met elke CNC-machine, haalt het TOOL.T bestand op en stuurt het naar het MES. Het MES parseert het bestand en werkt het toolmagazijn bij via upserts (veilig bij duplicaat-uitvoering).
+
+**State polling (elke 10 seconden):**  
+Verbindt via LSV2 met elke machine en leest de programmastatus (R_RI parameter 26: STARTED/FINISHED/STOPPED/INTERRUPTED/ERROR/IDLE) en de geselecteerde programmanaam. Bij statuswijzigingen worden events gepost naar het MES backend. Dit gebeurt zonder DNC-licentie — LSV2 is het ingebouwde leesprotocol van Heidenhain-controllers.
+
+**Exponential backoff:**  
+Als een machine offline is, verlengt de agent automatisch het poll-interval (10s → 20s → 40s → … → max 5 min). Bij reconnect reset het interval direct naar 10 seconden. Dit voorkomt onnodige netwerklast bij uitgeschakelde machines.
+
+**Redundantie:**  
+Meerdere agents op verschillende Windows PCs kunnen tegelijk draaien. De backend verwerkt syncs via upserts, dus dubbel uitvoeren is altijd veilig.
+
+---
+
+## Belangrijke ontwerpkeuzes
+
+**On-premise, geen cloud**  
+Data blijft lokaal op de server van Dutch Shape. Geen abonnementskosten, geen afhankelijkheid van externe diensten, volledige controle over backups en toegang.
+
+**BC via polling, niet via webhooks**  
+BC Online ondersteunt webhooks, maar dat vereist een publiek bereikbaar endpoint. Met polling elke 5 minuten is de verversing snel genoeg voor productiegebruik en is er geen infrastructuurwijziging nodig. Webhooks zijn gepland als toekomstige optimalisatie.
+
+**Touch-first kiosk**  
+Operators werken met handschoenen op een tablet of industrieel touchscherm. Minimale touch-target is 44px hoogte. Weinig tekst, grote knoppen, directe navigatie. De interface werkt zonder muis.
+
+**Handmatige database-migraties**  
+Drizzle ORM genereert geen migraties automatisch. Elke schemawijziging is een handgeschreven SQL-bestand met een oplopend nummer. Dit geeft volledige controle over wat er in productie wordt uitgevoerd en voorkomt verrassingen bij auto-gegenereerde migraties op een live database.
+
+**Event-stream derivatie voor downtime**  
+Stilstandsperioden worden niet opgeslagen in een aparte tabel maar on-the-fly berekend uit de event-stroom in `cnc_machine_events`. Voordeel: de brondata is altijd correct en herberekenable; nadeel: iets langzamer bij grote datasets. Voor de schaal van Dutch Shape is dit geen issue.
+
+**Enkelstuks productie — geen traditionele SPC**  
+Standaard kwaliteitsstatistieken (Cp/Cpk) vereisen een steekproef van tientallen identieke onderdelen. Dutch Shape maakt elk onderdeel één keer. De metrologie-module is daarom gebouwd op cross-project analyse: patronen worden zichtbaar over tientallen verschillende projecten heen, op dezelfde machine, met dezelfde feature-types.
+
+---
 
 ## Deployment
 
-- **Dev:** `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` — Vite HMR + tsx watch
-- **Test:** `testserver.bat` → poort 8080 (laptop als testserver voor collega's)
-- **Productie:** VM (nog in te richten) — `git clone` + `.env` invullen + `docker compose up -d --build`
-- **Update:** `./update.sh` (git pull + rebuild + restart)
+| Omgeving | Commando | Poort |
+|----------|----------|-------|
+| Development | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` | 5173 (Vite) + 3000 (backend) |
+| Testserver (laptop) | `testserver.bat` | 8080 |
+| Productie | `./install.sh` → `docker compose up -d --build` | 8080 |
+| Update | `./update.sh` (maakt automatisch backup) | — |
+
+---
+
+## Tijdsinvestering
+
+| Module | Periode | Uren (ca.) |
+|--------|---------|------------|
+| v1.0 Fundament + Beheer (Fase 1–6.1) | feb–mrt 2026 | ~55 uur |
+| NCR, Preventieve Maatr., Klantmeldingen | mrt–apr 2026 | ~16 uur |
+| CNC Machining — Tool tabel + samenstellingen | apr 2026 | ~18 uur |
+| Product Setup (volledig) | apr 2026 | ~21 uur |
+| NCR Human Factor, Meetmiddelen, Meet Setup | mei 2026 | ~10 uur |
+| CNC Agent + Machine Dashboard | mei 2026 | ~8 uur |
+| Metrologie Inspectieviewer Phase 1–3 | mei–jun 2026 | ~20 uur |
+| **Totaal** | **feb–jun 2026** | **~148 uur** |

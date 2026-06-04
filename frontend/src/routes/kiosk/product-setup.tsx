@@ -4616,9 +4616,20 @@ function BijlagenTab({ step }: { step: Step }) {
 // ROOT EXPORT
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function ProductSetupContent() {
+export function ProductSetupContent({ initialSetupId, onBack: onBackProp }: { initialSetupId?: string; onBack?: () => void } = {}) {
   const [machine, setMachine]   = useState<FresMachine | null>(null)
   const [setup, setSetup]       = useState<SetupSummary | null>(null)
+
+  // Direct vanuit archief: sla machine/lijst over en open de setup meteen
+  if (initialSetupId) {
+    return (
+      <SetupDetail
+        setupId={initialSetupId}
+        machineId=""
+        onBack={onBackProp ?? (() => {})}
+      />
+    )
+  }
 
   if (!machine) return <MachineGrid onSelect={setMachine} />
 

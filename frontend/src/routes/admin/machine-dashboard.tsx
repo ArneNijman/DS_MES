@@ -254,7 +254,9 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
           return acc
         }, {})
       )
-    : dailyDeltas.map(p => ({ date: p.date.slice(5), uren: p.delta, totaal: p.totaal }))
+    : dailyDeltas
+        .slice(days === 1 ? 1 : 0)  // dag-weergave: gisteren (referentie) weggooien, alleen vandaag tonen
+        .map(p => ({ date: p.date.slice(5), uren: p.delta, totaal: p.totaal }))
 
   if (!deltas.length) return (
     <div className="flex items-center justify-between py-2">
@@ -401,12 +403,12 @@ const PERIOD_OPTIONS = [
 function getSinceDate(days: number): string {
   const d = new Date()
   switch (days) {
-    case 1:   // Vandaag — vanaf middernacht vandaag
-      d.setHours(0, 0, 0, 0); break
+    case 1:   // Gisteren + vandaag — gisteren als referentiepunt voor de delta
+      d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); break
     case 7:   // 7 kalenderdagen terug
       d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); break
-    case 30:  // Begin van de huidige maand
-      d.setDate(1); d.setHours(0, 0, 0, 0); break
+    case 30:  // Laatste 30 dagen (niet kalendermaand, zodat er altijd voldoende data is)
+      d.setDate(d.getDate() - 29); d.setHours(0, 0, 0, 0); break
     case 90:  // Begin van het huidige kwartaal
       d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1); d.setHours(0, 0, 0, 0); break
     case 365: // Begin van het huidige jaar

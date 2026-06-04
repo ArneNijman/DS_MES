@@ -155,6 +155,11 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 | Medewerkers | `routes/admin/employees.tsx` | `routes/admin/employees.ts` |
 | Machine Dashboard | `routes/admin/machine-dashboard.tsx` (exporteert ook `MachineDashboardContent` voor kiosk) | `routes/admin/cnc-events.ts` + `cnc-metrics.ts` |
 | Email instellingen (admin) | `routes/admin/smtp-settings.tsx` | `routes/admin/smtp.ts` |
+| Mijn taken | `routes/kiosk/mijn-taken-todo.tsx` | `routes/kiosk/tasks.ts` |
+| Mijn meldingen | `routes/kiosk/mijn-meldingen.tsx` | via `routes/kiosk/ncr.ts` + `meetmiddelen.ts` |
+| NCR Statistieken | `routes/kiosk/ncr-statistieken.tsx` | `routes/kiosk/ncr-stats.ts` |
+| BC Configuratie (admin) | `routes/admin/bc-config.tsx` | `routes/admin/bc-config.ts` |
+| BC Veldmapping (admin) | `routes/admin/bc-field-map.tsx` | `routes/admin/bc-field-map.ts` |
 
 ## Sleuteltabellen in de DB
 
