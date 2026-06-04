@@ -371,6 +371,51 @@ Het script slaat regels zonder geldig `NCR_`-prefix automatisch over (lege regel
 
 ---
 
+## E-mail reminders instellen (SMTP)
+
+Het MES stuurt automatisch dagelijkse reminder-e-mails naar medewerkers met openstaande acties. SMTP wordt volledig via de admin UI geconfigureerd — geen aanpassing van `.env` nodig.
+
+### Stap 1 — SMTP configureren
+
+Admin → **Email instellingen** → vul in:
+
+| Veld | Voorbeeld |
+|------|-----------|
+| SMTP host | `smtp.office365.com` |
+| SMTP poort | `587` |
+| Gebruikersnaam | `mes@dutchshape.nl` |
+| Wachtwoord | `•••••••` |
+| Afzendernaam | `Dutch Shape MES` |
+| Afzender e-mail | `mes@dutchshape.nl` |
+
+Klik **Verbinding testen** om te controleren of de instellingen werken.
+
+### Stap 2 — Reminder-intervallen instellen
+
+Per categorie is instelbaar na hoeveel dagen een reminder wordt verstuurd:
+
+| Categorie | Standaard |
+|-----------|-----------|
+| Taken | 3 dagen |
+| NCR | 7 dagen |
+| Onderhoud | 7 dagen |
+| Kalibratie | 14 dagen |
+| Kwaliteit | 7 dagen |
+
+Stel in op `0` om reminders voor een categorie uit te zetten.
+
+### Stap 3 — E-mailnotificaties per medewerker
+
+Admin → **Medewerkers** → medewerker openen → schakelaar **E-mailnotificaties** aan/uit.
+
+Alleen medewerkers met een ingevuld e-mailadres én notificaties ingeschakeld ontvangen reminders.
+
+### Wanneer worden reminders verstuurd?
+
+De reminder-cron draait elke werkdag om **07:30**. Een medewerker ontvangt een e-mail als er openstaande items zijn die ouder zijn dan het ingestelde interval voor die categorie.
+
+---
+
 ## Postprocessor-validatie (Product Setup)
 
 NC-programma's (.h bestanden) bevatten een regel die aangeeft voor welke machine/postprocessor ze zijn gegenereerd:
