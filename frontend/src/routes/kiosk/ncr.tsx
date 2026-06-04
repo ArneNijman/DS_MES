@@ -1157,6 +1157,9 @@ export function NCRContent({ initialNcr, onPendingConsumed, onStartPreventief }:
       qc.invalidateQueries({ queryKey: ['ncr-status-log', id] })
       setModal(null)
     },
+    onError: (err: Error) => {
+      alert(`Opslaan mislukt: ${err.message}`)
+    },
   })
 
   const searchFilter = (n: NcrRegistration) => {

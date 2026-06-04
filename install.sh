@@ -101,11 +101,14 @@ else
   ok "MES is gestart"
 fi
 
-# Haal admin-wachtwoord op uit logs
-ADMIN_PASS=$(docker compose logs backend 2>/dev/null | grep -o 'wachtwoord:[[:space:]]*[^ ]*' | tail -1 | awk '{print $2}')
-if [ -z "$ADMIN_PASS" ]; then
-  ADMIN_PASS=$(docker compose logs backend 2>/dev/null | grep -i 'seed\|admin\|password\|wachtwoord' | tail -3)
-fi
+# Haal admin-wachtwoord op uit JSON-logs (Fastify logt in JSON, wachtwoord zit in "msg" veld)
+ADMIN_PASS=$(docker compose logs backend 2>/dev/null \
+  | grep -i 'Wachtwoord' \
+  | sed 's/.*"msg":"//' \
+  | sed 's/".*//' \
+  | sed 's/.*Wachtwoord:[[:space:]]*//' \
+  | grep -v '^$' \
+  | tail -1)
 
 # Detecteer server-IP
 SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -118,9 +121,13 @@ echo ""
 echo -e "  Kiosk : ${CYAN}http://${SERVER_IP}:8080/kiosk${RESET}"
 echo -e "  Admin : ${CYAN}http://${SERVER_IP}:8080/admin/login${RESET}"
 echo ""
-echo -e "  Eerste inloggegevens — zie de backend logs:"
-echo ""
-docker compose logs backend 2>/dev/null | grep -i 'admin\|seed\|wachtwoord\|password\|gebruiker' | grep -v "^$" | tail -5 | sed 's/^/    /'
+echo -e "  ${BOLD}Admin inloggegevens:${RESET}"
+echo -e "  Gebruikersnaam : ${BOLD}admin${RESET}"
+if [ -n "$ADMIN_PASS" ]; then
+  echo -e "  Wachtwoord     : ${BOLD}${GREEN}${ADMIN_PASS}${RESET}"
+else
+  echo -e "  Wachtwoord     : ${YELLOW}niet gevonden — run: docker compose logs backend | grep -i wachtwoord${RESET}"
+fi
 echo ""
 echo -e "${YELLOW}  ⚠  Sla het wachtwoord op — het wordt niet opnieuw getoond.${RESET}"
 echo -e "${BOLD}════════════════════════════════════════════${RESET}"
