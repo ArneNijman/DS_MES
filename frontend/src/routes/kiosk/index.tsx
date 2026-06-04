@@ -53,16 +53,20 @@ export default function KioskIndex() {
         </div>
 
         {/* Card */}
-        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-6 w-full max-w-2xl">
-          <h2 className="text-center text-gray-700 font-medium mb-5">Selecteer je account</h2>
-          <EmployeeGrid
-            employees={employees}
-            onSelect={(id) => {
-              const emp = employees.find((e) => e.id === id)
-              if (emp) setSelected(emp)
-            }}
-          />
-          <div className="text-center mt-6">
+        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[85vh]">
+          <div className="px-6 pt-6 pb-4 shrink-0">
+            <h2 className="text-center text-gray-700 font-medium">Selecteer je account</h2>
+          </div>
+          <div className="overflow-y-auto px-6 pb-2 flex-1 min-h-0">
+            <EmployeeGrid
+              employees={employees}
+              onSelect={(id) => {
+                const emp = employees.find((e) => e.id === id)
+                if (emp) setSelected(emp)
+              }}
+            />
+          </div>
+          <div className="text-center px-6 py-4 shrink-0 border-t border-gray-100">
             <a
               href="/admin/login"
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
