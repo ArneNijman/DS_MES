@@ -141,11 +141,25 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
     if (!body.success) return reply.status(400).send({ error: 'Ongeldige gegevens' })
 
     const employee = (req as { employee?: { employeeId?: string; name?: string } }).employee
-    const ncrId = await nextNcrId(fastify)
-    const [ncr] = await fastify.db
-      .insert(ncrRegistrations)
-      .values({ ...body.data, ncrId })
-      .returning()
+
+    // Retry-loop om race conditions bij gelijktijdig aanmaken op te vangen.
+    // De UNIQUE constraint op ncrId is de garantie; bij botsing proberen we
+    // automatisch het volgende nummer.
+    let ncr: typeof ncrRegistrations.$inferSelect
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const ncrId = await nextNcrId(fastify)
+      try {
+        ;[ncr!] = await fastify.db
+          .insert(ncrRegistrations)
+          .values({ ...body.data, ncrId })
+          .returning()
+        break
+      } catch (err) {
+        const isUnique = err instanceof Error && err.message.toLowerCase().includes('unique')
+        if (!isUnique || attempt === 4) throw err
+        // Concurrent insert: volgende poging met het volgende nummer
+      }
+    }
 
     await logStatusChange(fastify, 'ncr', ncr.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
 
