@@ -57,6 +57,7 @@ interface MaintenanceTask {
   scheduledDate: string | null
   completedDate: string | null
   interval: 'wekelijks' | 'maandelijks' | 'kwartaal' | 'halfjaar' | 'jaarlijks' | null
+  logType: MaintenanceLogType | null
   assignedToName: string | null
   createdAt: string
 }
@@ -522,6 +523,7 @@ function MaintenanceForm({ machineId, initial = {}, onSave, onClose, loading }: 
     scheduledDate: initial.scheduledDate ?? '',
     completedDate: initial.completedDate ?? '',
     interval: initial.interval ?? '',
+    logType: initial.logType ?? '',
   })
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
@@ -533,9 +535,22 @@ function MaintenanceForm({ machineId, initial = {}, onSave, onClose, loading }: 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <form
-          onSubmit={(e) => { e.preventDefault(); onSave({ ...form, machineId, interval: form.interval || null }) }}
+          onSubmit={(e) => { e.preventDefault(); onSave({ ...form, machineId, interval: form.interval || null, logType: form.logType || null }) }}
           className="p-6 space-y-4"
         >
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Standaard registratietype</label>
+            <select value={form.logType} onChange={(e) => set('logType', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+              <option value="">— Geen standaard —</option>
+              {MAINTENANCE_LOG_TYPES.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+            {form.logType && (
+              <p className="text-xs text-gray-400 mt-1">Registraties openen direct met dit type vooringevuld.</p>
+            )}
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Titel *</label>
             <input value={form.title} onChange={(e) => set('title', e.target.value)} required
@@ -1080,24 +1095,35 @@ function TaskPortal({ task, onClose, onEditTask }: { task: MaintenanceTask; onCl
           <div className="px-6 py-3 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700">Registraties</span>
             <div className="relative" ref={gearRef}>
-              <button
-                onClick={() => setGearOpen(o => !o)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 text-xs rounded-lg border border-gray-200 transition-colors"
-              >
-                <Settings size={13} /> Registratie toevoegen
-              </button>
-              {gearOpen && (
-                <div className="absolute right-0 top-9 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-52">
-                  {MAINTENANCE_LOG_TYPES.map(({ key, label }) => (
-                    <button
-                      key={key}
-                      onClick={() => { setLogModal({ type: key }); setGearOpen(false) }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+              {task.logType ? (
+                <button
+                  onClick={() => setLogModal({ type: task.logType! })}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 text-xs rounded-lg border border-gray-200 transition-colors"
+                >
+                  <Settings size={13} /> Registratie toevoegen
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setGearOpen(o => !o)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 text-xs rounded-lg border border-gray-200 transition-colors"
+                  >
+                    <Settings size={13} /> Registratie toevoegen
+                  </button>
+                  {gearOpen && (
+                    <div className="absolute right-0 top-9 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-52">
+                      {MAINTENANCE_LOG_TYPES.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => { setLogModal({ type: key }); setGearOpen(false) }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

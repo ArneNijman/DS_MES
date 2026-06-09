@@ -64,6 +64,7 @@ const maintenanceSchema = z.object({
   scheduledDate: z.string().optional().nullable(),
   completedDate: z.string().optional().nullable(),
   interval: z.enum(['wekelijks', 'maandelijks', 'kwartaal', 'halfjaar', 'jaarlijks']).optional().nullable(),
+  logType: z.enum(['spindel_uren', 'spindel_koeling', 'las_uren', 'centrale_smering', 'spindel_smering', 'koelwater', 'hydroliek_32', 'meetdata']).optional().nullable(),
   assignedToId: z.string().uuid().optional().nullable(),
 })
 
@@ -233,6 +234,7 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
         completedDate: maintenanceTasks.completedDate,
         assignedToId: maintenanceTasks.assignedToId,
         assignedToName: employees.name,
+        logType: maintenanceTasks.logType,
         createdAt: maintenanceTasks.createdAt,
       })
       .from(maintenanceTasks)
@@ -256,6 +258,7 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
         completedDate: maintenanceTasks.completedDate,
         assignedToId: maintenanceTasks.assignedToId,
         assignedToName: employees.name,
+        logType: maintenanceTasks.logType,
         createdAt: maintenanceTasks.createdAt,
       })
       .from(maintenanceTasks)

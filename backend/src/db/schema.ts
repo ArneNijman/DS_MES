@@ -128,6 +128,7 @@ export const maintenanceTasks = pgTable('maintenance_tasks', {
   scheduledDate: text('scheduled_date'),
   completedDate: text('completed_date'),
   interval: text('interval'), // 'wekelijks' | 'maandelijks' | 'kwartaal' | 'halfjaar' | 'jaarlijks'
+  logType: text('log_type'),
   assignedToId: uuid('assigned_to_id').references(() => employees.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
