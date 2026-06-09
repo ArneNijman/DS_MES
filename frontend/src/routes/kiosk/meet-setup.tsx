@@ -216,7 +216,7 @@ function MachineGrid({ onSelect }: { onSelect: (m: FresMachine) => void }) {
     <div className="flex-1 overflow-auto p-6">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900">Meet Setup</h1>
-        <p className="text-sm text-gray-500 mt-1">Selecteer een freesmachine om setups te bekijken of aan te maken</p>
+        <p className="text-sm text-gray-500 mt-1">Selecteer een 3D-meetapparaat om setups te bekijken of aan te maken</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {machines.map(m => (
@@ -246,8 +246,21 @@ function MachineGrid({ onSelect }: { onSelect: (m: FresMachine) => void }) {
           </button>
         ))}
         {machines.length === 0 && (
-          <p className="col-span-full text-gray-400 text-sm">Geen freesmachines gevonden. Voeg machines toe met categorie 'Freesmachine'.</p>
+          <p className="col-span-full text-gray-400 text-sm">Geen 3D-meetapparaten gevonden. Voeg machines toe met categorie '3D-meetapparaat'.</p>
         )}
+        {/* Niet vooraf bepaalde machine */}
+        <button
+          onClick={() => onSelect({ id: 'none', machineId: null, name: 'Niet vooraf bepaald', category: '3D-meetapparaat', photoUrl: null, isActive: true, stepCount: 0 })}
+          className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
+        >
+          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
+            <FolderOpen size={28} className="text-gray-400" />
+          </div>
+          <div className="w-full text-center">
+            <p className="font-semibold text-sm text-gray-800">Niet vooraf bepaald</p>
+            <p className="text-xs text-gray-400 mt-0.5">Machine later te kiezen</p>
+          </div>
+        </button>
       </div>
     </div>
   )
@@ -940,7 +953,7 @@ function SetupDetail({
                         {step.attachments.length} bijlagen
                       </span>
                     )}
-                    {step.machineId === machineId && (
+                    {(machineId === 'none' ? step.machineId === null : step.machineId === machineId) && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Hier</span>
                     )}
                   </div>
@@ -1041,7 +1054,7 @@ function SetupDetail({
                     value={newStepName}
                     onChange={e => setNewStepName(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId })
+                      if (e.key === 'Enter' && newStepName.trim()) addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId: machineId === 'none' ? undefined : machineId })
                       if (e.key === 'Escape') { setShowAddStep(false); setNewStepName(''); setNewBewerkingNr(''); setShowBcStepPicker(false) }
                     }}
                   />
@@ -1049,7 +1062,7 @@ function SetupDetail({
                 <div className="flex gap-1">
                   <button
                     disabled={!newStepName.trim() || addStep.isPending}
-                    onClick={() => newStepName.trim() && addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId })}
+                    onClick={() => newStepName.trim() && addStep.mutate({ stepName: newStepName.trim(), bewerkingNr: newBewerkingNr ? parseInt(newBewerkingNr) : undefined, machineId: machineId === 'none' ? undefined : machineId })}
                     className="flex-1 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50"
                   >
                     {addStep.isPending ? 'Aanmaken…' : 'Aanmaken'}

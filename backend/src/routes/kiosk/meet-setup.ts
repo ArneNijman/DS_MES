@@ -50,7 +50,9 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
   // ── Meet-setups opzoeken ──────────────────────────────────────────────────
 
   fastify.get('/kiosk/meet-setups', auth, async (req) => {
-    const { machineId, search } = req.query as { machineId?: string; search?: string }
+    const { machineId: rawMachineId, search } = req.query as { machineId?: string; search?: string }
+    const isNoneMachine = rawMachineId === 'none'
+    const machineId = isNoneMachine ? undefined : rawMachineId
 
     const baseQuery = fastify.db
       .select({
@@ -64,12 +66,17 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
         totalSteps:        sql<number>`(
           SELECT COUNT(*)::int FROM product_setup_steps s WHERE s.setup_id = ${productSetups.id}
         )`,
-        stepsOnMachine:    machineId
+        stepsOnMachine:    isNoneMachine
           ? sql<number>`(
               SELECT COUNT(*)::int FROM product_setup_steps s
-              WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+              WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
             )`
-          : sql<number>`0`,
+          : machineId
+            ? sql<number>`(
+                SELECT COUNT(*)::int FROM product_setup_steps s
+                WHERE s.setup_id = ${productSetups.id} AND s.machine_id = ${machineId}
+              )`
+            : sql<number>`0`,
       })
       .from(productSetups)
 
@@ -78,7 +85,20 @@ export async function meetSetupRoutes(fastify: FastifyInstance) {
       isNull(productSetups.archivedAt) as unknown as ReturnType<typeof eq>,
     ]
 
-    if (machineId) {
+    if (isNoneMachine) {
+      conditions.push(
+        sql`(
+          EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id} AND s.machine_id IS NULL
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM product_setup_steps s
+            WHERE s.setup_id = ${productSetups.id}
+          )
+        )` as unknown as ReturnType<typeof eq>,
+      )
+    } else if (machineId) {
       conditions.push(
         sql`(
           EXISTS (
