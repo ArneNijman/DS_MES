@@ -156,11 +156,12 @@ const programRunSchema = z.object({
 })
 
 export async function cncEventsRoutes(fastify: FastifyInstance) {
-  const auth = { preHandler: [fastify.requireAdmin] }
+  const auth     = { preHandler: [fastify.requireAdmin] }
+  const authRead = { preHandler: [fastify.requireAuth] }  // kiosk + admin
 
   // ── GET events ────────────────────────────────────────────────────────────
 
-  fastify.get('/admin/machines/:id/cnc-events', auth, async (req) => {
+  fastify.get('/admin/machines/:id/cnc-events', authRead, async (req) => {
     const { id }  = req.params as { id: string }
     const q       = req.query  as { limit?: string; eventType?: string }
     const limit   = Math.min(parseInt(q.limit ?? '100', 10), 500)
@@ -184,7 +185,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   // ── GET program runs ──────────────────────────────────────────────────────
 
-  fastify.get('/admin/machines/:id/cnc-program-runs', auth, async (req) => {
+  fastify.get('/admin/machines/:id/cnc-program-runs', authRead, async (req) => {
     const { id } = req.params as { id: string }
     const q      = req.query  as { limit?: string; article?: string }
     const limit  = Math.min(parseInt(q.limit ?? '50', 10), 500)
@@ -202,7 +203,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   // ── GET program runs samenvatting per artikel ─────────────────────────────
 
-  fastify.get('/admin/machines/:id/cnc-program-runs/summary', auth, async (req) => {
+  fastify.get('/admin/machines/:id/cnc-program-runs/summary', authRead, async (req) => {
     const { id } = req.params as { id: string }
 
     const runs = await fastify.db
@@ -311,7 +312,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   // ── GET downtime periods — per machine ────────────────────────────────────
 
-  fastify.get('/admin/machines/:id/cnc-downtime', auth, async (req) => {
+  fastify.get('/admin/machines/:id/cnc-downtime', authRead, async (req) => {
     const { id } = req.params as { id: string }
     const q      = req.query  as { days?: string; since?: string }
     const since  = q.since ? new Date(q.since) : new Date(Date.now() - Math.min(parseInt(q.days ?? '7', 10), 366) * 86_400_000)
@@ -327,7 +328,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
   // ── GET downtime summary — alle Freesmachines ─────────────────────────────
 
-  fastify.get('/admin/cnc-downtime/all', auth, async (req) => {
+  fastify.get('/admin/cnc-downtime/all', authRead, async (req) => {
     const q     = req.query as { days?: string; since?: string }
     const since = q.since ? new Date(q.since) : new Date(Date.now() - Math.min(parseInt(q.days ?? '7', 10), 366) * 86_400_000)
     const days  = Math.ceil((Date.now() - since.getTime()) / 86_400_000)

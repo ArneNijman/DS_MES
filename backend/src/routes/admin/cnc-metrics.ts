@@ -8,7 +8,8 @@ const metricsPayloadSchema = z.object({
 })
 
 export async function cncMetricsRoutes(fastify: FastifyInstance) {
-  const auth = { preHandler: [fastify.requireAdmin] }
+  const auth     = { preHandler: [fastify.requireAdmin] }
+  const authRead = { preHandler: [fastify.requireAuth] }
 
   // ── POST spindle hours (van de agent) ─────────────────────────────────────
   // Slaat huidige stand op in machines.spindle_hours én logt in cnc_machine_metrics
@@ -36,7 +37,7 @@ export async function cncMetricsRoutes(fastify: FastifyInstance) {
 
   // ── GET historische metrics ────────────────────────────────────────────────
 
-  fastify.get('/admin/machines/:id/cnc-metrics', auth, async (req) => {
+  fastify.get('/admin/machines/:id/cnc-metrics', authRead, async (req) => {
     const { id } = req.params as { id: string }
     const q      = req.query  as { metric?: string; days?: string; since?: string }
     const metric = q.metric ?? 'spindle_hours'
