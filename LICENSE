@@ -3,19 +3,17 @@ License text copyright (c) 2020 MariaDB Corporation Ab, All Rights Reserved.
 
 Parameters
 
-Licensor:             Dutch Shape B.V.
-Licensed Work:        Dutch Shape MES. The Licensed Work is (c) 2026 Dutch Shape B.V.
-Additional Use Grant: You may make production use of the Licensed Work for your own
-                      internal business operations. You may not offer the Licensed Work
-                      to third parties on a hosted or embedded basis in order to compete
+Licensor:             Arne Nijman
+Licensed Work:        Dutch Shape MES. The Licensed Work is (c) 2026 Arne Nijman.
+Additional Use Grant: You may make production use of the Licensed Work solely for
+                      internal business operations of Dutch Shape B.V. You may not
+                      offer the Licensed Work to third parties on a hosted or embedded
+                      basis, and you may not use it to compete with the Licensor or
                       with Dutch Shape B.V.'s products or services.
 
                       A "competitive offering" is a product or service offered to third
                       parties that significantly overlaps with the capabilities of the
                       Licensed Work as a manufacturing execution system (MES).
-
-                      Hosting or using the Licensed Work for internal purposes within
-                      your own organization is not considered a competitive offering.
 Change Date:          2030-06-09
 Change License:       MIT
 
