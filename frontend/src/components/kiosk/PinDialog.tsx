@@ -25,6 +25,16 @@ export default function PinDialog({ employeeId, employeeName, onSuccess, onClose
     }
   }, [pin])
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') handleKey(e.key)
+      else if (e.key === 'Backspace') handleKey('⌫')
+      else if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pin, loading])
+
   const handleKey = (key: string) => {
     if (loading) return
     setError('')
