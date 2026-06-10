@@ -561,8 +561,8 @@ function MaintenanceForm({ machineId, initial = {}, onSave, onClose, loading }: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl min-h-[60vh] max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800">{initial.id ? 'Taak bewerken' : 'Onderhoudstaak toevoegen'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
@@ -570,30 +570,32 @@ function MaintenanceForm({ machineId, initial = {}, onSave, onClose, loading }: 
           onSubmit={(e) => { e.preventDefault(); onSave({ ...form, machineId, interval: form.interval || null, logType: form.logType || null }) }}
           className="p-6 space-y-4"
         >
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Standaard registratietype</label>
-            <select value={form.logType} onChange={(e) => set('logType', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
-              <option value="">— Geen standaard —</option>
-              {MAINTENANCE_LOG_TYPES.map(({ key, label }) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-            {form.logType && (
-              <p className="text-xs text-gray-400 mt-1">Registraties openen direct met dit type vooringevuld.</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Titel *</label>
-            <input value={form.title} onChange={(e) => set('title', e.target.value)} required
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Standaard registratietype</label>
+              <select value={form.logType} onChange={(e) => set('logType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                <option value="">— Geen standaard —</option>
+                {MAINTENANCE_LOG_TYPES.map(({ key, label }) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              {form.logType && (
+                <p className="text-xs text-gray-400 mt-1">Registraties openen direct met dit type vooringevuld.</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Titel *</label>
+              <input value={form.title} onChange={(e) => set('title', e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Omschrijving</label>
             <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
               <select value={form.status} onChange={(e) => set('status', e.target.value)}
@@ -698,7 +700,7 @@ function BreakdownForm({ machineId, initial = {}, onSave, onClose, loading }: Br
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl min-h-[60vh] max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800">{initial.id ? 'Storing bewerken' : 'Storing melden'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
@@ -707,16 +709,11 @@ function BreakdownForm({ machineId, initial = {}, onSave, onClose, loading }: Br
           onSubmit={(e) => { e.preventDefault(); onSave({ ...form, machineId, resolvedByType: form.resolvedByType || null, resolvedByName: form.resolvedByName || null, werkbonUrl: form.werkbonUrl || null, werkbonFileName: form.werkbonFileName || null }) }}
           className="p-6 space-y-4"
         >
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Titel *</label>
-            <input value={form.title} onChange={(e) => set('title', e.target.value)} required className={inputCls} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Omschrijving</label>
-            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3}
-              className={cn(inputCls, 'resize-none')} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-4 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Titel *</label>
+              <input value={form.title} onChange={(e) => set('title', e.target.value)} required className={inputCls} />
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
               <select value={form.status} onChange={(e) => set('status', e.target.value)} className={inputCls}>
@@ -734,6 +731,11 @@ function BreakdownForm({ machineId, initial = {}, onSave, onClose, loading }: Br
                 <option value="kritiek">Kritiek</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Omschrijving</label>
+            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3}
+              className={cn(inputCls, 'resize-none')} />
           </div>
           {form.status === 'opgelost' && (
             <>
@@ -1040,7 +1042,7 @@ function TaskPortal({ task, onClose, onEditTask }: { task: MaintenanceTask; onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl min-h-[70vh] max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-3 shrink-0">
           <div className="flex-1 min-w-0">
@@ -1283,7 +1285,7 @@ function BreakdownPortal({ breakdown, onClose, onEditBreakdown }: { breakdown: B
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl min-h-[70vh] max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-3 shrink-0">
           <div className="flex-1 min-w-0">
