@@ -1779,7 +1779,7 @@ function ExportModal({ tools, onClose }: { tools: MeasuringTool[]; onClose: () =
 export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToolId?: string; onPendingConsumed?: () => void } = {}) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterActief, setFilterActief] = useState<'actief' | 'inactief' | 'alle'>('actief')
+  const [filterActief, setFilterActief] = useState<'actief' | 'inactief' | 'afgekeurd' | 'alle'>('actief')
   const [filterKal, setFilterKal] = useState<'alle' | 'verlopen' | 'kritisch'>('alle')
   const [modal, setModal] = useState<MeasuringTool | null | 'nieuw'>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -1836,8 +1836,9 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
       (t.merk ?? '').toLowerCase().includes(q) ||
       (t.locatie ?? '').toLowerCase().includes(q)
     const matchActief =
-      filterActief === 'alle'   ? true :
-      filterActief === 'actief' ? t.actief !== false :
+      filterActief === 'alle'      ? true :
+      filterActief === 'actief'    ? t.actief !== false && !t.afgekeurd :
+      filterActief === 'afgekeurd' ? t.afgekeurd === true :
       t.actief === false
     const matchKal =
       filterKal === 'alle'     ? true :
@@ -1892,15 +1893,15 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
             )}
           </div>
           <div className="flex gap-1">
-            {(['actief', 'inactief', 'alle'] as const).map((f) => (
+            {(['actief', 'inactief', 'afgekeurd', 'alle'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilterActief(f)}
                 className={cn(
                   'flex-1 py-1 text-xs rounded-md transition-colors',
                   filterActief === f
-                    ? 'bg-teal-600 text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
+                    ? f === 'afgekeurd' ? 'bg-red-600 text-white' : 'bg-teal-600 text-white'
+                    : f === 'afgekeurd' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
                 )}
               >
                 {f.charAt(0).toUpperCase() + f.slice(1)}
