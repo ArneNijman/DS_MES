@@ -9,6 +9,18 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-11]
+
+### Toegevoegd
+- Meetmiddelen: kalibratie-export als PDF (verlopen / kritisch / beide), filterbaar op locatie
+- Meetmiddelen: batch-verzendingen — selecteer meetmiddelen, sla op als batch, beheer status (concept / weggestuurd / terug), download PDF per batch
+- Rotatie-logica: vervaldatum normaliseert op `max(kalibratiedatum, oude vervaldag) + interval` zodat vroeg kalibreren het schema niet vervroegt
+
+### Verbeterd
+- Machines: sidebar-foto vergroot van 36px naar 56px
+
+---
+
 ## [2026-06-10] — avond
 
 ### Toegevoegd
