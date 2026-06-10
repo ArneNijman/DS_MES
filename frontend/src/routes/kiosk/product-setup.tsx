@@ -458,9 +458,9 @@ function MachineGrid({ onSelect }: { onSelect: (m: FresMachine) => void }) {
                 : 'border-gray-100 bg-gray-50 opacity-60',
             )}
           >
-            <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
+            <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
               {m.photoUrl
-                ? <img src={m.photoUrl} alt={m.name} className="w-full h-full object-cover" />
+                ? <img src={m.photoUrl} alt={m.name} className="block w-full h-full object-contain" />
                 : <Cpu size={28} className="text-gray-400" />
               }
             </div>
@@ -1235,8 +1235,8 @@ function SetupDetail({
                     onClick={() => { patchStep.mutate({ stepId: selectedStep.id, machineId: m.id }); setShowMachinePicker(false) }}
                     className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-teal-400 hover:bg-teal-50 transition-colors text-left"
                   >
-                    <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
-                      {m.photoUrl ? <img src={m.photoUrl} alt="" className="w-full h-full object-cover" /> : <Cpu size={18} className="text-gray-400" />}
+                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+                      {m.photoUrl ? <img src={m.photoUrl} alt="" className="block w-full h-full object-contain" /> : <Cpu size={18} className="text-gray-400" />}
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
