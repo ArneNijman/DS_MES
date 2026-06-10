@@ -2817,8 +2817,8 @@ export function MachinesContent() {
                     )}
                   >
                     {m.photoUrl
-                      ? <img src={m.photoUrl} className="w-9 h-9 rounded object-cover flex-shrink-0 border border-gray-100" />
-                      : <div className="w-9 h-9 rounded bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300"><Wrench size={16} /></div>
+                      ? <img src={m.photoUrl} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100" />
+                      : <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300"><Wrench size={18} /></div>
                     }
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>

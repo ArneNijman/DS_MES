@@ -489,6 +489,25 @@ export const toolDocuments = pgTable('tool_documents', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+export const kalibratieVerzendingen = pgTable('kalibratie_verzendingen', {
+  id:                   uuid('id').primaryKey().defaultRandom(),
+  naam:                 text('naam').notNull(),
+  status:               text('status').notNull().default('concept'), // concept | weggestuurd | terug
+  datumWeggestuurd:     text('datum_weggestuurd'),
+  datumTerug:           text('datum_terug'),
+  labNaam:              text('lab_naam'),
+  aangemaaktDoorId:     uuid('aangemaakt_door_id').references(() => employees.id, { onDelete: 'set null' }),
+  aangemaaktDoorNaam:   text('aangemaakt_door_naam'),
+  createdAt:            timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const kalibratieVerzendingItems = pgTable('kalibratie_verzending_items', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  verzendingId: uuid('verzending_id').notNull().references(() => kalibratieVerzendingen.id, { onDelete: 'cascade' }),
+  toolId:       uuid('tool_id').notNull().references(() => measuringTools.id, { onDelete: 'cascade' }),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const cncToolEntries = pgTable('cnc_tool_entries', {
   id:         uuid('id').primaryKey().defaultRandom(),
   machineId:  uuid('machine_id').notNull().references(() => machines.id, { onDelete: 'cascade' }),

@@ -3,12 +3,14 @@ import { z } from 'zod'
 import {
   measuringTools, calibrationRecords, toolDocuments, machines,
   internalCalibrationSessions, calibrationMeasurementRows, employees,
+  kalibratieVerzendingen, kalibratieVerzendingItems,
 } from '../../db/schema.js'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, inArray } from 'drizzle-orm'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
 import path from 'path'
+import { genereerKalibratieExportPdf } from '../../lib/pdf-generator.js'
 
 const PRIVILEGED_ROLES = ['admin', 'quality']
 
@@ -211,6 +213,193 @@ export async function kioskMeetmiddelenRoutes(fastify: FastifyInstance) {
     }
 
     return { verlopen, kritisch }
+  })
+
+  // ── Kalibratie export PDF ─────────────────────────────────────────────────
+
+  fastify.post('/kiosk/meetmiddelen/export-pdf', auth, async (req, reply) => {
+    if (!requirePrivileged(req, reply)) return
+
+    const MONTHS: Record<string, number> = { jaarlijks: 12, halfjaarlijks: 6, kwartaal: 3 }
+    const body = req.body as { filter?: string; locatie?: string; toolIds?: string[] }
+    const filter  = body.filter ?? 'beide'   // 'verlopen' | 'kritisch' | 'beide'
+    const locatie = body.locatie?.trim() || null
+    const toolIds = Array.isArray(body.toolIds) && body.toolIds.length ? body.toolIds : null
+
+    // Haal alle externe kalibratie tools op
+    const allTools = await fastify.db.select().from(measuringTools)
+      .where(eq(measuringTools.externeKalibratie, true))
+
+    const [allCals, allSessions] = await Promise.all([
+      fastify.db.select().from(calibrationRecords),
+      fastify.db.select().from(internalCalibrationSessions),
+    ])
+
+    const lastCalByTool: Record<string, string | null> = {}
+    for (const c of allCals) {
+      const e = lastCalByTool[c.toolId]
+      if (!e || (c.datum && c.datum > e)) lastCalByTool[c.toolId] = c.datum ?? null
+    }
+    for (const s of allSessions) {
+      const e = lastCalByTool[s.toolId]
+      if (!e || (s.voltooiingsdatum && s.voltooiingsdatum > e)) lastCalByTool[s.toolId] = s.voltooiingsdatum ?? null
+    }
+
+    const now = Date.now()
+    const regels = []
+
+    for (const t of allTools) {
+      if (!t.actief) continue
+      if (locatie && t.locatie !== locatie) continue
+      if (toolIds && !toolIds.includes(t.id)) continue
+      if (!t.interval || t.interval === 'geen') continue
+
+      const m       = MONTHS[t.interval] ?? 12
+      const lastDat = lastCalByTool[t.id] ?? null
+      let daysLeft: number
+      let vervalStr = '—'
+
+      if (!lastDat) {
+        daysLeft = -1
+      } else {
+        const next = new Date(lastDat)
+        next.setMonth(next.getMonth() + m)
+        daysLeft = Math.floor((next.getTime() - now) / 86400000)
+        vervalStr = next.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      }
+
+      const includeVerlopen = filter === 'verlopen' || filter === 'beide'
+      const includeKritisch = filter === 'kritisch' || filter === 'beide'
+
+      if (daysLeft < 0 && !includeVerlopen) continue
+      if (daysLeft >= 0 && daysLeft <= 90 && !includeKritisch) continue
+      if (daysLeft > 90 && !toolIds) continue  // alleen meenemen als handmatig geselecteerd
+
+      regels.push({
+        displayId:   t.voorraadId ?? t.toolId,
+        artikelnaam: t.artikelnaam ?? '—',
+        merk:        t.merk ?? '—',
+        afmeting:    t.afmeting ?? '—',
+        serienummer: t.serieSuffix ?? '—',
+        vervaldatum: vervalStr,
+      })
+    }
+
+    // Sorteer: geen vervaldatum eerst, daarna oudste vervaldatum eerst
+    regels.sort((a, b) => {
+      if (a.vervaldatum === '—' && b.vervaldatum !== '—') return -1
+      if (a.vervaldatum !== '—' && b.vervaldatum === '—') return 1
+      return a.vervaldatum.localeCompare(b.vervaldatum)
+    })
+
+    const filterLabel = filter === 'verlopen' ? 'Verlopen kalibraties'
+                      : filter === 'kritisch' ? 'Kritische kalibraties (< 90 dagen)'
+                      : 'Verlopen + kritische kalibraties'
+    const titel  = `Kalibratie-exportlijst — ${filterLabel}${locatie ? ` — ${locatie}` : ''}`
+    const datum  = new Date().toLocaleDateString('nl-NL', { day: '2-digit', month: 'long', year: 'numeric' })
+    const buffer = await genereerKalibratieExportPdf(titel, datum, regels)
+
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `attachment; filename="kalibratie-export-${new Date().toISOString().slice(0,10)}.pdf"`)
+    return reply.send(buffer)
+  })
+
+  // ── Kalibratie verzendingen CRUD ──────────────────────────────────────────
+
+  fastify.get('/kiosk/meetmiddelen/verzendingen', auth, async () => {
+    const verzendingen = await fastify.db
+      .select().from(kalibratieVerzendingen)
+      .orderBy(desc(kalibratieVerzendingen.createdAt))
+    const items = await fastify.db.select().from(kalibratieVerzendingItems)
+    return verzendingen.map(v => ({
+      ...v,
+      aantalItems: items.filter(i => i.verzendingId === v.id).length,
+    }))
+  })
+
+  fastify.post('/kiosk/meetmiddelen/verzendingen', auth, async (req, reply) => {
+    if (!requirePrivileged(req, reply)) return
+    const employee = (req as any).employee as { id: string; name: string }
+    const { naam, labNaam, toolIds } = req.body as { naam: string; labNaam?: string; toolIds: string[] }
+    if (!naam || !Array.isArray(toolIds) || toolIds.length === 0)
+      return reply.status(400).send({ error: 'Naam en minimaal 1 meetmiddel zijn verplicht' })
+
+    const [v] = await fastify.db.insert(kalibratieVerzendingen)
+      .values({ naam, labNaam: labNaam || null, aangemaaktDoorId: employee.id, aangemaaktDoorNaam: employee.name })
+      .returning()
+    await fastify.db.insert(kalibratieVerzendingItems)
+      .values(toolIds.map(toolId => ({ verzendingId: v.id, toolId })))
+    return v
+  })
+
+  fastify.get('/kiosk/meetmiddelen/verzendingen/:id', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const [v] = await fastify.db.select().from(kalibratieVerzendingen).where(eq(kalibratieVerzendingen.id, id))
+    if (!v) return reply.status(404).send({ error: 'Niet gevonden' })
+    const items = await fastify.db.select({ toolId: kalibratieVerzendingItems.toolId })
+      .from(kalibratieVerzendingItems).where(eq(kalibratieVerzendingItems.verzendingId, id))
+    const toolIds = items.map(i => i.toolId)
+    const tools = toolIds.length
+      ? await fastify.db.select().from(measuringTools).where(inArray(measuringTools.id, toolIds))
+      : []
+    return { ...v, tools }
+  })
+
+  fastify.put('/kiosk/meetmiddelen/verzendingen/:id', auth, async (req, reply) => {
+    if (!requirePrivileged(req, reply)) return
+    const { id } = req.params as { id: string }
+    const { status, datumWeggestuurd, datumTerug, labNaam } = req.body as {
+      status?: string; datumWeggestuurd?: string; datumTerug?: string; labNaam?: string
+    }
+    const [v] = await fastify.db.update(kalibratieVerzendingen)
+      .set({ status: status ?? undefined, datumWeggestuurd: datumWeggestuurd ?? undefined, datumTerug: datumTerug ?? undefined, labNaam: labNaam ?? undefined })
+      .where(eq(kalibratieVerzendingen.id, id))
+      .returning()
+    if (!v) return reply.status(404).send({ error: 'Niet gevonden' })
+    return v
+  })
+
+  fastify.delete('/kiosk/meetmiddelen/verzendingen/:id', auth, async (req, reply) => {
+    if (!requirePrivileged(req, reply)) return
+    const { id } = req.params as { id: string }
+    await fastify.db.delete(kalibratieVerzendingen).where(eq(kalibratieVerzendingen.id, id))
+    return { ok: true }
+  })
+
+  fastify.post('/kiosk/meetmiddelen/verzendingen/:id/pdf', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const MONTHS: Record<string, number> = { jaarlijks: 12, halfjaarlijks: 6, kwartaal: 3 }
+    const [v] = await fastify.db.select().from(kalibratieVerzendingen).where(eq(kalibratieVerzendingen.id, id))
+    if (!v) return reply.status(404).send({ error: 'Niet gevonden' })
+    const items = await fastify.db.select({ toolId: kalibratieVerzendingItems.toolId })
+      .from(kalibratieVerzendingItems).where(eq(kalibratieVerzendingItems.verzendingId, id))
+    const toolIds = items.map(i => i.toolId)
+    const tools = toolIds.length ? await fastify.db.select().from(measuringTools).where(inArray(measuringTools.id, toolIds)) : []
+
+    const [allCals, allSessions] = await Promise.all([
+      fastify.db.select().from(calibrationRecords),
+      fastify.db.select().from(internalCalibrationSessions),
+    ])
+    const lastCalByTool: Record<string, string | null> = {}
+    for (const c of allCals) { const e = lastCalByTool[c.toolId]; if (!e || (c.datum && c.datum > e)) lastCalByTool[c.toolId] = c.datum ?? null }
+    for (const s of allSessions) { const e = lastCalByTool[s.toolId]; if (!e || (s.voltooiingsdatum && s.voltooiingsdatum > e)) lastCalByTool[s.toolId] = s.voltooiingsdatum ?? null }
+
+    const regels = tools.map(t => {
+      const m = MONTHS[t.interval ?? ''] ?? 12
+      const lastDat = lastCalByTool[t.id] ?? null
+      let vervalStr = '—'
+      if (lastDat) {
+        const next = new Date(lastDat); next.setMonth(next.getMonth() + m)
+        vervalStr = next.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      }
+      return { displayId: t.voorraadId ?? t.toolId, artikelnaam: t.artikelnaam ?? '—', merk: t.merk ?? '—', afmeting: t.afmeting ?? '—', serienummer: t.serieSuffix ?? '—', vervaldatum: vervalStr }
+    })
+
+    const datum  = new Date().toLocaleDateString('nl-NL', { day: '2-digit', month: 'long', year: 'numeric' })
+    const buffer = await genereerKalibratieExportPdf(`Verzending: ${v.naam}${v.labNaam ? ` — ${v.labNaam}` : ''}`, datum, regels)
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `attachment; filename="verzending-${v.naam.replace(/[^a-z0-9]/gi, '-')}.pdf"`)
+    return reply.send(buffer)
   })
 
   // ── Update ─────────────────────────────────────────────────────────────────

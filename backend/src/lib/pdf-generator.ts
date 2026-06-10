@@ -1,5 +1,99 @@
 import PDFDocument from 'pdfkit'
 
+export interface KalibratieRegel {
+  displayId: string
+  artikelnaam: string
+  merk: string
+  afmeting: string
+  serienummer: string
+  vervaldatum: string
+}
+
+/** Genereert een kalibratie-exportlijst als PDF in landscape-formaat met 6 kolommen. */
+export function genereerKalibratieExportPdf(
+  titel: string,
+  datum: string,
+  regels: KalibratieRegel[],
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' })
+    const chunks: Buffer[] = []
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk))
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+
+    const TEAL  = '#0d9488'
+    const GRIJS = '#6b7280'
+    const ZWART = '#111827'
+    const LICHT = '#f3f4f6'
+
+    const W = doc.page.width   // 841.89 pt
+    const L = 40               // left margin
+    const R = W - 40           // right margin
+    const USE = R - L          // usable width ≈ 762
+
+    // Kolombreedtes (totaal = USE)
+    const COL = [90, 200, 110, 110, 80, 90]  // ID, Artikelnaam, Merk, Afmeting, Serienr., Vervaldatum
+    const HDR = ['Meetmiddel ID', 'Artikelnaam', 'Merk', 'Afmeting', 'Serienr.', 'Vervaldatum']
+
+    // Header balk
+    doc.rect(0, 0, W, 55).fill(TEAL)
+    doc.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold').text('Dutch Shape MES', L, 14)
+    doc.fontSize(9).font('Helvetica').text(titel, L, 34)
+    doc.fontSize(9).fillColor('#ffffff').text(`Gegenereerd op ${datum}`, L, 34, { align: 'right', width: USE })
+    doc.fillColor(ZWART)
+
+    let y = 68
+
+    // Kolomheader
+    doc.rect(L, y, USE, 18).fill(TEAL)
+    let x = L
+    for (let i = 0; i < HDR.length; i++) {
+      doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold')
+        .text(HDR[i], x + 3, y + 4, { width: COL[i] - 4, ellipsis: true })
+      x += COL[i]
+    }
+    doc.fillColor(ZWART)
+    y += 22
+
+    for (let idx = 0; idx < regels.length; idx++) {
+      if (y > doc.page.height - 50) {
+        doc.addPage({ layout: 'landscape' })
+        y = 40
+        // herhaal kolomheader op nieuwe pagina
+        doc.rect(L, y, USE, 18).fill(TEAL)
+        x = L
+        for (let i = 0; i < HDR.length; i++) {
+          doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold')
+            .text(HDR[i], x + 3, y + 4, { width: COL[i] - 4, ellipsis: true })
+          x += COL[i]
+        }
+        doc.fillColor(ZWART)
+        y += 22
+      }
+
+      const r = regels[idx]
+      if (idx % 2 === 0) doc.rect(L, y - 1, USE, 16).fill(LICHT)
+
+      const vals = [r.displayId, r.artikelnaam, r.merk, r.afmeting, r.serienummer, r.vervaldatum]
+      x = L
+      for (let i = 0; i < vals.length; i++) {
+        doc.fillColor(ZWART).fontSize(8).font('Helvetica')
+          .text(vals[i], x + 3, y + 2, { width: COL[i] - 6, ellipsis: true })
+        x += COL[i]
+      }
+      y += 16
+    }
+
+    // Footer
+    doc.rect(0, doc.page.height - 25, W, 25).fill('#f9fafb')
+    doc.fillColor(GRIJS).fontSize(7).font('Helvetica')
+      .text('Dutch Shape MES — Kalibratie-exportlijst', L, doc.page.height - 14, { align: 'center', width: USE })
+
+    doc.end()
+  })
+}
+
 export interface PdfRegel {
   kolom1: string
   kolom2?: string

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Search, X, RefreshCw, Upload, Link2, Link2Off,
-  FileText, Trash2, ExternalLink, ChevronDown, ChevronUp, Gauge, Pencil, User,
+  FileText, Trash2, ExternalLink, ChevronDown, ChevronUp, Gauge, Pencil, User, Download, Package,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -1577,12 +1577,212 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
 
 // ── MeetmiddelenContent ────────────────────────────────────────────────────
 
+// ── Kalibratie Export Modal ────────────────────────────────────────────────
+
+const LOCATIES = ['3200', '4200', 'CMM', 'Meetkamer', 'Alle locaties']
+
+function ExportModal({ tools, onClose }: { tools: MeasuringTool[]; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [filter, setFilter]           = useState<'verlopen' | 'kritisch' | 'beide'>('beide')
+  const [locatie, setLocatie]         = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchNaam, setBatchNaam]     = useState('')
+  const [batchView, setBatchView]     = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  const { data: verzendingen = [], refetch: refetchVerzendingen } = useQuery<{ id: string; naam: string; status: string; datumWeggestuurd: string | null; aantalItems: number }[]>({
+    queryKey: ['kalibratie-verzendingen'],
+    queryFn: () => apiFetch('/kiosk/meetmiddelen/verzendingen'),
+  })
+
+  // Externe kalibratie tools gefilterd op kalibratieStatus
+  const externeTools = tools.filter(t => t.externeKalibratie && t.actief !== false)
+    .filter(t => {
+      const st = kalibratieStatus(t)
+      if (filter === 'verlopen') return st === 'verlopen'
+      if (filter === 'kritisch') return st === 'binnenkort'
+      return st === 'verlopen' || st === 'binnenkort'
+    })
+    .filter(t => !locatie || t.locatie === locatie)
+
+  const toggleId = (id: string) => setSelectedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAll = () => setSelectedIds(s => s.size === externeTools.length ? new Set() : new Set(externeTools.map(t => t.id)))
+
+  const downloadPdf = async (toolIds?: string[]) => {
+    setDownloading(true)
+    try {
+      const res = await fetch('/api/kiosk/meetmiddelen/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('employee_token') ?? localStorage.getItem('mes_admin_token') ?? ''}` },
+        body: JSON.stringify({ filter, locatie: locatie || undefined, toolIds }),
+      })
+      if (!res.ok) throw new Error('Export mislukt')
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a'); a.href = url; a.download = `kalibratie-export-${new Date().toISOString().slice(0,10)}.pdf`; a.click()
+      URL.revokeObjectURL(url)
+    } finally { setDownloading(false) }
+  }
+
+  const opslaanAlsBatch = async () => {
+    if (!batchNaam.trim() || selectedIds.size === 0) return
+    setSaving(true)
+    try {
+      await apiFetch('/kiosk/meetmiddelen/verzendingen', { method: 'POST', body: JSON.stringify({ naam: batchNaam.trim(), toolIds: [...selectedIds] }) })
+      setBatchNaam(''); setSelectedIds(new Set()); refetchVerzendingen()
+      qc.invalidateQueries({ queryKey: ['kalibratie-verzendingen'] })
+    } finally { setSaving(false) }
+  }
+
+  const downloadBatchPdf = async (id: string) => {
+    const res = await fetch(`/api/kiosk/meetmiddelen/verzendingen/${id}/pdf`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('employee_token') ?? localStorage.getItem('mes_admin_token') ?? ''}` },
+    })
+    const blob = await res.blob()
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a'); a.href = url; a.download = `verzending.pdf`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const updateStatus = async (id: string, status: string) => {
+    await apiFetch(`/kiosk/meetmiddelen/verzendingen/${id}`, { method: 'PUT', body: JSON.stringify({ status }) })
+    refetchVerzendingen()
+  }
+
+  const verwijderBatch = async (id: string) => {
+    await apiFetch(`/kiosk/meetmiddelen/verzendingen/${id}`, { method: 'DELETE' })
+    refetchVerzendingen()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold text-gray-800">Externe kalibratie export</h2>
+            <div className="flex gap-1">
+              <button onClick={() => setBatchView(false)} className={cn('px-3 py-1 text-xs rounded-lg', !batchView ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500')}>Exporteren</button>
+              <button onClick={() => setBatchView(true)}  className={cn('px-3 py-1 text-xs rounded-lg', batchView  ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500')}>
+                Verzendingen {verzendingen.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs">{verzendingen.length}</span>}
+              </button>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {!batchView ? (
+            <div className="space-y-4">
+              {/* Filter + locatie */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Status filter</label>
+                  <div className="flex gap-1">
+                    {(['verlopen', 'kritisch', 'beide'] as const).map(f => (
+                      <button key={f} onClick={() => setFilter(f)}
+                        className={cn('flex-1 py-1.5 text-xs rounded-lg transition-colors capitalize', filter === f ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}>
+                        {f === 'verlopen' ? 'Verlopen' : f === 'kritisch' ? 'Kritisch' : 'Beide'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Locatie</label>
+                  <select value={locatie} onChange={e => setLocatie(e.target.value === 'Alle locaties' ? '' : e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    <option value="">Alle locaties</option>
+                    {LOCATIES.filter(l => l !== 'Alle locaties').map(l => <option key={l}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Selectie lijst */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">{externeTools.length} meetmiddelen gevonden</span>
+                  <button onClick={toggleAll} className="text-xs text-teal-600 hover:underline">
+                    {selectedIds.size === externeTools.length ? 'Deselecteer alles' : 'Selecteer alles'}
+                  </button>
+                </div>
+                <div className="border border-gray-100 rounded-xl divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                  {externeTools.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">Geen meetmiddelen gevonden</p>
+                  ) : externeTools.map(t => (
+                    <label key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleId(t.id)}
+                        className="rounded border-gray-300 text-teal-600 focus:ring-teal-400" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-mono text-gray-400 mr-2">{t.voorraadId ?? t.toolId}</span>
+                        <span className="text-sm font-medium text-gray-800">{t.artikelnaam ?? '—'}</span>
+                        {t.merk && <span className="text-xs text-gray-400 ml-2">{t.merk}</span>}
+                        {t.locatie && <span className="text-xs text-gray-400 ml-2">· {t.locatie}</span>}
+                      </div>
+                      <span className={cn('text-xs px-2 py-0.5 rounded-full', kalibratieStatus(t) === 'verlopen' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700')}>
+                        {kalibratieStatus(t) === 'verlopen' ? 'Verlopen' : 'Binnenkort'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Acties */}
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => downloadPdf(selectedIds.size > 0 ? [...selectedIds] : undefined)} disabled={downloading}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg disabled:opacity-60 transition-colors">
+                  <Download size={14} /> {downloading ? 'Downloaden...' : `PDF downloaden${selectedIds.size > 0 ? ` (${selectedIds.size})` : ' (alles)'}`}
+                </button>
+                {selectedIds.size > 0 && (
+                  <div className="flex-1 flex gap-2">
+                    <input value={batchNaam} onChange={e => setBatchNaam(e.target.value)} placeholder="Naam batch (bijv. Batch juni 2026)"
+                      className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                    <button onClick={opslaanAlsBatch} disabled={saving || !batchNaam.trim()}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded-lg disabled:opacity-60 transition-colors">
+                      <Package size={14} /> {saving ? 'Opslaan...' : 'Sla op als batch'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {verzendingen.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">Nog geen verzendingen opgeslagen</p>
+              ) : verzendingen.map(v => (
+                <div key={v.id} className="border border-gray-100 rounded-xl px-4 py-3 flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{v.naam}</p>
+                    <p className="text-xs text-gray-400">{v.aantalItems} meetmiddelen · {v.datumWeggestuurd ? `Verstuurd: ${v.datumWeggestuurd}` : 'Nog niet verstuurd'}</p>
+                  </div>
+                  <select value={v.status} onChange={e => updateStatus(v.id, e.target.value)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-400">
+                    <option value="concept">Concept</option>
+                    <option value="weggestuurd">Weggestuurd</option>
+                    <option value="terug">Terug ontvangen</option>
+                  </select>
+                  <button onClick={() => downloadBatchPdf(v.id)} className="p-1.5 text-gray-400 hover:text-teal-600 transition-colors" title="PDF downloaden">
+                    <Download size={14} />
+                  </button>
+                  <button onClick={() => verwijderBatch(v.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Verwijderen">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToolId?: string; onPendingConsumed?: () => void } = {}) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterActief, setFilterActief] = useState<'actief' | 'inactief' | 'alle'>('actief')
   const [filterKal, setFilterKal] = useState<'alle' | 'verlopen' | 'kritisch'>('alle')
   const [modal, setModal] = useState<MeasuringTool | null | 'nieuw'>(null)
+  const [exportOpen, setExportOpen] = useState(false)
 
   const { data: tools = [], refetch, isFetching } = useQuery<MeasuringTool[]>({
     queryKey: ['meetmiddelen'],
@@ -1658,6 +1858,7 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
 
   return (
     <div className="flex flex-1 overflow-hidden">
+      {exportOpen && <ExportModal tools={tools} onClose={() => setExportOpen(false)} />}
 
       {/* Lijst sidebar */}
       <div className="w-72 shrink-0 border-r border-gray-100 flex flex-col bg-white">
@@ -1680,6 +1881,15 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
             >
               <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
             </button>
+            {canEdit && (
+              <button
+                onClick={() => setExportOpen(true)}
+                className="p-2 text-gray-400 hover:text-teal-600 border border-gray-200 rounded-lg transition-colors"
+                title="Kalibratie export"
+              >
+                <Download size={14} />
+              </button>
+            )}
           </div>
           <div className="flex gap-1">
             {(['actief', 'inactief', 'alle'] as const).map((f) => (
