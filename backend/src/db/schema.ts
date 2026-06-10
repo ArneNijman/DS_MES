@@ -89,6 +89,14 @@ export const machines = pgTable('machines', {
   serialNumber: text('serial_number'),
   yearOfPurchase: integer('year_of_purchase'),
   weightKg: numeric('weight_kg', { precision: 10, scale: 2 }),
+  // Leverancier contactgegevens
+  supplierEmail: text('supplier_email'),
+  supplierPhone: text('supplier_phone'),
+  // Onderhoud fabrikant contactgegevens (max 2)
+  maintenanceEmail1: text('maintenance_email_1'),
+  maintenancePhone1: text('maintenance_phone_1'),
+  maintenanceEmail2: text('maintenance_email_2'),
+  maintenancePhone2: text('maintenance_phone_2'),
   isActive: boolean('is_active').default(true).notNull(),
   notes: text('notes'),
   photoUrl: text('photo_url'),

@@ -43,6 +43,12 @@ interface MachineDetail extends Machine {
   toolTableFormat: string | null
   postprocessor: string | null
   spindleHours: string | null
+  supplierEmail: string | null
+  supplierPhone: string | null
+  maintenanceEmail1: string | null
+  maintenancePhone1: string | null
+  maintenanceEmail2: string | null
+  maintenancePhone2: string | null
 }
 
 interface MaintenanceTask {
@@ -286,6 +292,12 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     cncPlcVersion: initial.cncPlcVersion ?? '',
     toolTableFormat: initial.toolTableFormat ?? '',
     postprocessor: initial.postprocessor ?? '',
+    supplierEmail: initial.supplierEmail ?? '',
+    supplierPhone: initial.supplierPhone ?? '',
+    maintenanceEmail1: initial.maintenanceEmail1 ?? '',
+    maintenancePhone1: initial.maintenancePhone1 ?? '',
+    maintenanceEmail2: initial.maintenanceEmail2 ?? '',
+    maintenancePhone2: initial.maintenancePhone2 ?? '',
   })
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const formRef = useRef<{ current: typeof form }>({ current: form })
@@ -422,6 +434,26 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
               {field('Serienummer', 'serialNumber')}
               {field('Aanschafjaar', 'yearOfPurchase', 'number')}
               {field('Gewicht (kg)', 'weightKg')}
+            </div>
+          </div>
+
+          {/* Leverancier contact */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Leverancier</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {field('E-mailadres leverancier', 'supplierEmail')}
+              {field('Telefoonnummer leverancier', 'supplierPhone')}
+            </div>
+          </div>
+
+          {/* Onderhoud fabrikant contact */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Onderhoud fabrikant</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {field('(1) E-mailadres', 'maintenanceEmail1')}
+              {field('(1) Telefoonnummer', 'maintenancePhone1')}
+              {field('(2) E-mailadres', 'maintenanceEmail2')}
+              {field('(2) Telefoonnummer', 'maintenancePhone2')}
             </div>
           </div>
 

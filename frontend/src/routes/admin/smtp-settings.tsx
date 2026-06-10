@@ -65,6 +65,7 @@ export default function SmtpSettings() {
   const [testEmail, setTestEmail] = useState('')
   const [testModal, setTestModal] = useState(false)
   const [testResult, setTestResult] = useState<'ok' | 'error' | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
 
   const save = useMutation({
     mutationFn: (body: SmtpConfig) => apiFetch('/admin/smtp', { method: 'PUT', body: JSON.stringify(body) }),
@@ -73,11 +74,13 @@ export default function SmtpSettings() {
 
   const handleTest = async () => {
     setTestResult(null)
+    setTestError(null)
     try {
       await apiFetch('/admin/smtp/test', { method: 'POST', body: JSON.stringify({ to: testEmail }) })
       setTestResult('ok')
-    } catch {
+    } catch (err) {
       setTestResult('error')
+      setTestError(err instanceof Error ? err.message : 'Onbekende fout')
     }
   }
 
@@ -199,7 +202,12 @@ export default function SmtpSettings() {
                 Versturen
               </button>
               {testResult === 'ok' && <p className="text-xs text-green-600 flex items-center gap-1"><Check size={12} /> Email verstuurd</p>}
-              {testResult === 'error' && <p className="text-xs text-red-600">Verzending mislukt — controleer de SMTP-instellingen</p>}
+              {testResult === 'error' && (
+                <p className="text-xs text-red-600 flex items-start gap-1">
+                  <X size={12} className="shrink-0 mt-0.5" />
+                  {testError ?? 'Verzending mislukt — controleer de SMTP-instellingen'}
+                </p>
+              )}
             </div>
           </div>
         </div>
