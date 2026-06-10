@@ -9,6 +9,19 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-10] — vervolg
+
+### Toegevoegd
+- Alarmtekst tonen bij actieve alarmstilstand in machine dashboard (onder de rode badge)
+- Machines modals vergroot: aanmaken/bewerken en detail-portals voor onderhoud en storingen (~2x breder, minimumhoogte toegevoegd)
+- CHANGELOG.md toegevoegd voor bijhouden van wijzigingen
+
+### Verbeterd
+- Onderhoudstaak formulier: betere grid-layout (4 kolommen voor status/prioriteit/datums)
+- Storing formulier: titel + status + prioriteit in één rij
+
+---
+
 ## [2026-06-10]
 
 ### Toegevoegd
