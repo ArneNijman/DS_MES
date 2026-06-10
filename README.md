@@ -366,7 +366,7 @@ Het script slaat regels zonder geldig `NCR_`-prefix automatisch over (lege regel
 | Medewerkersbeheer (CRUD, PIN, sync, email toggle) | Beschikbaar |
 | Machines beheer | Beschikbaar |
 | CNC Machining (tooling beheer) | Beschikbaar |
-| Machine Dashboard (beschikbaarheid, spindeluren, downtime) | Beschikbaar |
+| Machine Dashboard (beschikbaarheid, spindeluren, downtime, verspaantijd) | Beschikbaar |
 | Email instellingen (SMTP + per-categorie reminder-interval) | Beschikbaar |
 
 ---

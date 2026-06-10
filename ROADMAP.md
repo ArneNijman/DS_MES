@@ -212,6 +212,26 @@ Gebouwd (2026-05/06):
 
 ---
 
+## ✅ Verbeteringen juni 2026
+
+**Afgerond:** 2026-06-10
+
+- Machine Dashboard: verspaantijd per Freesmachine per periode (dag/maand/kwartaal/halfjaar/jaar), progressiebalk, klikbare artikel-badges, info-popover
+- Halfjaar filteroptie toegevoegd aan machine dashboard periode-filter
+- Standaard registratietype per onderhoudstaak: eenmalig instellen, modal opent direct met type vooringevuld
+- Machine contactvelden: e-mailadres + telefoonnummer leverancier en onderhoud fabrikant (1 en 2)
+- SMTP test toont specifieke foutmelding bij firewall-blokkade, authenticatie, DNS of TLS-problemen
+- Migratie-runner vervangen: tracking op bestandsnaam in plaats van hash — lost structureel probleem op waarbij migraties silent werden overgeslagen
+- Admin-sessieduur verlengd van 8h naar 24h
+- BUSL-1.1 licentie toegevoegd (eigenaar: Arne Nijman, gebruiker: Dutch Shape B.V.)
+
+**Opgelost:**
+- SMTP "Verzending mislukt" — kolom `interval_taken` ontbrak door gemiste migratie
+- Product Setup 500-error op VM — kolom `archived_at` ontbrak door dezelfde bug
+- NCR race condition bij gelijktijdig aanmaken opgelost via retry-loop
+
+---
+
 ## ⬜ Fase 11: CoC-Generatie
 
 **Status:** Not started
@@ -232,7 +252,6 @@ Gebouwd (2026-05/06):
 
 ## Optioneel — Informatie uit Business Central
 
-> Deze functies zijn niet op de directe roadmap maar zijn haalbaar met de bestaande infrastructuur. Ze voegen waarde toe als het MES verder groeit richting een volledig productieplatform.
 
 ### O1 — Externe BI koppeling (Power BI / Grafana)
 PostgreSQL is al toegankelijk; Power BI kan via ODBC direct verbinden zonder extra code. Grafana kan via de bestaande REST API worden gekoppeld.
@@ -275,5 +294,6 @@ Visuele dashboards zonder code bouwen op basis van de bestaande data. Meer front
 | 10 | Meetmiddelen & Kalibratie (uitbreiding) | ✅ Complete | 2026-06 |
 | 10b | Metrologie — Inspectieviewer Phase 1–3 | ✅ Complete | 2026-06 |
 | 10b | Metrologie — Inspectieviewer Phase 4 | 🚧 Gepland | — |
+| — | Verbeteringen juni 2026 (dashboard, contactvelden, migratie-runner) | ✅ Complete | 2026-06-10 |
 | 11 | CoC-Generatie | ⬜ Not started | — |
 | 13 | BC Webhooks | ⬜ Not started | — |

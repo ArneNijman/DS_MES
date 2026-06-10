@@ -28,17 +28,20 @@ Wijzigingen in bestaande bestanden worden wél automatisch opgepikt via `tsx wat
 
 ## Database migraties
 
-Drizzle genereert **geen** migraties automatisch. Werkwijze:
+De eigen migratie-runner (`backend/src/plugins/db.ts`) vervangt Drizzle's `migrate()`. Tracking op **bestandsnaam** (niet hash) — immuniseert tegen silent skips bij bestandswijzigingen.
+
+Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0063_beschrijving.sql` (oplopend nummer, huidig laatste: 0062)
-3. Drizzle past alle `.sql` bestanden in die map toe bij opstarten
+   - Naamconventie: `0065_beschrijving.sql` (oplopend nummer, huidig laatste: 0065)
+   - Gebruik `IF NOT EXISTS` / `IF EXISTS` zodat migraties idempotent zijn
+3. De runner past nieuwe bestanden toe bij elke backend-opstart
 
 Voorbeeld migratie:
 ```sql
-ALTER TABLE "product_setup_steps"
-  ALTER COLUMN "zero_x" TYPE text USING zero_x::text;
+ALTER TABLE "machines"
+  ADD COLUMN IF NOT EXISTS "supplier_email" text;
 ```
 
 ## Backend structuur
@@ -165,7 +168,7 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 
 | Tabel | Omschrijving |
 |-------|-------------|
-| `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal); `spindle_hours` = cumulatief spindeluren |
+| `machines` | Alle machines; `tool_table_format` bepaalt TOOL.T-parser (null=heidenhain, fooke, ronin, 3200, portaal); `spindle_hours` = cumulatief spindeluren; `supplier_email/phone` = leverancier contact; `maintenance_email/phone_1/2` = onderhoud fabrikant contact |
 | `employees` | Medewerkers (PIN, rol, inklokstatus); `email` + `email_notificaties` voor reminder-emails |
 | `smtp_settings` | Enkelvoudige rij (id=1) met SMTP-config + per-categorie reminder-interval (taken/ncr/onderhoud/kalibratie/kwaliteit) |
 | `cnc_tool_entries` | Toolmagazijn per machine (gesynchroniseerd via TOOL.T upload) |
