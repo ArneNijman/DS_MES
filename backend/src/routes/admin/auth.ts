@@ -36,7 +36,7 @@ export async function adminAuthRoutes(fastify: FastifyInstance) {
 
     const token = fastify.jwt.sign(
       { userId: user.id, username: user.username, role: 'admin' },
-      { expiresIn: '8h' },
+      { expiresIn: '24h' },
     )
 
     return { token }
