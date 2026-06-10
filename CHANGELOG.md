@@ -9,6 +9,14 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-10] — avond
+
+### Toegevoegd
+- Artikel-zoekfunctie in verspaantijd dashboard: zoek op (deel van) artikelnummer, zie totaal over alle machines + per machine met variant-badges
+- Variant-badges in zoekresultaten zijn klikbaar om tijd weg te filteren (zelfde patroon als normale weergave)
+
+---
+
 ## [2026-06-10] — vervolg
 
 ### Toegevoegd
