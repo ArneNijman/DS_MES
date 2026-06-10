@@ -9,6 +9,16 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-10] — verspaantijd datacorrectie
+
+### Opgelost
+- **Phantom program runs (verspaantijd inflatie)**: LSV2-agent stuurde soms binary garbage vóór de programmanaam (`TNC:\...`), waardoor runs nooit gematcht werden met een PROGRAM_STOPPED en onbeperkt doorliepen. Fixes:
+  1. `sanitizeProgramName()` strips alles vóór `TNC:\` bij opslag
+  2. Bij een nieuwe run worden openstaande runs voor die machine automatisch afgesloten (`interrupted`)
+- **Fooke 704 — artikel 22037**: 21 zombie-runs verwijderd (bulk-gesloten op 2026-06-10, ~3.907 uur phantom tijd). Gecorrigeerde verspaantijd: **1.697 uur** (was 5.604 uur)
+
+---
+
 ## [2026-06-10] — machines & dashboard fixes
 
 ### Verbeterd
