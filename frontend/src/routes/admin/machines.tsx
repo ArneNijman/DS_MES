@@ -1923,6 +1923,12 @@ const CNC_RUN_STATUS: Record<string, { label: string; color: string }> = {
   stopped:     { label: 'Gestopt',     color: 'bg-gray-100 text-gray-600' },
 }
 
+function sanitizeProgramName(name: string): string {
+  const idx = name.toUpperCase().indexOf('TNC:')
+  if (idx > 0) return name.slice(idx)
+  return name.replace(/^[^\x20-\x7E]+/, '')
+}
+
 function formatCncTime(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
@@ -1953,7 +1959,7 @@ function formatCncEventDetail(ev: CncMachineEvent, toolNames?: Map<number, strin
     return `T${fromNr ?? '?'}${fromName} → T${toNr ?? '?'}${toName}`
   }
   if (ev.eventType === 'PROGRAM_STARTED' && ev.programName) {
-    return ev.programName
+    return sanitizeProgramName(ev.programName)
   }
   if (ev.eventType === 'ALARM_TRIGGERED' && d) {
     const text = d.alarmText ?? d.message
@@ -2433,7 +2439,7 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                       <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-0.5', cfg.color)}>{cfg.label}</span>
                       <div className="flex-1 min-w-0">
                         {detail && <p className="text-sm text-gray-700">{detail}</p>}
-                        {ev.programName && <p className="text-xs text-gray-400 mt-0.5">Programma: {ev.programName}</p>}
+                        {ev.programName && <p className="text-xs text-gray-400 mt-0.5">Programma: {sanitizeProgramName(ev.programName)}</p>}
                       </div>
                       <span className="text-xs text-gray-400 shrink-0 mt-0.5">{formatCncTime(ev.occurredAt)}</span>
                     </div>
@@ -2504,8 +2510,9 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                   <tbody className="divide-y divide-gray-50">
                     {cncRuns.map((run) => {
                       const sc        = CNC_RUN_STATUS[run.status] ?? { label: run.status, color: 'bg-gray-100 text-gray-600' }
-                      const shortName = run.programName.split(/[\\/]/).pop() ?? run.programName
-                      const fullPath  = shortName !== run.programName ? run.programName : null
+                      const cleanName = sanitizeProgramName(run.programName)
+                      const shortName = cleanName.split(/[\\/]/).pop() ?? cleanName
+                      const fullPath  = shortName !== cleanName ? cleanName : null
                       return (
                         <tr key={run.id} className="hover:bg-gray-50">
                           <td className="py-2.5 pr-4">
