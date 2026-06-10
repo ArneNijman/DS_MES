@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { eq, desc, and, asc, gte, like, sql, inArray } from 'drizzle-orm'
+import { eq, desc, and, asc, gte, like, sql, inArray, isNull } from 'drizzle-orm'
 import { cncMachineEvents, cncProgramRuns, cncToolEntries, machines } from '../../db/schema.js'
 
 /** Extraheert het artikel-mapje uit een programmapad: TNC:\Program\22073-3201-11\... → 22073-3201-11 */
@@ -144,6 +144,13 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
     periods: periods.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()),
     summary,
   }
+}
+
+/** Strips garbage bytes vóór 'TNC:\' — LSV2 lekt soms binary data in de programmanaam */
+function sanitizeProgramName(name: string): string | null {
+  const idx = name.toUpperCase().indexOf('TNC:')
+  const clean = idx > 0 ? name.slice(idx) : name.replace(/^[\x00-\x1F\x80-\xFF]+/, '')
+  return clean.length >= 5 ? clean : null
 }
 
 const eventPayloadSchema = z.object({
@@ -391,17 +398,38 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     const body   = programRunSchema.safeParse(req.body)
     if (!body.success) return reply.status(400).send({ error: 'Ongeldige invoer' })
 
+    const programName = sanitizeProgramName(body.data.programName)
+    if (!programName) return reply.status(400).send({ error: 'Ongeldige programmanaam' })
+
     const startedAt = new Date(body.data.startedAt)
     const endedAt   = body.data.endedAt ? new Date(body.data.endedAt) : null
     const duration  = endedAt
       ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000)
       : null
 
+    // Sluit alle nog-open runs voor deze machine — een machine draait maar één programma tegelijk
+    if (!endedAt) {
+      const openRuns = await fastify.db
+        .select({ id: cncProgramRuns.id, startedAt: cncProgramRuns.startedAt })
+        .from(cncProgramRuns)
+        .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
+      if (openRuns.length > 0) {
+        await fastify.db
+          .update(cncProgramRuns)
+          .set({
+            endedAt:         startedAt,
+            durationSeconds: sql`EXTRACT(EPOCH FROM (${startedAt.toISOString()}::timestamptz - started_at))::int`,
+            status:          'interrupted',
+          })
+          .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
+      }
+    }
+
     const [run] = await fastify.db
       .insert(cncProgramRuns)
       .values({
         machineId:       id,
-        programName:     body.data.programName,
+        programName,
         startedAt,
         endedAt,
         durationSeconds: duration,
