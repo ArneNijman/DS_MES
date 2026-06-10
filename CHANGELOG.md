@@ -9,6 +9,19 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-10] — machines & dashboard fixes
+
+### Verbeterd
+- Machine foto in formulier en sidebar: `object-contain` + `bg-gray-50` zodat volledige afbeelding zichtbaar is zonder bijsnijden
+- Machine foto in product/meet setup machine-kiezer vergroot (w-24) en op `object-contain` gezet
+- Foto-upload beschikbaar voor alle ingelogde medewerkers (was: alleen admin)
+- Ctrl+V paste voor machine foto hersteld: listener op capture-fase zodat input-velden het niet blokkeren
+
+### Opgelost
+- **Machine dashboard — spook-alarmstilstand bij offline machine**: `deriveDowntimePeriods` emitteerde een lopende `alarmstilstand` naast een lopende `offline` periode als de machine offline ging met een actief alarm zonder tussenkomst van `ALARM_CLEARED`. Fix: (1) lopende alarm alleen tonen als machine niet offline is; (2) actief alarm afsluiten op offline-tijdstip bij `MACHINE_OFFLINE` zodat het niet doorlekt naar de volgende online-sessie. Geverifieerd op Fooke 704 — PASS.
+
+---
+
 ## [2026-06-11]
 
 ### Toegevoegd
