@@ -15,6 +15,7 @@ interface DowntimePeriod {
   endedAt: string | null
   durationSeconds: number | null
   isOngoing: boolean
+  alarmText?: string | null
 }
 
 interface MachineSummary {
@@ -96,6 +97,11 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
                 {DOWNTIME_LABEL[machine.ongoingPeriod.type]}
               </span>
+            )}
+            {machine.ongoingPeriod?.type === 'alarmstilstand' && machine.ongoingPeriod.alarmText && (
+              <p className="text-xs text-red-500 mt-0.5 truncate" title={machine.ongoingPeriod.alarmText}>
+                {machine.ongoingPeriod.alarmText}
+              </p>
             )}
             {machine.currentTool && machine.ongoingPeriod?.type !== 'offline' && (
               <p className="text-xs text-gray-400 mt-0.5 truncate">

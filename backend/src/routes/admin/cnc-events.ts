@@ -41,6 +41,7 @@ type DowntimePeriod = {
   endedAt: Date | null
   durationSeconds: number | null
   isOngoing: boolean
+  alarmText?: string | null
 }
 
 function makePeriod(type: DowntimePeriod['type'], start: Date, end: Date | null): DowntimePeriod {
@@ -57,6 +58,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   const periods: DowntimePeriod[] = []
   let offlineStart:    Date | null = null
   let alarmStart:      Date | null = null
+  let alarmText:       string | null = null
   let programStopTime: Date | null = null
   let programRunning = false
   let spindleOffAt:    Date | null = null
@@ -87,10 +89,12 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
         }
         offlineStart = null; online = true; break
       case 'ALARM_TRIGGERED':
-        alarmStart = t; break
+        alarmStart = t
+        alarmText  = (ev.eventData as { alarmText?: string } | null)?.alarmText ?? null
+        break
       case 'ALARM_CLEARED':
-        if (alarmStart) periods.push(makePeriod('alarmstilstand', alarmStart, t))
-        alarmStart = null; break
+        if (alarmStart) periods.push({ ...makePeriod('alarmstilstand', alarmStart, t), alarmText })
+        alarmStart = null; alarmText = null; break
       case 'PROGRAM_STOPPED':
         closeWachttijd(t)
         programRunning = false; spindleOffAt = null
@@ -119,7 +123,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   if (offlineStart && (now.getTime() - offlineStart.getTime()) / 1000 >= OFFLINE_MIN_SEC)
     periods.push(makePeriod('offline', offlineStart, null))
   if (alarmStart)
-    periods.push(makePeriod('alarmstilstand', alarmStart, null))
+    periods.push({ ...makePeriod('alarmstilstand', alarmStart, null), alarmText })
   if (programStopTime && !offlineStart && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC) {
     periods.push(makePeriod('stilstand', programStopTime, null))
   }
