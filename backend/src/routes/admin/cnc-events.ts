@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { eq, desc, and, asc, gte, like, sql } from 'drizzle-orm'
+import { eq, desc, and, asc, gte, like, sql, inArray } from 'drizzle-orm'
 import { cncMachineEvents, cncProgramRuns, cncToolEntries, machines } from '../../db/schema.js'
 
 /** Extraheert het artikel-mapje uit een programmapad: TNC:\Program\22073-3201-11\... → 22073-3201-11 */
@@ -229,6 +229,63 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     return [...byArticle.entries()]
       .map(([article, s]) => ({ article, totalSeconds: s.totalSeconds, runCount: s.runCount }))
       .sort((a, b) => b.totalSeconds - a.totalSeconds)
+  })
+
+  // ── GET verspaantijd samenvatting alle Freesmachines ─────────────────────
+
+  fastify.get('/admin/cnc-program-runs/all', authRead, async (req) => {
+    const q     = req.query as { since?: string }
+    const since = q.since ? new Date(q.since) : new Date(Date.now() - 7 * 86_400_000)
+
+    const freesmachines = await fastify.db
+      .select({ id: machines.id, name: machines.name })
+      .from(machines)
+      .where(eq(machines.category, 'Freesmachine'))
+      .orderBy(asc(machines.name))
+
+    if (freesmachines.length === 0) return { machines: [] }
+
+    const runs = await fastify.db
+      .select({
+        machineId:       cncProgramRuns.machineId,
+        programName:     cncProgramRuns.programName,
+        durationSeconds: cncProgramRuns.durationSeconds,
+      })
+      .from(cncProgramRuns)
+      .where(and(
+        inArray(cncProgramRuns.machineId, freesmachines.map(m => m.id)),
+        gte(cncProgramRuns.startedAt, since),
+        sql`${cncProgramRuns.durationSeconds} IS NOT NULL`,
+      ))
+
+    type MachineEntry = { totalSeconds: number; runCount: number; topArticles: Map<string, number> }
+    const byMachine = new Map<string, MachineEntry>()
+    for (const m of freesmachines) {
+      byMachine.set(m.id, { totalSeconds: 0, runCount: 0, topArticles: new Map() })
+    }
+
+    for (const run of runs) {
+      const entry = byMachine.get(run.machineId)
+      if (!entry) continue
+      const secs = run.durationSeconds ?? 0
+      entry.totalSeconds += secs
+      entry.runCount     += 1
+      const article = extractArticle(run.programName)
+      if (article) {
+        entry.topArticles.set(article, (entry.topArticles.get(article) ?? 0) + secs)
+      }
+    }
+
+    return {
+      machines: freesmachines.map(m => {
+        const entry = byMachine.get(m.id)!
+        const topArticles = [...entry.topArticles.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([article, seconds]) => ({ article, seconds }))
+        return { id: m.id, name: m.name, totalSeconds: entry.totalSeconds, runCount: entry.runCount, topArticles }
+      }),
+    }
   })
 
   // ── POST events (van de agent) ────────────────────────────────────────────

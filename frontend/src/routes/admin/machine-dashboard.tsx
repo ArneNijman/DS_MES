@@ -389,6 +389,170 @@ function DowntimeLegend() {
   )
 }
 
+// ── Verspaantijd info popover ──────────────────────────────────────────────
+
+function VerspaantijdInfo() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-gray-300 hover:text-gray-500 transition-colors"
+        aria-label="Uitleg verspaantijd"
+      >
+        <Info size={14} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-6 z-20 w-96 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-xs text-gray-600 leading-relaxed space-y-3">
+            <div>
+              <p className="font-semibold text-gray-800 mb-1">Wat zie je hier?</p>
+              <p>Per Freesmachine de <strong>totale verspaantijd</strong> in de geselecteerde periode — de som van alle afgeronde programma-uitvoeringen. De balk is <strong>relatief</strong>: de machine met de meeste verspaantijd krijgt een volle balk, de rest wordt evenredig weergegeven. Zo zie je in één oogopslag welke machine het meest draait.</p>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-700 mb-1">Hoe wordt de tijd berekend?</p>
+              <ul className="space-y-1 ml-1">
+                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>Alle afgeronde runs binnen de periode worden opgeteld per machine</span></li>
+                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>Artikelnummer komt uit het NC-programmapad: <code className="bg-gray-100 px-1 rounded">TNC:\Program\<strong>22073-3201</strong>\bewerking.nc</code></span></li>
+                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>De badges tonen de <strong>top 3 artikelen</strong> waaraan die machine de meeste tijd kwijt was</span></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-700 mb-1">Artikelbadges togglen</p>
+              <p>Klik op een badge (bijv. <strong>Johan frezen · 2485u</strong>) om die te verbergen — de badge wordt doorgestreept grijs. Klik nogmaals om hem terug te zetten. Handig om handmatige of irrelevante programma's uit het zicht te houden.</p>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100">
+              <p className="text-gray-400">Loopt er op dit moment een programma, dan telt die run mee zodra hij afgesloten is.</p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Verspaantijd sectie ────────────────────────────────────────────────────
+
+const VERSPAANTIJD_VISIBLE = 5
+
+function VerspaantijdSectie({ days }: { days: number }) {
+  const [showAll, setShowAll]               = useState(false)
+  const [hiddenArticles, setHiddenArticles] = useState<Set<string>>(new Set())
+
+  const { data, isLoading } = useQuery<CncRunsDashboardData>({
+    queryKey: ['cnc-runs-all', days],
+    queryFn:  () => apiFetch(`/admin/cnc-program-runs/all?since=${getSinceDate(days)}`) as Promise<CncRunsDashboardData>,
+    refetchInterval: 60_000,
+  })
+
+  const toggleArticle = (article: string) =>
+    setHiddenArticles(s => {
+      const next = new Set(s)
+      next.has(article) ? next.delete(article) : next.add(article)
+      return next
+    })
+
+  const hiddenSecs = (m: MachineCncSummary) =>
+    m.topArticles.filter(a => hiddenArticles.has(a.article)).reduce((s, a) => s + a.seconds, 0)
+
+  const displayedSeconds = (m: MachineCncSummary) => Math.max(0, m.totalSeconds - hiddenSecs(m))
+
+  const machines = (data?.machines ?? [])
+    .filter(m => m.totalSeconds > 0)
+    .sort((a, b) => displayedSeconds(b) - displayedSeconds(a))
+
+  const totalSeconds = machines.reduce((s, m) => s + displayedSeconds(m), 0)
+  const maxSeconds   = displayedSeconds(machines[0] ?? { totalSeconds: 0, topArticles: [] } as unknown as MachineCncSummary) || 1
+  const visible      = showAll ? machines : machines.slice(0, VERSPAANTIJD_VISIBLE)
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 mt-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+          <Clock size={13} /> Verspaantijd per machine
+          <VerspaantijdInfo />
+        </h2>
+        {totalSeconds > 0 && (
+          <span className="text-xs text-gray-500">
+            Totaal: <span className="font-semibold text-teal-700">{formatDuration(Math.round(totalSeconds / 60))}</span>
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-gray-400 text-center py-4">Laden...</p>
+      ) : machines.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-6">Geen verspaantijd geregistreerd in deze periode</p>
+      ) : (
+        <>
+          <div className="space-y-1">
+            {visible.map(m => {
+              const disp   = displayedSeconds(m)
+              const barPct = Math.round((disp / maxSeconds) * 100)
+              return (
+                <div key={m.id} className="rounded-xl border border-gray-100 px-4 py-3">
+                  <div className="flex items-center gap-4">
+                    <div className="w-36 shrink-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
+                      <p className="text-xs text-gray-400">{m.runCount} run{m.runCount !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="flex-1 flex items-center gap-3">
+                      <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${barPct}%` }} />
+                      </div>
+                      <span className="text-sm font-semibold text-teal-700 w-20 text-right shrink-0">
+                        {formatDuration(Math.round(disp / 60))}
+                      </span>
+                    </div>
+                  </div>
+                  {m.topArticles.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
+                      {m.topArticles.map(({ article, seconds }) => {
+                        const isHidden = hiddenArticles.has(article)
+                        return (
+                          <button
+                            key={article}
+                            onClick={() => toggleArticle(article)}
+                            title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                            className={cn(
+                              'px-2 py-0.5 rounded-full text-xs transition-colors',
+                              isHidden
+                                ? 'bg-gray-100 text-gray-400 line-through'
+                                : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+                            )}
+                          >
+                            {article} · {formatDuration(Math.round(seconds / 60))}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {machines.length > VERSPAANTIJD_VISIBLE && (
+            <button
+              onClick={() => setShowAll(o => !o)}
+              className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <ChevronDown size={13} className={cn('transition-transform', showAll && 'rotate-180')} />
+              {showAll ? 'Minder tonen' : `Toon alle ${machines.length} machines`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
@@ -396,8 +560,21 @@ const PERIOD_OPTIONS = [
   { value: 7,   label: '7 dagen' },
   { value: 30,  label: 'Maand' },
   { value: 90,  label: 'Kwartaal' },
+  { value: 180, label: 'Halfjaar' },
   { value: 365, label: 'Jaar' },
 ]
+
+interface MachineCncSummary {
+  id: string
+  name: string
+  totalSeconds: number
+  runCount: number
+  topArticles: { article: string; seconds: number }[]
+}
+
+interface CncRunsDashboardData {
+  machines: MachineCncSummary[]
+}
 
 /** Berekent de exacte kalendergrens voor het geselecteerde periode-filter (lokale tijd). */
 function getSinceDate(days: number): string {
@@ -511,6 +688,8 @@ export function MachineDashboardContent() {
                 ))}
               </div>
             </div>
+
+            <VerspaantijdSectie days={days} />
           </>
         )}
       </div>
