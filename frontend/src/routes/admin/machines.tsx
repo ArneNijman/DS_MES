@@ -319,12 +319,15 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
           cncMaxTools: formRef.current.current.cncMaxTools ? parseInt(formRef.current.current.cncMaxTools) : null,
         })
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Onbekende fout'
+      alert(`Foto upload mislukt: ${msg}`)
     } finally {
       setUploadingPhoto(false)
     }
   }
 
-  // Ctrl+V paste support
+  // Ctrl+V paste — document-level zodat het werkt ongeacht welk element focus heeft
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const file = Array.from(e.clipboardData?.items ?? [])
@@ -332,8 +335,8 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
         ?.getAsFile()
       if (file) { e.preventDefault(); handlePhotoUpload(file) }
     }
-    document.addEventListener('paste', onPaste)
-    return () => document.removeEventListener('paste', onPaste)
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
   }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -380,7 +383,9 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
             <label className="block text-xs font-medium text-gray-500 mb-2">Foto</label>
             {form.photoUrl ? (
               <div className="flex items-center gap-3">
-                <img src={form.photoUrl} className="w-20 h-20 rounded-lg object-cover border border-gray-200" />
+                <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 shrink-0 bg-gray-50">
+                  <img src={form.photoUrl} className="block w-full h-full object-contain" />
+                </div>
                 <button type="button" onClick={() => setForm((f) => ({ ...f, photoUrl: '' }))}
                   className="text-xs text-red-500 hover:underline">Verwijderen</button>
               </div>
@@ -2817,7 +2822,7 @@ export function MachinesContent() {
                     )}
                   >
                     {m.photoUrl
-                      ? <img src={m.photoUrl} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100" />
+                      ? <div className="w-14 h-14 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0 bg-gray-50"><img src={m.photoUrl} className="block w-full h-full object-contain" /></div>
                       : <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300"><Wrench size={18} /></div>
                     }
                     <div className="flex-1 min-w-0">

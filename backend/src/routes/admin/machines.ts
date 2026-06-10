@@ -157,7 +157,7 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
     return CATEGORIES
   })
 
-  fastify.post('/admin/machines/photo-upload', auth, async (req, reply) => {
+  fastify.post('/admin/machines/photo-upload', authRead, async (req, reply) => {
     const data = await req.file()
     if (!data) return reply.status(400).send({ error: 'Geen bestand' })
     const ext = path.extname(data.filename)
