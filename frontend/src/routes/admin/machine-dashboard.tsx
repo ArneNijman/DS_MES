@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Activity, ArrowLeft, Clock, Info, ChevronDown } from 'lucide-react'
@@ -450,11 +450,24 @@ const VERSPAANTIJD_VISIBLE = 5
 function VerspaantijdSectie({ days }: { days: number }) {
   const [showAll, setShowAll]               = useState(false)
   const [hiddenArticles, setHiddenArticles] = useState<Set<string>>(new Set())
+  const [articleSearch, setArticleSearch]   = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(articleSearch.trim()), 400)
+    return () => clearTimeout(t)
+  }, [articleSearch])
 
   const { data, isLoading } = useQuery<CncRunsDashboardData>({
     queryKey: ['cnc-runs-all', days],
     queryFn:  () => apiFetch(`/admin/cnc-program-runs/all?since=${getSinceDate(days)}`) as Promise<CncRunsDashboardData>,
     refetchInterval: 60_000,
+  })
+
+  const { data: searchResult, isLoading: searchLoading } = useQuery<ArticleSearchResult>({
+    queryKey: ['cnc-article-search', debouncedSearch, days],
+    queryFn:  () => apiFetch(`/admin/cnc-program-runs/article-search?article=${encodeURIComponent(debouncedSearch)}&since=${getSinceDate(days)}`) as Promise<ArticleSearchResult>,
+    enabled:  debouncedSearch.length >= 2,
   })
 
   const toggleArticle = (article: string) =>
@@ -484,14 +497,98 @@ function VerspaantijdSectie({ days }: { days: number }) {
           <Clock size={13} /> Verspaantijd per machine
           <VerspaantijdInfo />
         </h2>
-        {totalSeconds > 0 && (
-          <span className="text-xs text-gray-500">
-            Totaal: <span className="font-semibold text-teal-700">{formatDuration(Math.round(totalSeconds / 60))}</span>
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Zoek artikel..."
+            value={articleSearch}
+            onChange={e => setArticleSearch(e.target.value)}
+            className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 w-36"
+          />
+          {!debouncedSearch && totalSeconds > 0 && (
+            <span className="text-xs text-gray-500">
+              Totaal: <span className="font-semibold text-teal-700">{formatDuration(Math.round(totalSeconds / 60))}</span>
+            </span>
+          )}
+        </div>
       </div>
 
-      {isLoading ? (
+      {/* Zoekresultaat-weergave */}
+      {debouncedSearch.length >= 2 ? (
+        <div>
+          {searchLoading ? (
+            <p className="text-xs text-gray-400 text-center py-4">Zoeken...</p>
+          ) : !searchResult || searchResult.byMachine.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Geen runs gevonden voor "{debouncedSearch}"</p>
+          ) : (
+            <>
+              {(() => {
+                const searchDispSecs = (m: ArticleSearchResult['byMachine'][0]) =>
+                  Math.max(0, m.seconds - m.articles.filter(a => hiddenArticles.has(a.article)).reduce((s, a) => s + a.seconds, 0))
+                const searchMaxSecs = Math.max(...searchResult.byMachine.map(searchDispSecs), 1)
+                const searchTotal   = searchResult.byMachine.reduce((s, m) => s + searchDispSecs(m), 0)
+                return (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-gray-700">Resultaten voor "{searchResult.article}"</span>
+                      <span className="text-xs text-gray-500">
+                        Totaal: <span className="font-semibold text-teal-700">{formatDuration(Math.round(searchTotal / 60))}</span>
+                        <span className="ml-2 text-gray-400">· {searchResult.totalRuns} runs</span>
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {searchResult.byMachine.map(m => {
+                        const disp   = searchDispSecs(m)
+                        const barPct = Math.round((disp / searchMaxSecs) * 100)
+                        return (
+                          <div key={m.id} className="rounded-xl border border-gray-100 px-4 py-3">
+                            <div className="flex items-center gap-4">
+                              <div className="w-36 shrink-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
+                                <p className="text-xs text-gray-400">{m.runCount} run{m.runCount !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div className="flex-1 flex items-center gap-3">
+                                <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${barPct}%` }} />
+                                </div>
+                                <span className="text-sm font-semibold text-teal-700 w-20 text-right shrink-0">
+                                  {formatDuration(Math.round(disp / 60))}
+                                </span>
+                              </div>
+                            </div>
+                            {m.articles.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
+                                {m.articles.map(({ article, seconds }) => {
+                                  const isHidden = hiddenArticles.has(article)
+                                  return (
+                                    <button
+                                      key={article}
+                                      onClick={() => toggleArticle(article)}
+                                      title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded-full text-xs transition-colors',
+                                        isHidden
+                                          ? 'bg-gray-100 text-gray-400 line-through'
+                                          : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+                                      )}
+                                    >
+                                      {article} · {formatDuration(Math.round(seconds / 60))}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
+            </>
+          )}
+        </div>
+      ) : isLoading ? (
         <p className="text-xs text-gray-400 text-center py-4">Laden...</p>
       ) : machines.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-6">Geen verspaantijd geregistreerd in deze periode</p>
@@ -580,6 +677,19 @@ interface MachineCncSummary {
 
 interface CncRunsDashboardData {
   machines: MachineCncSummary[]
+}
+
+interface ArticleSearchResult {
+  article: string
+  totalSeconds: number
+  totalRuns: number
+  byMachine: {
+    id: string
+    name: string
+    seconds: number
+    runCount: number
+    articles: { article: string; seconds: number }[]
+  }[]
 }
 
 /** Berekent de exacte kalendergrens voor het geselecteerde periode-filter (lokale tijd). */

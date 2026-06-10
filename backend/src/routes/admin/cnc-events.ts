@@ -292,6 +292,74 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     }
   })
 
+  // ── GET verspaantijd per artikel (zoekfunctie) ────────────────────────────
+
+  fastify.get('/admin/cnc-program-runs/article-search', authRead, async (req, reply) => {
+    const q       = req.query as { article?: string; since?: string }
+    const search  = q.article?.trim()
+    if (!search || search.length < 2) return reply.status(400).send({ error: 'Zoekterm te kort' })
+
+    const since = q.since ? new Date(q.since) : new Date(Date.now() - 7 * 86_400_000)
+
+    const freesmachines = await fastify.db
+      .select({ id: machines.id, name: machines.name })
+      .from(machines)
+      .where(eq(machines.category, 'Freesmachine'))
+      .orderBy(asc(machines.name))
+
+    if (freesmachines.length === 0) return { article: search, totalSeconds: 0, totalRuns: 0, byMachine: [] }
+
+    const runs = await fastify.db
+      .select({
+        machineId:       cncProgramRuns.machineId,
+        programName:     cncProgramRuns.programName,
+        durationSeconds: cncProgramRuns.durationSeconds,
+      })
+      .from(cncProgramRuns)
+      .where(and(
+        inArray(cncProgramRuns.machineId, freesmachines.map(m => m.id)),
+        gte(cncProgramRuns.startedAt, since),
+        like(cncProgramRuns.programName, `%${search}%`),
+        sql`${cncProgramRuns.durationSeconds} IS NOT NULL`,
+      ))
+
+    // Groepeer op machine — artikel moet de zoekterm bevatten (partieel, case-insensitive)
+    const machineMap  = new Map(freesmachines.map(m => [m.id, m.name]))
+    type MEntry = { seconds: number; runCount: number; articles: Map<string, number> }
+    const byMachine   = new Map<string, MEntry>()
+    const searchLower = search.toLowerCase()
+
+    for (const run of runs) {
+      const article = extractArticle(run.programName)
+      if (!article || !article.toLowerCase().includes(searchLower)) continue
+      const secs  = run.durationSeconds ?? 0
+      const entry = byMachine.get(run.machineId) ?? { seconds: 0, runCount: 0, articles: new Map() }
+      entry.seconds  += secs
+      entry.runCount += 1
+      entry.articles.set(article, (entry.articles.get(article) ?? 0) + secs)
+      byMachine.set(run.machineId, entry)
+    }
+
+    const result = [...byMachine.entries()]
+      .map(([id, e]) => ({
+        id,
+        name:     machineMap.get(id) ?? id,
+        seconds:  e.seconds,
+        runCount: e.runCount,
+        articles: [...e.articles.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([article, seconds]) => ({ article, seconds })),
+      }))
+      .sort((a, b) => b.seconds - a.seconds)
+
+    return {
+      article:      search,
+      totalSeconds: result.reduce((s, m) => s + m.seconds, 0),
+      totalRuns:    result.reduce((s, m) => s + m.runCount, 0),
+      byMachine:    result,
+    }
+  })
+
   // ── POST events (van de agent) ────────────────────────────────────────────
 
   fastify.post('/admin/machines/:id/cnc-events', auth, async (req, reply) => {
