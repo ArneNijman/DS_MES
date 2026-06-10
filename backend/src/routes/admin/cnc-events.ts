@@ -78,6 +78,11 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
         if (online) {
           closeWachttijd(t)
           programRunning = false; spindleOffAt = null
+          // Sluit lopend alarm af op offline-tijdstip zodat het niet doorlekt naar de volgende online-sessie
+          if (alarmStart) {
+            periods.push({ ...makePeriod('alarmstilstand', alarmStart, t), alarmText })
+            alarmStart = null; alarmText = null
+          }
           offlineStart = t; online = false
         }
         programStopTime = null
@@ -122,7 +127,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   const now = new Date()
   if (offlineStart && (now.getTime() - offlineStart.getTime()) / 1000 >= OFFLINE_MIN_SEC)
     periods.push(makePeriod('offline', offlineStart, null))
-  if (alarmStart)
+  if (alarmStart && !offlineStart)
     periods.push({ ...makePeriod('alarmstilstand', alarmStart, null), alarmText })
   if (programStopTime && !offlineStart && (now.getTime() - programStopTime.getTime()) / 1000 > STILSTAND_THRESHOLD_SEC) {
     periods.push(makePeriod('stilstand', programStopTime, null))
