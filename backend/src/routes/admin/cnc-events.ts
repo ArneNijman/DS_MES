@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { eq, desc, and, asc, gte, like, sql, inArray, isNull } from 'drizzle-orm'
-import { cncMachineEvents, cncProgramRuns, cncToolEntries, machines } from '../../db/schema.js'
+import { cncMachineEvents, cncProgramRuns, cncToolEntries, machines, toolLibraryAssemblies } from '../../db/schema.js'
 
 /** Extraheert het artikel-mapje uit een programmapad: TNC:\Program\22073-3201-11\... → 22073-3201-11 */
 function extractArticle(programName: string | null): string | null {
@@ -522,7 +522,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           .orderBy(desc(cncMachineEvents.occurredAt))
           .limit(1)
 
-        let currentTool: { nr: number; name: string | null } | null = null
+        let currentTool: { nr: number; name: string | null; assemblyNcNumber: number | null } | null = null
         if (lastToolChange) {
           const d = lastToolChange.eventData as { from?: number; to?: number } | null
           const toolNr = d?.to ?? null
@@ -532,13 +532,46 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
               .from(cncToolEntries)
               .where(and(eq(cncToolEntries.machineId, m.id), eq(cncToolEntries.toolNumber, toolNr)))
               .limit(1)
-            currentTool = { nr: toolNr, name: entry?.name ?? null }
+            const toolName = entry?.name ?? null
+            let assemblyNcNumber: number | null = null
+            if (toolName) {
+              const [asm] = await fastify.db
+                .select({ ncNumber: toolLibraryAssemblies.ncNumber })
+                .from(toolLibraryAssemblies)
+                .where(eq(sql`LOWER(${toolLibraryAssemblies.ncName})`, toolName.toLowerCase()))
+                .limit(1)
+              assemblyNcNumber = asm?.ncNumber ?? null
+            }
+            currentTool = { nr: toolNr, name: toolName, assemblyNcNumber }
           }
+        }
+
+        // Actief programma: open run zonder endedAt
+        const [openRun] = await fastify.db
+          .select({ programName: cncProgramRuns.programName })
+          .from(cncProgramRuns)
+          .where(and(eq(cncProgramRuns.machineId, m.id), isNull(cncProgramRuns.endedAt)))
+          .orderBy(desc(cncProgramRuns.startedAt))
+          .limit(1)
+        const programRunning = !!openRun
+        const currentProgram = openRun?.programName ?? null
+
+        // Status laatste programmarun (alleen als niet actief)
+        let lastRunStatus: string | null = null
+        if (!programRunning) {
+          const [lastRun] = await fastify.db
+            .select({ status: cncProgramRuns.status })
+            .from(cncProgramRuns)
+            .where(eq(cncProgramRuns.machineId, m.id))
+            .orderBy(desc(cncProgramRuns.startedAt))
+            .limit(1)
+          lastRunStatus = lastRun?.status ?? null
         }
 
         return {
           id:   m.id,
           name: m.name,
+          photoUrl: m.photoUrl ?? null,
           availabilityPct,
           totalDowntimeMinutes: Math.round(totalDowntimeSec / 60),
           byType: {
@@ -549,6 +582,9 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           },
           ongoingPeriod,
           currentTool,
+          programRunning,
+          currentProgram,
+          lastRunStatus,
           periods: periods.filter(p => weekdaySeconds(p.startedAt, p.endedAt ?? new Date()) > 0),
         }
       })

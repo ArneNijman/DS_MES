@@ -25,7 +25,11 @@ interface MachineSummary {
   totalDowntimeMinutes: number
   byType: { offline: number; alarmstilstand: number; stilstand: number; wachttijd: number }
   ongoingPeriod: DowntimePeriod | null
-  currentTool: { nr: number; name: string | null } | null
+  currentTool: { nr: number; name: string | null; assemblyNcNumber: number | null } | null
+  photoUrl: string | null
+  programRunning: boolean
+  currentProgram: string | null
+  lastRunStatus: string | null
   periods: DowntimePeriod[]
 }
 
@@ -106,6 +110,9 @@ function AvailabilityBar({ machine }: { machine: MachineSummary }) {
             {machine.currentTool && machine.ongoingPeriod?.type !== 'offline' && (
               <p className="text-xs text-gray-400 mt-0.5 truncate">
                 T{machine.currentTool.nr}{machine.currentTool.name ? ` · ${machine.currentTool.name}` : ''}
+                {machine.currentTool.assemblyNcNumber != null && (
+                  <span className="ml-1 text-teal-500">· samenstelling</span>
+                )}
               </p>
             )}
           </div>
@@ -307,7 +314,7 @@ function BeschikbaarheidInfo() {
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="text-gray-300 hover:text-gray-500 transition-colors"
+        className="text-gray-400 hover:text-teal-600 transition-colors"
         aria-label="Uitleg beschikbaarheid"
       >
         <Info size={14} />
@@ -404,7 +411,7 @@ function VerspaantijdInfo() {
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="text-gray-300 hover:text-gray-500 transition-colors"
+        className="text-gray-400 hover:text-teal-600 transition-colors"
         aria-label="Uitleg verspaantijd"
       >
         <Info size={14} />
@@ -656,11 +663,226 @@ function VerspaantijdSectie({ days }: { days: number }) {
   )
 }
 
+// ── Machine tegel helpers ──────────────────────────────────────────────────
+
+function extractArticle(programName: string | null): string | null {
+  if (!programName) return null
+  const idx = programName.toUpperCase().indexOf('TNC:')
+  const clean = idx >= 0 ? programName.slice(idx) : programName
+  const parts = clean.replace(/\\/g, '/').split('/')
+  return parts.length >= 3 ? parts[2] : parts[parts.length - 1] || null
+}
+
+// ── MachineTegel ───────────────────────────────────────────────────────────
+
+function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: () => void }) {
+  const avail = machine.availabilityPct
+  const availColor = avail >= 90 ? 'text-green-600' : avail >= 75 ? 'text-amber-500' : 'text-red-500'
+  const period = machine.ongoingPeriod
+  const article = extractArticle(machine.currentProgram)
+
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white rounded-xl border border-gray-100 overflow-hidden text-left hover:border-teal-300 hover:shadow-sm transition-all cursor-pointer w-full"
+    >
+      {/* Foto */}
+      <div className="h-32 bg-gray-50 flex items-center justify-center overflow-hidden">
+        {machine.photoUrl
+          ? <img src={machine.photoUrl} alt={machine.name} className="w-full h-full object-contain" />
+          : <Activity size={32} className="text-gray-200" />
+        }
+      </div>
+
+      {/* Info */}
+      <div className="p-3 space-y-1.5 h-52 overflow-hidden">
+        <p className="text-sm font-semibold text-gray-800 truncate">{machine.name}</p>
+
+        {/* Beschikbaarheid */}
+        <p className={cn('text-xl font-bold', availColor)}>{avail}%</p>
+
+        {/* Online / Offline */}
+        <div>
+          {period?.type === 'offline' ? (
+            <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', DOWNTIME_BADGE['offline'])}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              {DOWNTIME_LABEL['offline']}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              Online
+            </span>
+          )}
+        </div>
+
+        {/* Programma status */}
+        {machine.programRunning ? (
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700">
+              ▶ Loopt
+            </span>
+            {article && <span className="text-xs text-gray-500 truncate">{article}</span>}
+          </div>
+        ) : machine.lastRunStatus === 'interrupted' ? (
+          <div>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+              ⚠ Onderbroken
+            </span>
+          </div>
+        ) : machine.lastRunStatus === 'completed' || machine.lastRunStatus === 'stopped' ? (
+          <div>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              ◼ Gestopt
+            </span>
+          </div>
+        ) : null}
+
+        {/* Alarmstilstand / Stilstand / Wachttijd (als actief, niet offline) */}
+        {period && period.type !== 'offline' && (
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', DOWNTIME_BADGE[period.type])}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                {DOWNTIME_LABEL[period.type]}
+              </span>
+              <span className="text-xs text-gray-400">{formatTime(period.startedAt)}</span>
+            </div>
+            {period.type === 'alarmstilstand' && (period as DowntimePeriod & { alarmText?: string | null }).alarmText && (
+              <p className="text-xs text-red-500 truncate" title={(period as DowntimePeriod & { alarmText?: string | null }).alarmText ?? ''}>
+                {(period as DowntimePeriod & { alarmText?: string | null }).alarmText}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Actief gereedschap */}
+        {machine.currentTool && period?.type !== 'offline' && (
+          <p className="text-xs text-gray-400 truncate">
+            T{machine.currentTool.nr}{machine.currentTool.name ? ` · ${machine.currentTool.name}` : ''}
+            {machine.currentTool.assemblyNcNumber != null && <span className="ml-1 text-teal-500">· samenstelling</span>}
+          </p>
+        )}
+      </div>
+    </button>
+  )
+}
+
+// ── MachineDetailModal ─────────────────────────────────────────────────────
+
+function MachineDetailModal({ machine, onClose }: { machine: MachineSummary; onClose: () => void }) {
+  const avail = machine.availabilityPct
+  const availColor = avail >= 90 ? 'text-green-600' : avail >= 75 ? 'text-amber-500' : 'text-red-500'
+  const sorted = [...machine.periods].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-gray-100">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">{machine.name}</h2>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className={cn('text-2xl font-bold', availColor)}>{avail}% beschikbaar</p>
+              <BeschikbaarheidInfo />
+            </div>
+            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden mt-1.5">
+              <div
+                className={cn('h-full rounded-full transition-all', avail >= 90 ? 'bg-green-500' : avail >= 75 ? 'bg-amber-400' : 'bg-red-500')}
+                style={{ width: `${avail}%` }}
+              />
+            </div>
+
+            {machine.totalDowntimeMinutes > 0 ? (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-sm text-gray-600">
+                  Totale downtime: <span className="font-semibold text-gray-800">{formatDuration(machine.totalDowntimeMinutes)}</span>
+                </p>
+                <div className="flex items-center flex-wrap gap-1.5">
+                  <span className="text-xs text-gray-400 shrink-0">Waarvan:</span>
+                  {(['alarmstilstand', 'stilstand', 'offline', 'wachttijd'] as const).map(type => {
+                    const mins = machine.byType[type]
+                    if (!mins) return null
+                    return (
+                      <span key={type} className={cn('px-2 py-0.5 rounded text-xs font-medium', DOWNTIME_BADGE[type])}>
+                        {DOWNTIME_LABEL[type]} {formatDuration(mins)}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-green-600 mt-1">Geen downtime in deze periode ✓</p>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg ml-4 shrink-0">
+            ✕
+          </button>
+        </div>
+
+        {/* Perioden lijst */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {sorted.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">Geen stilstand in deze periode</p>
+          ) : (
+            <div className="space-y-2">
+              {sorted.map((p, i) => (
+                <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 text-xs">
+                  <span className={cn('px-2 py-0.5 rounded-full font-medium shrink-0', DOWNTIME_BADGE[p.type])}>
+                    {p.isOngoing && <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />}
+                    {DOWNTIME_LABEL[p.type]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-500">{formatTime(p.startedAt)}{p.endedAt ? ` → ${formatTime(p.endedAt)}` : ''}</p>
+                    {p.type === 'alarmstilstand' && (p as DowntimePeriod & { alarmText?: string | null }).alarmText && (
+                      <p className="text-red-500 mt-0.5 truncate">{(p as DowntimePeriod & { alarmText?: string | null }).alarmText}</p>
+                    )}
+                  </div>
+                  <span className="font-medium text-gray-700 shrink-0">
+                    {p.durationSeconds !== null ? formatDuration(Math.round(p.durationSeconds / 60)) : p.isOngoing ? <span className="text-red-500 animate-pulse">lopend</span> : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── BeschikbaarheidTab ─────────────────────────────────────────────────────
+
+function BeschikbaarheidTab({ machines }: { machines: MachineSummary[] }) {
+  const [selected, setSelected] = useState<MachineSummary | null>(null)
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+        {machines
+          .sort((a, b) => a.availabilityPct - b.availabilityPct)
+          .map(m => (
+            <MachineTegel key={m.id} machine={m} onClick={() => setSelected(m)} />
+          ))
+        }
+      </div>
+      <DowntimeLegend />
+      {selected && <MachineDetailModal machine={selected} onClose={() => setSelected(null)} />}
+    </>
+  )
+}
+
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
-  { value: 1,   label: 'Vandaag' },
-  { value: 7,   label: '7 dagen' },
+  { value: 1,   label: 'Dag' },
+  { value: 7,   label: 'Week' },
   { value: 30,  label: 'Maand' },
   { value: 90,  label: 'Kwartaal' },
   { value: 180, label: 'Halfjaar' },
@@ -712,8 +934,11 @@ function getSinceDate(days: number): string {
   return d.toISOString()
 }
 
+type DashboardTab = 'beschikbaarheid' | 'spindeluren' | 'verspaantijd'
+
 export function MachineDashboardContent() {
   const [days, setDays] = useState(7)
+  const [tab, setTab]   = useState<DashboardTab>('beschikbaarheid')
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ['machine-downtime-all', days],
@@ -721,23 +946,15 @@ export function MachineDashboardContent() {
     refetchInterval: 30_000,
   })
 
-  const totalDowntime = data?.machines.reduce((s, m) => s + m.totalDowntimeMinutes, 0) ?? 0
   const ongoingCount  = data?.machines.filter(m => m.ongoingPeriod).length ?? 0
+  const totalDowntime = data?.machines.reduce((s, m) => s + m.totalDowntimeMinutes, 0) ?? 0
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="max-w-5xl mx-auto px-6 py-6">
 
-        {/* Header */}
-        <div className="mb-5">
-          <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Activity size={17} className="text-red-500" /> Machine Dashboard
-          </h1>
-          <p className="text-xs text-gray-400">Automatische downtime-detectie — Freesmachines</p>
-        </div>
-
-        {/* Periode filter + samenvatting */}
-        <div className="flex items-center justify-between mb-5">
+        {/* Periode filter */}
+        <div className="flex items-center justify-between mb-4">
           <div className="flex gap-1.5">
             {PERIOD_OPTIONS.map(({ value, label }) => (
               <button
@@ -765,6 +982,28 @@ export function MachineDashboardContent() {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-0 border-b border-gray-200 mb-5">
+          {([
+            { key: 'beschikbaarheid', label: 'Beschikbaarheid' },
+            { key: 'spindeluren',     label: 'Spindeluren' },
+            { key: 'verspaantijd',    label: 'Verspaantijd' },
+          ] as { key: DashboardTab; label: string }[]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={cn(
+                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                tab === key
+                  ? 'border-teal-600 text-teal-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {isLoading ? (
           <p className="text-sm text-gray-400 text-center py-16">Laden...</p>
         ) : !data?.machines.length ? (
@@ -774,38 +1013,24 @@ export function MachineDashboardContent() {
           </div>
         ) : (
           <>
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Beschikbaarheid</h2>
-                <BeschikbaarheidInfo />
+            {tab === 'beschikbaarheid' && (
+              <BeschikbaarheidTab machines={data.machines} />
+            )}
+
+            {tab === 'spindeluren' && (
+              <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Clock size={13} /> Spindeluren per dag
+                </h2>
+                <div className="space-y-6">
+                  {data.machines.map(m => (
+                    <SpindleChart key={m.id} machineId={m.id} machineName={m.name} days={days} />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                {data.machines
-                  .sort((a, b) => a.availabilityPct - b.availabilityPct)
-                  .map(m => <AvailabilityBar key={m.id} machine={m} />)
-                }
-              </div>
-            </div>
+            )}
 
-            <DowntimeLegend />
-
-            <div className="bg-white rounded-xl border border-gray-100 p-4">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Recente stilstand</h2>
-              <RecentDowntimeTable data={data} />
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mt-5">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Clock size={13} /> Spindeluren per dag
-              </h2>
-              <div className="space-y-6">
-                {data.machines.map(m => (
-                  <SpindleChart key={m.id} machineId={m.id} machineName={m.name} days={days} />
-                ))}
-              </div>
-            </div>
-
-            <VerspaantijdSectie days={days} />
+            {tab === 'verspaantijd' && <VerspaantijdSectie days={days} />}
           </>
         )}
       </div>

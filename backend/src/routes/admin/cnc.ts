@@ -102,11 +102,26 @@ export async function cncRoutes(fastify: FastifyInstance) {
       .orderBy(desc(cncSyncLogs.startedAt))
       .limit(1)
 
+    // Assembly-koppeling: batch lookup op naam (case-insensitive)
+    const namedTools = tools.filter(t => t.name)
+    let assemblyByName = new Map<string, number>()
+    if (namedTools.length > 0) {
+      const assemblies = await fastify.db
+        .select({ ncNumber: toolLibraryAssemblies.ncNumber, ncName: toolLibraryAssemblies.ncName })
+        .from(toolLibraryAssemblies)
+      for (const a of assemblies) assemblyByName.set(a.ncName.toLowerCase(), a.ncNumber)
+    }
+
+    const toolsWithAssembly = tools.map(t => ({
+      ...t,
+      assemblyNcNumber: t.name ? (assemblyByName.get(t.name.toLowerCase()) ?? null) : null,
+    }))
+
     return {
       stats: { total, atRisk, critical, expired, locked },
       cncMaxTools: machineRows[0].cncMaxTools ?? null,
       lastSync: lastSync[0] ?? null,
-      tools,
+      tools: toolsWithAssembly,
     }
   })
 

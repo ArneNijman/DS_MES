@@ -2003,10 +2003,10 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
     refetchInterval: subTab === 'cnc_events' ? 15_000 : false,
   })
 
-  const { data: toolEntries = [] } = useQuery<{ toolNumber: number; name: string | null }[]>({
+  const { data: toolEntries = [] } = useQuery<{ toolNumber: number; name: string | null; assemblyNcNumber: number | null }[]>({
     queryKey: ['cnc-tool-entries', machineId],
     queryFn: async () => {
-      const res = await apiFetch(`/kiosk/cnc/machines/${machineId}/tools`) as { tools: { toolNumber: number; name: string | null }[] }
+      const res = await apiFetch(`/kiosk/cnc/machines/${machineId}/tools`) as { tools: { toolNumber: number; name: string | null; assemblyNcNumber: number | null }[] }
       return res.tools ?? []
     },
     enabled: subTab === 'cnc_events',
@@ -2014,6 +2014,9 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
 
   const toolNameMap = new Map(
     (Array.isArray(toolEntries) ? toolEntries : []).filter(t => t.name).map(t => [t.toolNumber, t.name!])
+  )
+  const toolAssemblyMap = new Map(
+    (Array.isArray(toolEntries) ? toolEntries : []).filter(t => t.assemblyNcNumber != null).map(t => [t.toolNumber, t.assemblyNcNumber!])
   )
 
   const [articleFilter, setArticleFilter] = useState<string | null>(null)
@@ -2434,11 +2437,16 @@ function MachineDetailPanel({ machineId, onEdit, onDelete }: { machineId: string
                 {cncEvents.map((ev) => {
                   const cfg = CNC_EVENT_CONFIG[ev.eventType] ?? { label: ev.eventType, color: 'bg-gray-100 text-gray-600' }
                   const detail = formatCncEventDetail(ev, toolNameMap)
+                  const toNr = ev.eventType === 'TOOL_CHANGED' ? (ev.eventData?.to as number | undefined) : undefined
+                  const toAssembly = toNr != null ? toolAssemblyMap.get(toNr) : undefined
                   return (
                     <div key={ev.id} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:bg-gray-50">
                       <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-0.5', cfg.color)}>{cfg.label}</span>
                       <div className="flex-1 min-w-0">
                         {detail && <p className="text-sm text-gray-700">{detail}</p>}
+                        {toAssembly != null && (
+                          <p className="text-xs text-teal-600 mt-0.5">Samenstelling #{toAssembly} in toolbibliotheek</p>
+                        )}
                         {ev.programName && <p className="text-xs text-gray-400 mt-0.5">Programma: {sanitizeProgramName(ev.programName)}</p>}
                       </div>
                       <span className="text-xs text-gray-400 shrink-0 mt-0.5">{formatCncTime(ev.occurredAt)}</span>
