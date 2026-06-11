@@ -9,6 +9,17 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-11] — phantom run cleanup + stale run checker
+
+### Opgelost
+- **Verspaantijd inflatie door phantom runs**: 121 runs met duur > 24 uur verwijderd over alle machines (totaal ~28.000 phantom uren). Oorzaak: garbage-namen vóór `sanitizeProgramName` bestond, gecombineerd met ontbrekende auto-close
+- FPT Ronin: 6611u → 68u; Dino max 1: 8730u phantom verwijderd
+
+### Verbeterd
+- **Stale run checker**: harde grens van 16 uur toegevoegd — elke open run ouder dan 16 uur wordt sowieso gesloten als `interrupted`, ongeacht events. Voorheen alleen bij `MACHINE_OFFLINE`. Voorkomt toekomstige phantom-accumulatie bij machines die stil vallen zonder events te sturen
+
+---
+
 ## [2026-06-11] — machine dashboard redesign + program run fixes
 
 ### Toegevoegd

@@ -2,55 +2,71 @@ import { FastifyInstance } from 'fastify'
 import { and, eq, isNull, lt, gt, desc } from 'drizzle-orm'
 import { cncProgramRuns, cncMachineEvents } from '../db/schema.js'
 
-// Run geldt als stale als het laatste event MACHINE_OFFLINE is
-// én dat event meer dan STALE_THRESHOLD_MS geleden plaatsvond.
-// ALARM_TRIGGERED wordt bewust niet meegenomen — alarmen kunnen voorwaarschuwingen zijn
-// waarna het programma gewoon doorloopt.
-const STALE_THRESHOLD_MS = 30 * 60 * 1000   // 30 minuten
-const CHECK_INTERVAL_MS  =  5 * 60 * 1000   //  5 minuten
-
-const STOP_EVENTS = new Set(['MACHINE_OFFLINE'])
+// Snelle detectie: MACHINE_OFFLINE ouder dan 30 minuten → run sluiten
+const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000   // 30 minuten
+// Harde grens: elke run ouder dan 16 uur wordt sowieso gesloten (veiligheidsnet)
+const HARD_CUTOFF_MS       = 16 * 60 * 60 * 1000  // 16 uur
+const CHECK_INTERVAL_MS    =  5 * 60 * 1000   //  5 minuten
 
 async function closeStaleRuns(fastify: FastifyInstance) {
   const now = new Date()
-  const cutoff = new Date(now.getTime() - STALE_THRESHOLD_MS)
 
-  // Alle open runs waarvan startedAt meer dan 30 min geleden is
   const openRuns = await fastify.db
     .select()
     .from(cncProgramRuns)
     .where(
       and(
         isNull(cncProgramRuns.endedAt),
-        lt(cncProgramRuns.startedAt, cutoff),
+        lt(cncProgramRuns.startedAt, new Date(now.getTime() - OFFLINE_THRESHOLD_MS)),
       ),
     )
 
   for (const run of openRuns) {
-    // Haal het laatste event van deze machine na de runstart op
+    const runAgeMs = now.getTime() - run.startedAt.getTime()
+
+    // Harde grens: run ouder dan 16 uur → altijd sluiten
+    if (runAgeMs >= HARD_CUTOFF_MS) {
+      const [lastEvent] = await fastify.db
+        .select({ occurredAt: cncMachineEvents.occurredAt })
+        .from(cncMachineEvents)
+        .where(and(
+          eq(cncMachineEvents.machineId, run.machineId),
+          gt(cncMachineEvents.occurredAt, run.startedAt),
+        ))
+        .orderBy(desc(cncMachineEvents.occurredAt))
+        .limit(1)
+
+      const endedAt = lastEvent?.occurredAt ?? new Date(run.startedAt.getTime() + HARD_CUTOFF_MS)
+      const durationSeconds = Math.round((endedAt.getTime() - run.startedAt.getTime()) / 1000)
+
+      await fastify.db
+        .update(cncProgramRuns)
+        .set({ endedAt, durationSeconds, status: 'interrupted' })
+        .where(eq(cncProgramRuns.id, run.id))
+
+      fastify.log.warn(
+        `Stale run (>16u) gesloten: machine=${run.machineId} programma="${run.programName}" ` +
+        `gestart=${run.startedAt.toISOString()}`,
+      )
+      continue
+    }
+
+    // Snelle detectie: laatste event is MACHINE_OFFLINE én ouder dan 30 min
     const [lastEvent] = await fastify.db
       .select()
       .from(cncMachineEvents)
-      .where(
-        and(
-          eq(cncMachineEvents.machineId, run.machineId),
-          gt(cncMachineEvents.occurredAt, run.startedAt),
-        ),
-      )
+      .where(and(
+        eq(cncMachineEvents.machineId, run.machineId),
+        gt(cncMachineEvents.occurredAt, run.startedAt),
+      ))
       .orderBy(desc(cncMachineEvents.occurredAt))
       .limit(1)
 
-    if (!lastEvent) continue
-    if (!STOP_EVENTS.has(lastEvent.eventType)) continue
-
-    // Laatste event is een stop-event én ouder dan drempelwaarde
-    const eventAge = now.getTime() - lastEvent.occurredAt.getTime()
-    if (eventAge < STALE_THRESHOLD_MS) continue
+    if (!lastEvent || lastEvent.eventType !== 'MACHINE_OFFLINE') continue
+    if (now.getTime() - lastEvent.occurredAt.getTime() < OFFLINE_THRESHOLD_MS) continue
 
     const endedAt = lastEvent.occurredAt
-    const durationSeconds = Math.round(
-      (endedAt.getTime() - run.startedAt.getTime()) / 1000,
-    )
+    const durationSeconds = Math.round((endedAt.getTime() - run.startedAt.getTime()) / 1000)
 
     await fastify.db
       .update(cncProgramRuns)
@@ -58,8 +74,8 @@ async function closeStaleRuns(fastify: FastifyInstance) {
       .where(eq(cncProgramRuns.id, run.id))
 
     fastify.log.info(
-      `Stale run afgesloten: machine=${run.machineId} programma="${run.programName}" ` +
-      `gestart=${run.startedAt.toISOString()} laatste_event=${lastEvent.eventType}`,
+      `Stale run (offline) gesloten: machine=${run.machineId} programma="${run.programName}" ` +
+      `gestart=${run.startedAt.toISOString()}`,
     )
   }
 }
