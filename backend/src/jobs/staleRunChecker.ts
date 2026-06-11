@@ -4,8 +4,8 @@ import { cncProgramRuns, cncMachineEvents } from '../db/schema.js'
 
 // Snelle detectie: MACHINE_OFFLINE ouder dan 30 minuten → run sluiten
 const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000   // 30 minuten
-// Harde grens: elke run ouder dan 16 uur wordt sowieso gesloten (veiligheidsnet)
-const HARD_CUTOFF_MS       = 16 * 60 * 60 * 1000  // 16 uur
+// Harde grens: elke run ouder dan 24 uur wordt sowieso gesloten (veiligheidsnet)
+const HARD_CUTOFF_MS       = 24 * 60 * 60 * 1000  // 24 uur
 const CHECK_INTERVAL_MS    =  5 * 60 * 1000   //  5 minuten
 
 async function closeStaleRuns(fastify: FastifyInstance) {
