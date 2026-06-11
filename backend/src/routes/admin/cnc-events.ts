@@ -388,6 +388,54 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
     }))
 
     await fastify.db.insert(cncMachineEvents).values(rows)
+
+    // Auto-afleiden van program runs uit de event-stroom — voorkomt dat een mislukte
+    // /cnc-program-runs POST de run-registratie uit de pas laat lopen met de events.
+    for (const ev of body.data.events) {
+      const t = new Date(ev.occurredAt)
+
+      if (ev.eventType === 'PROGRAM_STARTED' && ev.programName) {
+        const programName = sanitizeProgramName(ev.programName)
+        if (!programName) continue
+
+        // Sla over als de agent al een run aangemaakt heeft voor dit tijdstip
+        const [existing] = await fastify.db
+          .select({ id: cncProgramRuns.id })
+          .from(cncProgramRuns)
+          .where(and(eq(cncProgramRuns.machineId, id), eq(cncProgramRuns.startedAt, t)))
+          .limit(1)
+        if (existing) continue
+
+        // Sluit eventuele open runs af
+        await fastify.db
+          .update(cncProgramRuns)
+          .set({
+            endedAt:         t,
+            durationSeconds: sql`EXTRACT(EPOCH FROM (${t.toISOString()}::timestamptz - started_at))::int`,
+            status:          'stopped',
+          })
+          .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
+
+        await fastify.db.insert(cncProgramRuns).values({
+          machineId:   id,
+          programName,
+          startedAt:   t,
+          status:      'running',
+        })
+      }
+
+      if (ev.eventType === 'PROGRAM_STOPPED') {
+        await fastify.db
+          .update(cncProgramRuns)
+          .set({
+            endedAt:         t,
+            durationSeconds: sql`EXTRACT(EPOCH FROM (${t.toISOString()}::timestamptz - started_at))::int`,
+            status:          'stopped',
+          })
+          .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
+      }
+    }
+
     return { inserted: rows.length }
   })
 
@@ -419,7 +467,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           .set({
             endedAt:         startedAt,
             durationSeconds: sql`EXTRACT(EPOCH FROM (${startedAt.toISOString()}::timestamptz - started_at))::int`,
-            status:          'interrupted',
+            status:          'stopped',
           })
           .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
       }
