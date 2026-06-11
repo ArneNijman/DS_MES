@@ -9,6 +9,29 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-11] — machine dashboard redesign + program run fixes
+
+### Toegevoegd
+- **Machine dashboard — tab-layout**: drie tabs Beschikbaarheid / Spindeluren / Verspaantijd
+- **Beschikbaarheid-tegels**: foto, beschikbaarheid%, online/offline-badge, programma-status badge (▶ Loopt / ⚠ Onderbroken / ◼ Gestopt) met artikelnummer, actieve stilstand-badge met tijdstip
+- **Detailmodal** bij klik op tegel: totale downtime, waarvan-breakdown (alarm/stilstand/offline/wachttijd), perioden-lijst
+- **Vaste tegelgrootte** (h-32 foto + h-52 info = 320px) zodat badges niet verspringen
+- **Periodefilter uitgebreid**: nieuw 'Vandaag' (vanaf 05:30), 'Dag' is nu exact 24 uur terug
+- **ⓘ info-knop** links van de periodefilter met uitleg per optie
+- **assemblyNcNumber-koppeling** in tool-lookup via `toolLibraryAssemblies.ncName` (case-insensitive)
+- **Program run auto-afleiding uit event-stroom**: batch-events endpoint maakt/sluit `cnc_program_runs` automatisch op basis van `PROGRAM_STARTED`/`PROGRAM_STOPPED` — mislukken van de aparte runs-POST heeft geen gevolgen meer
+
+### Opgelost
+- **`interrupted` vs `stopped` verwarring**: auto-close bij nieuwe PROGRAM_STARTED gebruikte altijd `interrupted`, ook bij normaal afgeronde cycli. Nu `stopped`; `interrupted` gereserveerd voor expliciete agent-signalen (crash/fout). 360+ historische runs gecorrigeerd
+- **Phantom runs opgeschoond**: MTE Portaal (9 runs), Dino max 1 en FPT Ronin (nacht-phantoms) gesloten als `interrupted`; threshold-cleanup toegepast over alle machines
+- **Backend draaide oude code**: `programRunning`, `currentProgram`, `lastRunStatus`, `photoUrl` ontbraken in API-response door niet-herstarte container — opgelost via expliciete restart
+- **Badges naast elkaar**: Online/Offline en programma-status badges stonden inline naast elkaar door ontbrekende `<div>`-wrapper
+
+### Verbeterd
+- `tsconfig.json` frontend: `ignoreDeprecations: "6.0"` toegevoegd voor `baseUrl`-waarschuwing
+
+---
+
 ## [2026-06-10] — verspaantijd datacorrectie
 
 ### Opgelost
