@@ -30,6 +30,7 @@ interface MachineSummary {
   programRunning: boolean
   currentProgram: string | null
   lastRunStatus: string | null
+  lastRunProgram: string | null
   periods: DowntimePeriod[]
 }
 
@@ -268,7 +269,7 @@ function SpindleChart({ machineId, machineName, days }: { machineId: string; mac
         }, {})
       )
     : dailyDeltas
-        .slice(days === 1 ? 1 : 0)  // dag-weergave: gisteren (referentie) weggooien, alleen vandaag tonen
+        .slice(days <= 1 ? 1 : 0)  // dag/vandaag-weergave: referentiepunt weggooien
         .map(p => ({ date: p.date.slice(5), uren: p.delta, totaal: p.totaal }))
 
   if (!deltas.length) return (
@@ -398,6 +399,47 @@ function DowntimeLegend() {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Periode filter info popover ───────────────────────────────────────────
+
+function PeriodeFilterInfo() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-gray-400 hover:text-teal-600 transition-colors"
+        aria-label="Uitleg periodefilter"
+      >
+        <Info size={14} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-6 z-20 w-80 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-xs text-gray-600 leading-relaxed space-y-2">
+            <p className="font-semibold text-gray-800 mb-1">Periodefilter uitleg</p>
+            {[
+              { label: 'Vandaag',   desc: 'Vandaag vanaf 05:30 tot nu — toont de huidige werkdag.' },
+              { label: 'Dag',       desc: 'Afgelopen 24 uur tot nu — doorlopend venster ongeacht tijdstip.' },
+              { label: 'Week',      desc: '7 kalenderdagen terug vanaf vandaag.' },
+              { label: 'Maand',     desc: 'Laatste 30 dagen.' },
+              { label: 'Kwartaal',  desc: 'Vanaf het begin van het huidige kwartaal.' },
+              { label: 'Halfjaar',  desc: 'Laatste 180 dagen.' },
+              { label: 'Jaar',      desc: 'Vanaf 1 januari van het huidige jaar.' },
+            ].map(({ label, desc }) => (
+              <div key={label} className="flex gap-2">
+                <span className="font-medium text-gray-700 w-16 shrink-0">{label}</span>
+                <span className="text-gray-500">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -679,7 +721,8 @@ function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: 
   const avail = machine.availabilityPct
   const availColor = avail >= 90 ? 'text-green-600' : avail >= 75 ? 'text-amber-500' : 'text-red-500'
   const period = machine.ongoingPeriod
-  const article = extractArticle(machine.currentProgram)
+  const article         = extractArticle(machine.currentProgram)
+  const lastArticle     = extractArticle(machine.lastRunProgram)
 
   return (
     <button
@@ -725,16 +768,18 @@ function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: 
             {article && <span className="text-xs text-gray-500 truncate">{article}</span>}
           </div>
         ) : machine.lastRunStatus === 'interrupted' ? (
-          <div>
+          <div className="flex items-center gap-1.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
               ⚠ Onderbroken
             </span>
+            {lastArticle && <span className="text-xs text-gray-500 truncate">{lastArticle}</span>}
           </div>
         ) : machine.lastRunStatus === 'completed' || machine.lastRunStatus === 'stopped' ? (
-          <div>
+          <div className="flex items-center gap-1.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
               ◼ Gestopt
             </span>
+            {lastArticle && <span className="text-xs text-gray-500 truncate">{lastArticle}</span>}
           </div>
         ) : null}
 
@@ -881,6 +926,7 @@ function BeschikbaarheidTab({ machines }: { machines: MachineSummary[] }) {
 // ── Content (herbruikbaar in kiosk + admin) ────────────────────────────────
 
 const PERIOD_OPTIONS = [
+  { value: 0,   label: 'Vandaag' },
   { value: 1,   label: 'Dag' },
   { value: 7,   label: 'Week' },
   { value: 30,  label: 'Maand' },
@@ -918,8 +964,10 @@ interface ArticleSearchResult {
 function getSinceDate(days: number): string {
   const d = new Date()
   switch (days) {
-    case 1:   // Gisteren + vandaag — gisteren als referentiepunt voor de delta
-      d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); break
+    case 0:   // Vandaag vanaf 05:30
+      d.setHours(5, 30, 0, 0); break
+    case 1:   // Laatste 24 uur
+      d.setTime(d.getTime() - 24 * 60 * 60 * 1000); break
     case 7:   // 7 kalenderdagen terug
       d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); break
     case 30:  // Laatste 30 dagen (niet kalendermaand, zodat er altijd voldoende data is)
@@ -955,7 +1003,8 @@ export function MachineDashboardContent() {
 
         {/* Periode filter */}
         <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <PeriodeFilterInfo />
             {PERIOD_OPTIONS.map(({ value, label }) => (
               <button
                 key={value}

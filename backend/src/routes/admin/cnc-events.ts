@@ -556,16 +556,18 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
         const programRunning = !!openRun
         const currentProgram = openRun?.programName ?? null
 
-        // Status laatste programmarun (alleen als niet actief)
+        // Status + programmanaam laatste run (alleen als niet actief)
         let lastRunStatus: string | null = null
+        let lastRunProgram: string | null = null
         if (!programRunning) {
           const [lastRun] = await fastify.db
-            .select({ status: cncProgramRuns.status })
+            .select({ status: cncProgramRuns.status, programName: cncProgramRuns.programName })
             .from(cncProgramRuns)
             .where(eq(cncProgramRuns.machineId, m.id))
             .orderBy(desc(cncProgramRuns.startedAt))
             .limit(1)
-          lastRunStatus = lastRun?.status ?? null
+          lastRunStatus  = lastRun?.status      ?? null
+          lastRunProgram = lastRun?.programName ?? null
         }
 
         return {
@@ -585,6 +587,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           programRunning,
           currentProgram,
           lastRunStatus,
+          lastRunProgram,
           periods: periods.filter(p => weekdaySeconds(p.startedAt, p.endedAt ?? new Date()) > 0),
         }
       })
