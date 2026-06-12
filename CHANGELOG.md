@@ -9,6 +9,17 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-12] — meetmiddelen status "Zoek"
+
+### Toegevoegd
+- Nieuwe status **Zoek** bij meetmiddelen: derde radio-knop onder Status (naast Actief en Inactief), amber kleur
+- Filterknop **Zoek** in de zijbalk van meetmiddelen
+- **Zoek** badge (amber) op lijst-items + amber linkerrand, zelfde systeem als Afgekeurd (rood)
+- Migratie `0067`: kolom `zoek boolean DEFAULT false` op `measuring_tools`
+- Zoek-tools gedragen zich als Inactief: niet zichtbaar bij filter Actief, tellen niet mee in kalibratie-aantallen
+
+---
+
 ## [2026-06-12] — alarm-downtime correctie + machine dashboard badges
 
 ### Toegevoegd

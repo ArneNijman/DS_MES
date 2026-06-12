@@ -425,6 +425,7 @@ export const measuringTools = pgTable('measuring_tools', {
   diepteKalibratie: boolean('diepte_kalibratie').default(false),
   afgekeurd: boolean('afgekeurd').default(false),
   afgekeurdReden: text('afgekeurd_reden'),
+  zoek: boolean('zoek').default(false),
   serieSuffix: text('serie_suffix'),
   instructie: text('instructie'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

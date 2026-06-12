@@ -31,6 +31,7 @@ interface MeasuringTool {
   actief: boolean | null
   afgekeurd: boolean | null
   afgekeurdReden: string | null
+  zoek: boolean | null
   serieSuffix: string | null
   interneKalibratie: boolean | null
   externeKalibratie: boolean | null
@@ -245,6 +246,7 @@ type MmForm = {
   actief: boolean
   afgekeurd: boolean
   afgekeurdReden: string
+  zoek: boolean
   serieSuffix: string
   interneKalibratie: boolean
   externeKalibratie: boolean
@@ -271,6 +273,7 @@ function initForm(t?: Partial<MeasuringTool>): MmForm {
     actief:             t?.actief             ?? true,
     afgekeurd:          t?.afgekeurd          ?? false,
     afgekeurdReden:     t?.afgekeurdReden     ?? '',
+    zoek:               t?.zoek               ?? false,
     serieSuffix:        t?.serieSuffix        ?? '',
     interneKalibratie:  t?.interneKalibratie  ?? false,
     externeKalibratie:  t?.externeKalibratie  ?? false,
@@ -553,6 +556,7 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
       actief:             form.actief,
       afgekeurd:          form.afgekeurd,
       afgekeurdReden:     form.afgekeurdReden || null,
+      zoek:               form.zoek,
       serieSuffix:        form.serieSuffix    || null,
       interneKalibratie:  form.interneKalibratie,
       externeKalibratie:  form.externeKalibratie,
@@ -843,18 +847,36 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
                 <div>
                   <FieldLabel>Status</FieldLabel>
                   <div className="flex gap-4 mt-1.5">
-                    {[true, false].map((v) => (
-                      <label key={String(v)} className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
-                        <input
-                          type="radio"
-                          checked={form.actief === v}
-                          onChange={() => canEdit && set('actief', v)}
-                          disabled={!canEdit}
-                          className="accent-teal-600"
-                        />
-                        {v ? 'Actief' : 'Inactief'}
-                      </label>
-                    ))}
+                    <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                      <input
+                        type="radio"
+                        checked={form.actief === true && !form.zoek}
+                        onChange={() => canEdit && setForm(f => ({ ...f, actief: true, zoek: false }))}
+                        disabled={!canEdit}
+                        className="accent-teal-600"
+                      />
+                      Actief
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                      <input
+                        type="radio"
+                        checked={form.actief === false && !form.zoek}
+                        onChange={() => canEdit && setForm(f => ({ ...f, actief: false, zoek: false }))}
+                        disabled={!canEdit}
+                        className="accent-teal-600"
+                      />
+                      Inactief
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                      <input
+                        type="radio"
+                        checked={form.zoek === true}
+                        onChange={() => canEdit && setForm(f => ({ ...f, actief: false, zoek: true }))}
+                        disabled={!canEdit}
+                        className="accent-amber-500"
+                      />
+                      Zoek
+                    </label>
                   </div>
                 </div>
 
@@ -1779,7 +1801,7 @@ function ExportModal({ tools, onClose }: { tools: MeasuringTool[]; onClose: () =
 export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToolId?: string; onPendingConsumed?: () => void } = {}) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterActief, setFilterActief] = useState<'actief' | 'inactief' | 'afgekeurd' | 'alle'>('actief')
+  const [filterActief, setFilterActief] = useState<'actief' | 'inactief' | 'zoek' | 'afgekeurd' | 'alle'>('actief')
   const [filterKal, setFilterKal] = useState<'alle' | 'verlopen' | 'kritisch'>('alle')
   const [modal, setModal] = useState<MeasuringTool | null | 'nieuw'>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -1837,9 +1859,10 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
       (t.locatie ?? '').toLowerCase().includes(q)
     const matchActief =
       filterActief === 'alle'      ? true :
-      filterActief === 'actief'    ? t.actief !== false && !t.afgekeurd :
+      filterActief === 'actief'    ? t.actief !== false && !t.afgekeurd && !t.zoek :
       filterActief === 'afgekeurd' ? t.afgekeurd === true :
-      t.actief === false
+      filterActief === 'zoek'      ? t.zoek === true :
+      t.actief === false && !t.zoek
     const matchKal =
       filterKal === 'alle'     ? true :
       filterKal === 'verlopen' ? kalibratieStatus(t) === 'verlopen' :
@@ -1893,15 +1916,19 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
             )}
           </div>
           <div className="flex gap-1">
-            {(['actief', 'inactief', 'afgekeurd', 'alle'] as const).map((f) => (
+            {(['actief', 'inactief', 'zoek', 'afgekeurd', 'alle'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilterActief(f)}
                 className={cn(
                   'flex-1 py-1 text-xs rounded-md transition-colors',
                   filterActief === f
-                    ? f === 'afgekeurd' ? 'bg-red-600 text-white' : 'bg-teal-600 text-white'
-                    : f === 'afgekeurd' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
+                    ? f === 'afgekeurd' ? 'bg-red-600 text-white'
+                    : f === 'zoek'      ? 'bg-amber-500 text-white'
+                    : 'bg-teal-600 text-white'
+                    : f === 'afgekeurd' ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                    : f === 'zoek'      ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
                 )}
               >
                 {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -1963,6 +1990,7 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
                     : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50',
                   'border-l-4',
                   t.afgekeurd             ? 'border-l-red-700'    :
+                  t.zoek                  ? 'border-l-amber-400'  :
                   status === 'verlopen'   ? 'border-l-red-500'    :
                   status === 'binnenkort' ? 'border-l-orange-400' :
                   status === 'ok'         ? 'border-l-green-400'  :
@@ -1977,6 +2005,9 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
                   <div className="flex items-center gap-1">
                     {t.afgekeurd && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Afgekeurd</span>
+                    )}
+                    {t.zoek && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Zoek</span>
                     )}
                     <StatusBadge status={status} />
                   </div>

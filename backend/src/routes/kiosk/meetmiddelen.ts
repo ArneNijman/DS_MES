@@ -45,6 +45,7 @@ const toolSchema = z.object({
   diepteKalibratie:   z.boolean().optional().nullable(),
   afgekeurd:          z.boolean().optional().nullable(),
   afgekeurdReden:     z.string().optional().nullable(),
+  zoek:               z.boolean().optional().nullable(),
   serieSuffix:        z.string().optional().nullable(),
   instructie:         z.string().optional().nullable(),
 })
