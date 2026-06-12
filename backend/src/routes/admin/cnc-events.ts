@@ -59,6 +59,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   let offlineStart:    Date | null = null
   let alarmStart:      Date | null = null
   let alarmText:       string | null = null
+  let alarmActive      = false  // alarm actief terwijl programma draait — nog geen downtime
   let programStopTime: Date | null = null
   let programRunning = false
   let spindleOffAt:    Date | null = null
@@ -83,6 +84,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
             periods.push({ ...makePeriod('alarmstilstand', alarmStart, t), alarmText })
             alarmStart = null; alarmText = null
           }
+          alarmActive = false
           offlineStart = t; online = false
         }
         programStopTime = null
@@ -94,19 +96,31 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
         }
         offlineStart = null; online = true; break
       case 'ALARM_TRIGGERED':
-        alarmStart = t
-        alarmText  = (ev.eventData as { alarmText?: string } | null)?.alarmText ?? null
+        alarmText = (ev.eventData as { alarmText?: string } | null)?.alarmText ?? null
+        if (programRunning) {
+          alarmActive = true   // informatief — programma loopt nog, nog geen downtime
+        } else {
+          alarmStart = t       // machine stond al stil → direct alarmstilstand
+        }
         break
       case 'ALARM_CLEARED':
         if (alarmStart) periods.push({ ...makePeriod('alarmstilstand', alarmStart, t), alarmText })
-        alarmStart = null; alarmText = null; break
+        alarmStart = null; alarmText = null; alarmActive = false; break
       case 'PROGRAM_STOPPED':
         closeWachttijd(t)
         programRunning = false; spindleOffAt = null
         if (online) programStopTime = t
+        // als alarm actief was tijdens run → nu echte alarmstilstand
+        if (alarmActive) { alarmStart = t; alarmActive = false }
         break
       case 'PROGRAM_STARTED':
         programRunning = true
+        // auto-sluit openstaand idle-alarm: nieuw programma gestart = machine hersteld
+        if (alarmStart) {
+          periods.push({ ...makePeriod('alarmstilstand', alarmStart, t), alarmText })
+          alarmStart = null; alarmText = null
+        }
+        alarmActive = false
         if (programStopTime) {
           const gapSec = (t.getTime() - programStopTime.getTime()) / 1000
           if (gapSec > STILSTAND_THRESHOLD_SEC) {
@@ -143,6 +157,7 @@ function deriveDowntimePeriods(events: (typeof cncMachineEvents.$inferSelect)[])
   return {
     periods: periods.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()),
     summary,
+    activeRunningAlarm: (alarmActive && !alarmStart) ? (alarmText ?? '') : null,
   }
 }
 
@@ -297,7 +312,6 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
         const entry = byMachine.get(m.id)!
         const topArticles = [...entry.topArticles.entries()]
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
           .map(([article, seconds]) => ({ article, seconds }))
         return { id: m.id, name: m.name, totalSeconds: entry.totalSeconds, runCount: entry.runCount, topArticles }
       }),
@@ -556,7 +570,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           .where(and(eq(cncMachineEvents.machineId, m.id), gte(cncMachineEvents.occurredAt, since)))
           .orderBy(asc(cncMachineEvents.occurredAt))
 
-        const { periods, summary } = deriveDowntimePeriods(events)
+        const { periods, summary, activeRunningAlarm } = deriveDowntimePeriods(events)
         const periodWorkSec        = weekdaySeconds(since, new Date())
         const totalDowntimeSec     = summary.offline + summary.alarmstilstand + summary.stilstand
         const availabilityPct      = periodWorkSec === 0 ? 100 : Math.max(0, Math.floor((1 - totalDowntimeSec / periodWorkSec) * 100))
@@ -596,26 +610,39 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
 
         // Actief programma: open run zonder endedAt
         const [openRun] = await fastify.db
-          .select({ programName: cncProgramRuns.programName })
+          .select({ programName: cncProgramRuns.programName, startedAt: cncProgramRuns.startedAt })
           .from(cncProgramRuns)
           .where(and(eq(cncProgramRuns.machineId, m.id), isNull(cncProgramRuns.endedAt)))
           .orderBy(desc(cncProgramRuns.startedAt))
           .limit(1)
-        const programRunning = !!openRun
-        const currentProgram = openRun?.programName ?? null
+        const programRunning          = !!openRun
+        const currentProgram          = openRun?.programName ?? null
+        const currentProgramStartedAt = openRun?.startedAt?.toISOString() ?? null
 
         // Status + programmanaam laatste run (alleen als niet actief)
-        let lastRunStatus: string | null = null
+        let lastRunStatus:  string | null = null
         let lastRunProgram: string | null = null
+        let lastRunEndedAt: string | null = null
         if (!programRunning) {
           const [lastRun] = await fastify.db
-            .select({ status: cncProgramRuns.status, programName: cncProgramRuns.programName })
+            .select({ status: cncProgramRuns.status, programName: cncProgramRuns.programName, endedAt: cncProgramRuns.endedAt })
             .from(cncProgramRuns)
             .where(eq(cncProgramRuns.machineId, m.id))
             .orderBy(desc(cncProgramRuns.startedAt))
             .limit(1)
-          lastRunStatus  = lastRun?.status      ?? null
-          lastRunProgram = lastRun?.programName ?? null
+          lastRunStatus  = lastRun?.status             ?? null
+          lastRunProgram = lastRun?.programName        ?? null
+          lastRunEndedAt = lastRun?.endedAt?.toISOString() ?? null
+        }
+
+        // Als programma draait maar events-stroom toont nog een open alarmstilstand:
+        // de twee tabellen lopen uit de pas — behandel als informatief alarm, niet als downtime
+        let effectiveOngoingPeriod    = ongoingPeriod
+        let effectiveActiveRunningAlarm = activeRunningAlarm
+        if (programRunning && ongoingPeriod?.type === 'alarmstilstand') {
+          const p = ongoingPeriod as typeof ongoingPeriod & { alarmText?: string | null }
+          effectiveActiveRunningAlarm = p.alarmText ?? ''
+          effectiveOngoingPeriod      = null
         }
 
         return {
@@ -630,12 +657,15 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
             stilstand:      Math.round(summary.stilstand / 60),
             wachttijd:      Math.round(summary.wachttijd / 60),
           },
-          ongoingPeriod,
+          ongoingPeriod:      effectiveOngoingPeriod,
           currentTool,
           programRunning,
           currentProgram,
           lastRunStatus,
           lastRunProgram,
+          lastRunEndedAt,
+          currentProgramStartedAt,
+          activeRunningAlarm: effectiveActiveRunningAlarm,
           periods: periods.filter(p => weekdaySeconds(p.startedAt, p.endedAt ?? new Date()) > 0),
         }
       })

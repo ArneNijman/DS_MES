@@ -44,6 +44,7 @@ import { startPolling, stopPolling } from './bc/poller.js'
 import { startMaintenanceIntervalChecker, stopMaintenanceIntervalChecker } from './jobs/maintenanceIntervalChecker.js'
 import { startEmailReminders, stopEmailReminders } from './jobs/emailReminders.js'
 import { startStaleRunChecker, stopStaleRunChecker } from './jobs/staleRunChecker.js'
+import { startStaleAlarmChecker, stopStaleAlarmChecker } from './jobs/staleAlarmChecker.js'
 import { startBcOrderArchiver, stopBcOrderArchiver } from './jobs/bcOrderArchiver.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -72,6 +73,7 @@ async function main() {
   startPolling(fastify)
   startMaintenanceIntervalChecker(fastify)
   startStaleRunChecker(fastify)
+  startStaleAlarmChecker(fastify)
   startBcOrderArchiver(fastify)
 
   // Routes
@@ -109,6 +111,7 @@ async function main() {
     stopPolling()
     stopMaintenanceIntervalChecker()
     stopStaleRunChecker()
+    stopStaleAlarmChecker()
     stopBcOrderArchiver()
     stopEmailReminders()
     await fastify.close()

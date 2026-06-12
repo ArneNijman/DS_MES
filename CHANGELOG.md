@@ -9,6 +9,24 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-12] — alarm-downtime correctie + machine dashboard badges
+
+### Toegevoegd
+- **staleAlarmChecker** job (elke 3 uur): detecteert open alarmen zonder `ALARM_CLEARED` en insereert een synthetisch `ALARM_CLEARED` event zodra er een `PROGRAM_STARTED` na het alarm is gekomen — machine hersteld, alarm voorbij
+- **Alarm actief tijdens productie**: nieuw oranje `⚠ Alarm actief` badge op machine-tegels wanneer een alarm triggert terwijl het programma draait; telt niet mee in beschikbaarheid% (was: altijd alarmstilstand)
+- **`activeRunningAlarm`** veld in `/admin/cnc-downtime/all` response
+- **Tijdstip bij programma-badges**: `▶ Loopt`, `⚠ Onderbroken` en `◼ Gestopt` tonen nu starttijd/eindtijd naast de badge, artikel op de regel eronder
+- **`currentProgramStartedAt`** en **`lastRunEndedAt`** velden toegevoegd aan de API response
+- **Verspaantijd artikel-badges**: eerste 5 per machine zichtbaar, "+N meer" chip klapt uit naar alle, "Minder" klapt in — per machine apart, zowel in normale weergave als in zoekresultaten
+
+### Opgelost
+- **Alarm ≠ alarmstilstand**: `deriveDowntimePeriods` onderscheidt nu alarm tijdens stilstand (echte downtime) vs. alarm tijdens run (informatief). `PROGRAM_STOPPED` tijdens actief alarm start de stilstand op stoptijdstip
+- **`PROGRAM_STARTED` sluit open alarm**: als machine een nieuw programma start terwijl een alarm open stond, wordt het alarm automatisch gesloten op dat tijdstip
+- **Programma running + open alarmstilstand (tabellen uit de pas)**: als `cnc_program_runs` een open run toont maar `cnc_machine_events` nog een open alarm, wordt de alarmstilstand automatisch gedemoveerd naar `activeRunningAlarm` (geen downtime)
+- **Dino max 2 C049 alarm (11-06)**: stale alarm opgeschoond via staleAlarmChecker bij eerste opstart
+
+---
+
 ## [2026-06-11] — phantom run cleanup + stale run checker
 
 ### Opgelost

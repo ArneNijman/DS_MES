@@ -31,6 +31,9 @@ interface MachineSummary {
   currentProgram: string | null
   lastRunStatus: string | null
   lastRunProgram: string | null
+  lastRunEndedAt: string | null
+  currentProgramStartedAt: string | null
+  activeRunningAlarm: string | null
   periods: DowntimePeriod[]
 }
 
@@ -471,9 +474,9 @@ function VerspaantijdInfo() {
             <div>
               <p className="font-semibold text-gray-700 mb-1">Hoe wordt de tijd berekend?</p>
               <ul className="space-y-1 ml-1">
-                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>Alle afgeronde runs binnen de periode worden opgeteld per machine</span></li>
+                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>Alle afgeronde runs van hetzelfde artikel worden samengevoegd tot één totaal — draait artikel <code className="bg-gray-100 px-1 rounded">25038-11</code> vandaag 15× gedurende 45 min, dan zie je <strong>11u 15m</strong></span></li>
                 <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>Artikelnummer komt uit het NC-programmapad: <code className="bg-gray-100 px-1 rounded">TNC:\Program\<strong>22073-3201</strong>\bewerking.nc</code></span></li>
-                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>De badges tonen de <strong>top 3 artikelen</strong> waaraan die machine de meeste tijd kwijt was</span></li>
+                <li className="flex gap-2"><span className="text-teal-500 font-bold">·</span><span>De badges tonen <strong>alle artikelen</strong> waaraan die machine tijd kwijt was, gesorteerd op meeste tijd</span></li>
               </ul>
             </div>
 
@@ -494,11 +497,16 @@ function VerspaantijdInfo() {
 
 // ── Verspaantijd sectie ────────────────────────────────────────────────────
 
-const VERSPAANTIJD_VISIBLE = 5
+const VERSPAANTIJD_VISIBLE  = 5
+const ARTICLES_VISIBLE      = 5
 
 function VerspaantijdSectie({ days }: { days: number }) {
   const [showAll, setShowAll]               = useState(false)
   const [hiddenArticles, setHiddenArticles] = useState<Set<string>>(new Set())
+  const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set())
+
+  const toggleMachineExpand = (id: string) =>
+    setExpandedMachines(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [articleSearch, setArticleSearch]   = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -605,28 +613,49 @@ function VerspaantijdSectie({ days }: { days: number }) {
                                 </span>
                               </div>
                             </div>
-                            {m.articles.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
-                                {m.articles.map(({ article, seconds }) => {
-                                  const isHidden = hiddenArticles.has(article)
-                                  return (
+                            {m.articles.length > 0 && (() => {
+                              const expanded = expandedMachines.has(m.id)
+                              const visibleA = expanded ? m.articles : m.articles.slice(0, ARTICLES_VISIBLE)
+                              const hiddenCount = m.articles.length - ARTICLES_VISIBLE
+                              return (
+                                <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
+                                  {visibleA.map(({ article, seconds }) => {
+                                    const isHidden = hiddenArticles.has(article)
+                                    return (
+                                      <button
+                                        key={article}
+                                        onClick={() => toggleArticle(article)}
+                                        title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                        className={cn(
+                                          'px-2 py-0.5 rounded-full text-xs transition-colors',
+                                          isHidden
+                                            ? 'bg-gray-100 text-gray-400 line-through'
+                                            : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+                                        )}
+                                      >
+                                        {article} · {formatDuration(Math.round(seconds / 60))}
+                                      </button>
+                                    )
+                                  })}
+                                  {!expanded && hiddenCount > 0 && (
                                     <button
-                                      key={article}
-                                      onClick={() => toggleArticle(article)}
-                                      title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
-                                      className={cn(
-                                        'px-2 py-0.5 rounded-full text-xs transition-colors',
-                                        isHidden
-                                          ? 'bg-gray-100 text-gray-400 line-through'
-                                          : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
-                                      )}
+                                      onClick={() => toggleMachineExpand(m.id)}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                                     >
-                                      {article} · {formatDuration(Math.round(seconds / 60))}
+                                      +{hiddenCount} meer
                                     </button>
-                                  )
-                                })}
-                              </div>
-                            )}
+                                  )}
+                                  {expanded && hiddenCount > 0 && (
+                                    <button
+                                      onClick={() => toggleMachineExpand(m.id)}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                                    >
+                                      Minder
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         )
                       })}
@@ -663,28 +692,49 @@ function VerspaantijdSectie({ days }: { days: number }) {
                       </span>
                     </div>
                   </div>
-                  {m.topArticles.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
-                      {m.topArticles.map(({ article, seconds }) => {
-                        const isHidden = hiddenArticles.has(article)
-                        return (
+                  {m.topArticles.length > 0 && (() => {
+                    const expanded = expandedMachines.has(m.id)
+                    const visible  = expanded ? m.topArticles : m.topArticles.slice(0, ARTICLES_VISIBLE)
+                    const hidden   = m.topArticles.length - ARTICLES_VISIBLE
+                    return (
+                      <div className="mt-2 flex flex-wrap gap-1.5 pl-40">
+                        {visible.map(({ article, seconds }) => {
+                          const isHidden = hiddenArticles.has(article)
+                          return (
+                            <button
+                              key={article}
+                              onClick={() => toggleArticle(article)}
+                              title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                              className={cn(
+                                'px-2 py-0.5 rounded-full text-xs transition-colors',
+                                isHidden
+                                  ? 'bg-gray-100 text-gray-400 line-through'
+                                  : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+                              )}
+                            >
+                              {article} · {formatDuration(Math.round(seconds / 60))}
+                            </button>
+                          )
+                        })}
+                        {!expanded && hidden > 0 && (
                           <button
-                            key={article}
-                            onClick={() => toggleArticle(article)}
-                            title={isHidden ? 'Klik om te tonen' : 'Klik om te verbergen'}
-                            className={cn(
-                              'px-2 py-0.5 rounded-full text-xs transition-colors',
-                              isHidden
-                                ? 'bg-gray-100 text-gray-400 line-through'
-                                : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
-                            )}
+                            onClick={() => toggleMachineExpand(m.id)}
+                            className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                           >
-                            {article} · {formatDuration(Math.round(seconds / 60))}
+                            +{hidden} meer
                           </button>
-                        )
-                      })}
-                    </div>
-                  )}
+                        )}
+                        {expanded && hidden > 0 && (
+                          <button
+                            onClick={() => toggleMachineExpand(m.id)}
+                            className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                          >
+                            Minder
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
@@ -761,43 +811,63 @@ function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: 
 
         {/* Programma status */}
         {machine.programRunning ? (
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700">
               ▶ Loopt
             </span>
-            {article && <span className="text-xs text-gray-500 truncate">{article}</span>}
+            <span className="text-xs text-gray-400 truncate">{machine.currentProgramStartedAt ? formatTime(machine.currentProgramStartedAt) : ''}</span>
+            <span />
+            {article && <p className="text-xs text-gray-500 truncate">{article}</p>}
           </div>
         ) : machine.lastRunStatus === 'interrupted' ? (
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
               ⚠ Onderbroken
             </span>
-            {lastArticle && <span className="text-xs text-gray-500 truncate">{lastArticle}</span>}
+            <span className="text-xs text-gray-400 truncate">{machine.lastRunEndedAt ? formatTime(machine.lastRunEndedAt) : ''}</span>
+            <span />
+            {lastArticle && <p className="text-xs text-gray-500 truncate">{lastArticle}</p>}
           </div>
         ) : machine.lastRunStatus === 'completed' || machine.lastRunStatus === 'stopped' ? (
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
               ◼ Gestopt
             </span>
-            {lastArticle && <span className="text-xs text-gray-500 truncate">{lastArticle}</span>}
+            <span className="text-xs text-gray-400 truncate">{machine.lastRunEndedAt ? formatTime(machine.lastRunEndedAt) : ''}</span>
+            <span />
+            {lastArticle && <p className="text-xs text-gray-500 truncate">{lastArticle}</p>}
           </div>
         ) : null}
 
         {/* Alarmstilstand / Stilstand / Wachttijd (als actief, niet offline) */}
         {period && period.type !== 'offline' && (
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', DOWNTIME_BADGE[period.type])}>
-                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                {DOWNTIME_LABEL[period.type]}
-              </span>
-              <span className="text-xs text-gray-400">{formatTime(period.startedAt)}</span>
-            </div>
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
+            <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', DOWNTIME_BADGE[period.type])}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              {DOWNTIME_LABEL[period.type]}
+            </span>
+            <span className="text-xs text-gray-400 truncate">{formatTime(period.startedAt)}</span>
             {period.type === 'alarmstilstand' && (period as DowntimePeriod & { alarmText?: string | null }).alarmText && (
-              <p className="text-xs text-red-500 truncate" title={(period as DowntimePeriod & { alarmText?: string | null }).alarmText ?? ''}>
-                {(period as DowntimePeriod & { alarmText?: string | null }).alarmText}
-              </p>
+              <>
+                <span />
+                <p className="text-xs text-red-500 truncate" title={(period as DowntimePeriod & { alarmText?: string | null }).alarmText ?? ''}>
+                  {(period as DowntimePeriod & { alarmText?: string | null }).alarmText}
+                </p>
+              </>
             )}
+          </div>
+        )}
+
+        {/* Alarm actief terwijl programma draait — geen downtime, wel tonen */}
+        {machine.activeRunningAlarm && (
+          <div className="space-y-0.5">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+              ⚠ Alarm actief
+            </span>
+            <p className="text-xs text-orange-500 truncate" title={machine.activeRunningAlarm}>
+              {machine.activeRunningAlarm}
+            </p>
           </div>
         )}
 
