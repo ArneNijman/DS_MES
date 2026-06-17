@@ -399,23 +399,6 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
     if (file) await handlePhotoFile(file)
   }
 
-  // Ref zodat de paste-handler altijd de meest recente versie van handlePhotoFile aanroept,
-  // ook als de component re-rendert (stale closure voorkomen).
-  const handlePhotoFileRef = useRef(handlePhotoFile)
-  useEffect(() => { handlePhotoFileRef.current = handlePhotoFile })
-
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      if (!isPrivileged()) return
-      const file = Array.from(e.clipboardData?.items ?? [])
-        .find(item => item.type.startsWith('image/'))
-        ?.getAsFile()
-      if (file) { e.preventDefault(); handlePhotoFileRef.current(file) }
-    }
-    document.addEventListener('paste', onPaste, true)
-    return () => document.removeEventListener('paste', onPaste, true)
-  }, [])
-
   const deleteSession = useMutation({
     mutationFn: (sessId: string) =>
       apiFetch(`/kiosk/meetmiddelen/${tool!.id}/internal-sessions/${sessId}`, { method: 'DELETE' }),
@@ -1861,7 +1844,11 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
   const updateTool = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       apiFetch(`/kiosk/meetmiddelen/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['meetmiddelen'] }); setModal(null) },
+    onSuccess: async (_, { id }) => {
+      await qc.invalidateQueries({ queryKey: ['meetmiddelen'] })
+      const fresh = (qc.getQueryData<MeasuringTool[]>(['meetmiddelen']) ?? []).find(t => t.id === id)
+      if (fresh) setModal(fresh)
+    },
   })
 
   const deleteTool = useMutation({
@@ -1870,6 +1857,35 @@ export function MeetmiddelenContent({ openToolId, onPendingConsumed }: { openToo
   })
 
   const canEdit = isPrivileged()
+
+  const modalRef = useRef<MeasuringTool | null | 'nieuw'>(null)
+  modalRef.current = modal
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const m = modalRef.current
+      if (!m || m === 'nieuw') return
+      const toolId = (m as MeasuringTool).id
+      const file = Array.from(e.clipboardData?.items ?? [])
+        .find(item => item.type.startsWith('image/'))
+        ?.getAsFile()
+      if (!file) return
+      e.preventDefault()
+      const fd = new FormData()
+      fd.append('file', file)
+      const token = localStorage.getItem(EMPLOYEE_TOKEN_KEY) ?? localStorage.getItem(ADMIN_TOKEN_KEY)
+      fetch(`/api/kiosk/meetmiddelen/${toolId}/photo`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+      }).then(async res => {
+        if (!res.ok) return
+        await qc.invalidateQueries({ queryKey: ['meetmiddelen'] })
+        const fresh = (qc.getQueryData<MeasuringTool[]>(['meetmiddelen']) ?? []).find(t => t.id === toolId)
+        if (fresh) setModal(fresh)
+      })
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [])
 
   const filtered = tools.filter((t) => {
     const q = search.toLowerCase()

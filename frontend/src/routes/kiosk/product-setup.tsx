@@ -852,7 +852,7 @@ function SetupDetail({
 }) {
   const qc = useQueryClient()
   const [selectedStepId, setSelectedStepId]     = useState<string | null>(null)
-  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht' | 'maten'>('cnc')
+  const [activeTab, setActiveTab]               = useState<'info' | 'cnc' | 'bijlagen' | 'overdracht' | 'maten'>('info')
   const [showAddStep, setShowAddStep]           = useState(false)
   const [newStepName, setNewStepName]           = useState('')
   const [newBewerkingNr, setNewBewerkingNr]     = useState('')
