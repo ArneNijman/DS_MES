@@ -195,6 +195,7 @@ function NcrBijlagesTab({ ncrId }: { ncrId: string }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
 
   const { data: attachments = [] } = useQuery<NcrAttachment[]>({
     queryKey: ['ncr-attachments', ncrId],
@@ -206,10 +207,11 @@ function NcrBijlagesTab({ ncrId }: { ncrId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ncr-attachments', ncrId] }),
   })
 
-  async function handleUpload(files: FileList) {
+  async function handleUpload(files: File[]) {
+    if (!files.length) return
     setUploading(true)
     try {
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const fd = new FormData()
         fd.append('file', file)
         await apiFetch(`/kiosk/ncr/${ncrId}/attachments`, { method: 'POST', body: fd })
@@ -220,8 +222,25 @@ function NcrBijlagesTab({ ncrId }: { ncrId: string }) {
     }
   }
 
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter(item => item.kind === 'file')
+        .map(item => item.getAsFile())
+        .filter(Boolean) as File[]
+      if (files.length) { e.preventDefault(); handleUpload(files) }
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [ncrId])
+
   return (
-    <div className="p-6">
+    <div
+      className="p-6"
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
+      onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleUpload(Array.from(e.dataTransfer.files)) }}
+    >
       {/* Upload knop */}
       <div className="flex items-center justify-between mb-5">
         <p className="text-sm text-gray-500">{attachments.length} bijlage{attachments.length !== 1 ? 's' : ''}</p>
@@ -240,17 +259,18 @@ function NcrBijlagesTab({ ncrId }: { ncrId: string }) {
           multiple
           accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
           className="hidden"
-          onChange={(e) => { if (e.target.files?.length) handleUpload(e.target.files) }}
+          onChange={(e) => { if (e.target.files?.length) handleUpload(Array.from(e.target.files)) }}
         />
       </div>
 
       {/* Tegel grid */}
       {attachments.length === 0 ? (
-        <div className="border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center h-36">
-          <p className="text-sm text-gray-400">Nog geen bijlages toegevoegd</p>
+        <div className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center h-36 gap-1.5 transition-colors ${isDragging ? 'border-teal-400 bg-teal-50' : 'border-gray-200'}`}>
+          <p className="text-sm text-gray-400">Sleep bestanden hierheen</p>
+          <p className="text-xs text-gray-300">of Ctrl+V om te plakken</p>
         </div>
       ) : (
-        <div className="grid grid-cols-4 gap-3">
+        <div className={`grid grid-cols-4 gap-3 rounded-xl transition-colors ${isDragging ? 'ring-2 ring-teal-400 ring-offset-2' : ''}`}>
           {attachments.map((att) => (
             <div key={att.id} className="group relative rounded-xl overflow-hidden border border-gray-100 bg-gray-50 aspect-square">
               {isImage(att.mimeType, att.fileName) ? (

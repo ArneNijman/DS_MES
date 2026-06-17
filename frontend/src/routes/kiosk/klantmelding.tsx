@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, X, ChevronRight, RefreshCw, UserCheck, Upload, FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
@@ -261,6 +261,7 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
   const currentUser = getLoggedInUser()
   const [tab, setTab] = useState<CtrTab>('melding')
   const docRef = useRef<HTMLInputElement>(null)
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false)
 
   const { data: nextIdData } = useQuery<{ ctrId: string }>({
     queryKey: ['klantmelding-next-id'],
@@ -288,8 +289,7 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
     refetchIntervalInBackground: true,
   })
 
-  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
+  const handleDocUploadFiles = async (files: File[]) => {
     if (!files.length || !initial.id) return
     const token = localStorage.getItem(EMPLOYEE_TOKEN_KEY) ?? localStorage.getItem(ADMIN_TOKEN_KEY)
     for (const file of files) {
@@ -299,9 +299,26 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
       })
     }
-    e.target.value = ''
     refetchDocs()
   }
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await handleDocUploadFiles(Array.from(e.target.files ?? []))
+    e.target.value = ''
+  }
+
+  useEffect(() => {
+    if (tab !== 'bijlages' || !isEdit) return
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter(item => item.kind === 'file')
+        .map(item => item.getAsFile())
+        .filter(Boolean) as File[]
+      if (files.length) { e.preventDefault(); handleDocUploadFiles(files) }
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [tab, isEdit, initial.id])
 
   const deleteDoc = useMutation({
     mutationFn: (docId: string) =>
@@ -564,7 +581,12 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
 
           {/* ── Tab: Bijlages ── */}
           {tab === 'bijlages' && (
-            <div className="p-6">
+            <div
+              className="p-6"
+              onDragOver={(e) => { e.preventDefault(); if (isEdit) setIsDraggingDoc(true) }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingDoc(false) }}
+              onDrop={(e) => { e.preventDefault(); setIsDraggingDoc(false); if (isEdit) handleDocUploadFiles(Array.from(e.dataTransfer.files)) }}
+            >
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-gray-500">Bijgevoegde bestanden bij deze klantmelding.</p>
                 {isEdit && (
@@ -581,9 +603,12 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
               {!isEdit ? (
                 <p className="text-sm text-gray-400">Sla de klantmelding eerst op om bijlages toe te voegen.</p>
               ) : documents.length === 0 ? (
-                <p className="text-sm text-gray-400">Geen bijlages.</p>
+                <div className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center h-28 gap-1.5 transition-colors ${isDraggingDoc ? 'border-teal-400 bg-teal-50' : 'border-gray-200'}`}>
+                  <p className="text-sm text-gray-400">Sleep bestanden hierheen</p>
+                  <p className="text-xs text-gray-300">of Ctrl+V om te plakken</p>
+                </div>
               ) : (
-                <div className="border border-gray-100 rounded-xl overflow-hidden">
+                <div className={`border rounded-xl overflow-hidden transition-colors ${isDraggingDoc ? 'border-teal-400 ring-2 ring-teal-400 ring-offset-1' : 'border-gray-100'}`}>
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>

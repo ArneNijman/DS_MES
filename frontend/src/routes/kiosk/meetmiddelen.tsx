@@ -382,9 +382,8 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
   })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !tool?.id) return
+  const handlePhotoFile = async (file: File) => {
+    if (!tool?.id) return
     const fd = new FormData()
     fd.append('file', file)
     const token = localStorage.getItem(EMPLOYEE_TOKEN_KEY) ?? localStorage.getItem(ADMIN_TOKEN_KEY)
@@ -394,6 +393,23 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
     qc.invalidateQueries({ queryKey: ['meetmiddelen'] })
     onRefresh()
   }
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) await handlePhotoFile(file)
+  }
+
+  useEffect(() => {
+    if (!tool?.id || !canEdit) return
+    const onPaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.items ?? [])
+        .find(item => item.type.startsWith('image/'))
+        ?.getAsFile()
+      if (file) { e.preventDefault(); handlePhotoFile(file) }
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [tool?.id, canEdit])
 
   const deleteSession = useMutation({
     mutationFn: (sessId: string) =>
@@ -681,6 +697,7 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
                       >
                         {tool?.photoUrl ? 'Wijzigen' : 'Uploaden'}
                       </button>
+                      <span className="text-xs text-gray-300">of Ctrl+V</span>
                       <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
                     </>
                   )}
