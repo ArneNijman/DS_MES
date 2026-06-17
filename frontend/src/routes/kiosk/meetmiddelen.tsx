@@ -406,7 +406,7 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (!canEdit) return
+      if (!isPrivileged()) return
       const file = Array.from(e.clipboardData?.items ?? [])
         .find(item => item.type.startsWith('image/'))
         ?.getAsFile()
