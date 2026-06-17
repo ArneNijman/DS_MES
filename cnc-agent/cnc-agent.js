@@ -296,6 +296,9 @@ const machineState = new Map()
  */
 const machineBackoff = new Map()
 
+// Laatste staat met echte LSV2-data per machine (bewaard bij TCP-fallback)
+const machineGoodState = new Map()
+
 // ── LSV2 R_RI constanten (pyLSV2) ─────────────────────────────────────────────
 const LSV2_A_LGINSPECT = Buffer.from('00000008415f4c47494e5350454354 00'.replace(/\s/g,''), 'hex')
 const LSV2_C_CC_03     = Buffer.from('00000002435f434300 03'.replace(/\s/g,''), 'hex')
@@ -1016,6 +1019,23 @@ async function pollMachineState(machine) {
     if (reachable) {
       online = true
       curr = { online: true, program: null, pgmState: null, tool: null, alarm: false, alarmText: null, spindleRunning: null }
+    }
+  }
+
+  // Last-known-good: bewaar laatste echte LSV2-staat, herstel bij TCP-only fallback
+  if (!online) {
+    machineGoodState.delete(machine.id)
+  } else if (curr) {
+    const lsv2HasData = curr.pgmState !== null || curr.program !== null
+    if (lsv2HasData) {
+      machineGoodState.set(machine.id, { program: curr.program, pgmState: curr.pgmState })
+    } else {
+      const good = machineGoodState.get(machine.id)
+      if (good) {
+        console.log(`   🔄  ${machine.name}: LSV2-blip, vorige staat bewaard (pgm: ${good.program ?? 'geen'})`)
+        curr.program  = good.program
+        curr.pgmState = good.pgmState
+      }
     }
   }
 

@@ -9,6 +9,13 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-17] — last-known-good state in CNC agent
+
+### Opgelost
+- **Spurious PROGRAM_STARTED na LSV2-blip**: bij een transiënte LSV2-fout (TCP bereikbaar, maar `pgmState=null` en `program=null`) werd de vorige geldige staat overschreven met null. Na herstel dacht `diffState` dat het programma opnieuw gestart was. Fix: `machineGoodState` Map bewaart de laatste echte LSV2-staat en vult `curr` in bij TCP-only fallback. Bij offline wordt de good state gewist zodat overgebleven staat na herverbinding niet gebruikt wordt.
+
+---
+
 ## [2026-06-17] — CNC agent stabiliteit + programmastate betrouwbaarheid
 
 ### Toegevoegd
