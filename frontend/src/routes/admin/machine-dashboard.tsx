@@ -34,6 +34,7 @@ interface MachineSummary {
   lastRunEndedAt: string | null
   currentProgramStartedAt: string | null
   activeRunningAlarm: string | null
+  programStateKnown: boolean
   periods: DowntimePeriod[]
 }
 
@@ -819,7 +820,7 @@ function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: 
             <span />
             {article && <p className="text-xs text-gray-500 truncate">{article}</p>}
           </div>
-        ) : machine.lastRunStatus === 'interrupted' ? (
+        ) : machine.programStateKnown && machine.lastRunStatus === 'interrupted' ? (
           <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
               ⚠ Onderbroken
@@ -828,7 +829,7 @@ function MachineTegel({ machine, onClick }: { machine: MachineSummary; onClick: 
             <span />
             {lastArticle && <p className="text-xs text-gray-500 truncate">{lastArticle}</p>}
           </div>
-        ) : machine.lastRunStatus === 'completed' || machine.lastRunStatus === 'stopped' ? (
+        ) : machine.programStateKnown && (machine.lastRunStatus === 'completed' || machine.lastRunStatus === 'stopped') ? (
           <div className="grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-0.5">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
               ◼ Gestopt
@@ -1055,7 +1056,7 @@ function getSinceDate(days: number): string {
 type DashboardTab = 'beschikbaarheid' | 'spindeluren' | 'verspaantijd'
 
 export function MachineDashboardContent() {
-  const [days, setDays] = useState(7)
+  const [days, setDays] = useState(0)
   const [tab, setTab]   = useState<DashboardTab>('beschikbaarheid')
 
   const { data, isLoading } = useQuery<DashboardData>({

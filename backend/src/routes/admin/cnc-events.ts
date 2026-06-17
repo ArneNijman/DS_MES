@@ -645,6 +645,19 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           effectiveOngoingPeriod      = null
         }
 
+        // Bepaal of de programmastate betrouwbaar is.
+        // Als het laatste event van de machine MACHINE_ONLINE is, heeft de agent zich
+        // zojuist (her)verbonden maar nog geen programma-status gestuurd — bijv. programma
+        // draaide al vóór de verbinding (overgang gemist) of machine ondersteunt geen
+        // PROGRAM_STARTED (te oude software). In dat geval: toon geen "Gestopt" badge.
+        const [lastEventRow] = await fastify.db
+          .select({ eventType: cncMachineEvents.eventType })
+          .from(cncMachineEvents)
+          .where(eq(cncMachineEvents.machineId, m.id))
+          .orderBy(desc(cncMachineEvents.occurredAt))
+          .limit(1)
+        const programStateKnown = programRunning || lastEventRow?.eventType !== 'MACHINE_ONLINE'
+
         return {
           id:   m.id,
           name: m.name,
@@ -666,6 +679,7 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           lastRunEndedAt,
           currentProgramStartedAt,
           activeRunningAlarm: effectiveActiveRunningAlarm,
+          programStateKnown,
           periods: periods.filter(p => weekdaySeconds(p.startedAt, p.endedAt ?? new Date()) > 0),
         }
       })

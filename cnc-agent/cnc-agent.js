@@ -30,7 +30,7 @@ const INTERVAL_MIN     = parseInt(process.env.SYNC_INTERVAL_MIN         ?? '30',
 const TIMEOUT_MS       = parseInt(process.env.TNCCMD_TIMEOUT_MS         ?? '30000', 10)
 const AGENT_PORT       = parseInt(process.env.AGENT_PORT                ?? '3099', 10)
 const WINTOOL_DB_PATH  = process.env.WINTOOL_DB_PATH          ?? null
-const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '10000', 10)
+const STATE_POLL_MS    = parseInt(process.env.CNC_STATE_POLL_INTERVAL_MS ?? '20000', 10)
 const STATE_POLL_ENABLED = (process.env.CNC_STATE_POLL_ENABLED ?? 'true') === 'true'
 const STARTUP_GRACE_MS = parseInt(process.env.STARTUP_GRACE_MS ?? String(10 * 60 * 1000), 10)
 
@@ -251,7 +251,7 @@ function lsv2Command(ip, command, timeoutMs = 5000) {
     const done = (fn, val) => {
       if (settled) return
       settled = true
-      socket.destroy()
+      try { socket.end() } catch { socket.destroy() }
       fn(val)
     }
 
@@ -462,7 +462,7 @@ async function readMachineState(machine) {
 
     const finish = (online) => {
       clearTimeout(timer)
-      s.destroy()
+      try { s.end() } catch { s.destroy() }
       if (!online) return resolve(null)
       const spindleRunning = pgmState === PGM_STATE_STARTED && spindleSpeed !== null
         ? spindleSpeed > 0.0
@@ -927,6 +927,9 @@ function diffState(prev, curr, machineOnline) {
     // Eerste detectie: sla ook het actieve gereedschap op
     if (curr.tool !== null)
       events.push({ eventType: 'TOOL_CHANGED', eventData: { from: null, to: curr.tool }, programName: curr.program ?? null, occurredAt: now })
+    // Programma al actief bij eerste detectie (agent opgestart terwijl machine draait)
+    if (curr.pgmState === PGM_STATE_STARTED || (curr.pgmState === null && curr.program))
+      events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program ?? null, occurredAt: now })
     return events
   }
 
@@ -938,6 +941,9 @@ function diffState(prev, curr, machineOnline) {
   // Offline → online
   if (!prev.online && curr.online) {
     events.push({ eventType: 'MACHINE_ONLINE', occurredAt: now })
+    // Programma al actief na herverbinding (overgang gemist tijdens offline periode)
+    if (curr.pgmState === PGM_STATE_STARTED || (curr.pgmState === null && curr.program))
+      events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program ?? null, occurredAt: now })
   }
 
   // Programma start/stop via pgmState (R_RI) of fallback op programmanaam-wissel
@@ -951,9 +957,12 @@ function diffState(prev, curr, machineOnline) {
       events.push({ eventType: 'PROGRAM_STOPPED', programName: prev.program ?? null, occurredAt: now, pgmStateAtStop: curr.pgmState })
     }
   } else if (prev.program !== curr.program) {
+    // Alleen PROGRAM_STOPPED emitteren als LSV2 echte data teruggeeft.
+    // Als beide null zijn (TCP-ping only, LSV2 volledig gefaald), weten we niet of het programma gestopt is.
+    const lsv2Reliable = curr.pgmState !== null || curr.program !== null
     if (!prev.program && curr.program) {
       events.push({ eventType: 'PROGRAM_STARTED', programName: curr.program, occurredAt: now })
-    } else if (prev.program && !curr.program) {
+    } else if (prev.program && !curr.program && lsv2Reliable) {
       events.push({ eventType: 'PROGRAM_STOPPED', programName: prev.program, occurredAt: now })
     }
   }
@@ -1110,7 +1119,10 @@ async function pollAllMachineStates() {
     await authenticate()
     const machines = await getCncMachines()
     const freesmachines = machines.filter(m => m.cncIpAddress && m.category === 'Freesmachine')
-    await Promise.allSettled(freesmachines.map(m => pollMachineState(m)))
+    // Sequentieel pollen — voorkomt gelijktijdige verbindingen naar meerdere controllers
+    for (const m of freesmachines) {
+      await pollMachineState(m).catch(() => {})
+    }
   } catch (err) {
     console.error(`❌  State poll mislukt: ${err.message}`)
   } finally {

@@ -9,6 +9,24 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-17] — CNC agent stabiliteit + programmastate betrouwbaarheid
+
+### Toegevoegd
+- **`programStateKnown` vlag** in `/admin/cnc-downtime/all` API response: `false` als het laatste event `MACHINE_ONLINE` is zonder opvolgende programma-events (herverbinding of te oude software zoals MTE 3200). Dashboard toont dan geen `◼ Gestopt` of `⚠ Onderbroken` badge
+
+### Opgelost
+- **Agent miste PROGRAM_STARTED bij eerste detectie**: als de agent opstarte terwijl een programma al draaide, werd dit niet gedetecteerd. `diffState` controleert nu ook bij eerste detectie (`!prev`) of `pgmState === 0` of programmanaam aanwezig is
+- **Agent miste PROGRAM_STARTED na offline→online**: zelfde fix toegepast op de offline→online transitie — programma dat al draaide vóór de herverbinding wordt nu alsnog als gestart geregistreerd
+- **Valse PROGRAM_STOPPED bij LSV2-blip**: als LSV2 transiënt faalt (TCP bereikbaar maar `pgmState=null` en `program=null`), werd in de fallback-branch toch een `PROGRAM_STOPPED` geëmit. Fix: `PROGRAM_STOPPED` alleen emitteren als `lsv2Reliable` (`pgmState !== null || program !== null`)
+
+### Verbeterd
+- **Poll interval**: standaard 10s → 20s (`CNC_STATE_POLL_INTERVAL_MS`) — minder gelijktijdige TCP-verbindingen naar controllers
+- **Graceful socket close**: `socket.end()` i.p.v. `socket.destroy()` in `lsv2Command` en `readMachineState` — vermindert RST-pakketten richting controller
+- **Sequentieel pollen**: `Promise.allSettled` vervangen door `for`-loop — opent slechts één verbinding tegelijk (was parallel alle machines gelijktijdig)
+- **Machine dashboard standaard periode**: "Vandaag" (vanaf 05:30) als standaardweergave
+
+---
+
 ## [2026-06-12] — meetmiddelen status "Zoek"
 
 ### Toegevoegd
