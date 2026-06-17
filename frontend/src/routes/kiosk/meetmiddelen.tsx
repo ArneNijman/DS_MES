@@ -399,17 +399,22 @@ function DetailModal({ tool, nextId, onSave, onClose, loading, onRefresh }: Deta
     if (file) await handlePhotoFile(file)
   }
 
+  // Ref zodat de paste-handler altijd de meest recente versie van handlePhotoFile aanroept,
+  // ook als de component re-rendert (stale closure voorkomen).
+  const handlePhotoFileRef = useRef(handlePhotoFile)
+  useEffect(() => { handlePhotoFileRef.current = handlePhotoFile })
+
   useEffect(() => {
-    if (!tool?.id || !canEdit) return
     const onPaste = (e: ClipboardEvent) => {
+      if (!canEdit) return
       const file = Array.from(e.clipboardData?.items ?? [])
         .find(item => item.type.startsWith('image/'))
         ?.getAsFile()
-      if (file) { e.preventDefault(); handlePhotoFile(file) }
+      if (file) { e.preventDefault(); handlePhotoFileRef.current(file) }
     }
     document.addEventListener('paste', onPaste, true)
     return () => document.removeEventListener('paste', onPaste, true)
-  }, [tool?.id, canEdit])
+  }, [])
 
   const deleteSession = useMutation({
     mutationFn: (sessId: string) =>
