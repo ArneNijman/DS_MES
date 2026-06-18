@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, X, ChevronRight, RefreshCw, UserCheck, Upload, FileText, ExternalLink, Trash2 } from 'lucide-react'
+import { Plus, Search, X, ChevronRight, RefreshCw, UserCheck, Upload, FileText, Paperclip } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { EMPLOYEE_TOKEN_KEY, ADMIN_TOKEN_KEY } from '@/lib/auth'
@@ -262,6 +262,7 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
   const [tab, setTab] = useState<CtrTab>('melding')
   const docRef = useRef<HTMLInputElement>(null)
   const [isDraggingDoc, setIsDraggingDoc] = useState(false)
+  const [lightbox, setLightbox] = useState<string | null>(null)
 
   const { data: nextIdData } = useQuery<{ ctrId: string }>({
     queryKey: ['klantmelding-next-id'],
@@ -587,14 +588,14 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingDoc(false) }}
               onDrop={(e) => { e.preventDefault(); setIsDraggingDoc(false); if (isEdit) handleDocUploadFiles(Array.from(e.dataTransfer.files)) }}
             >
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-gray-500">Bijgevoegde bestanden bij deze klantmelding.</p>
+              <div className="flex items-center justify-between mb-5">
+                <p className="text-sm text-gray-500">{documents.length} bijlage{documents.length !== 1 ? 's' : ''}</p>
                 {isEdit && (
                   <button
                     onClick={() => docRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:border-teal-400 text-gray-500 hover:text-teal-600 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    <Upload size={12} /> Bestand toevoegen
+                    <Upload size={14} /> Bestand toevoegen
                   </button>
                 )}
                 <input ref={docRef} type="file" multiple className="hidden" onChange={handleDocUpload} />
@@ -608,49 +609,71 @@ function CtrDetailModal({ initial, onSave, onClose, loading }: CtrDetailModalPro
                   <p className="text-xs text-gray-300">of Ctrl+V om te plakken</p>
                 </div>
               ) : (
-                <div className={`border rounded-xl overflow-hidden transition-colors ${isDraggingDoc ? 'border-teal-400 ring-2 ring-teal-400 ring-offset-1' : 'border-gray-100'}`}>
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <th className="text-left px-4 py-2 text-xs text-gray-500 font-medium">Bestandsnaam</th>
-                        <th className="text-left px-4 py-2 text-xs text-gray-500 font-medium">Datum</th>
-                        <th className="px-4 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {documents.map((doc) => (
-                        <tr key={doc.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2 text-gray-700">
-                              <FileText size={13} className="text-gray-400 shrink-0" />
-                              {doc.documentNaam ?? 'Bestand'}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-500 text-xs">{doc.datum ?? '—'}</td>
-                          <td className="px-4 py-2.5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {doc.fileUrl && (
-                                <a
-                                  href={doc.fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1 text-gray-400 hover:text-teal-600 transition-colors"
-                                >
-                                  <ExternalLink size={13} />
-                                </a>
-                              )}
-                              <button
-                                onClick={() => deleteDoc.mutate(doc.id)}
-                                className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className={`grid grid-cols-4 gap-3 rounded-xl transition-colors ${isDraggingDoc ? 'ring-2 ring-teal-400 ring-offset-2' : ''}`}>
+                  {documents.map((doc) => {
+                    const name = doc.documentNaam ?? doc.fileUrl ?? ''
+                    const isImg = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(name)
+                    const isPdf = /\.pdf$/i.test(name)
+                    return (
+                      <div key={doc.id} className="group relative rounded-xl overflow-hidden border border-gray-100 bg-gray-50 aspect-square">
+                        {isImg ? (
+                          <img
+                            src={doc.fileUrl ?? ''}
+                            className="w-full h-full object-cover cursor-pointer"
+                            onClick={() => doc.fileUrl && setLightbox(doc.fileUrl)}
+                          />
+                        ) : isPdf ? (
+                          <div
+                            className="w-full h-full overflow-hidden cursor-pointer"
+                            onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
+                          >
+                            <iframe
+                              src={doc.fileUrl ?? ''}
+                              title={doc.documentNaam ?? ''}
+                              loading="lazy"
+                              className="border-none pointer-events-none absolute top-0 left-0"
+                              style={{ width: '800px', height: '800px', transform: 'scale(0.2)', transformOrigin: 'top left' }}
+                            />
+                          </div>
+                        ) : (
+                          <a
+                            href={doc.fileUrl ?? '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex flex-col items-center justify-center w-full h-full gap-2 hover:bg-gray-100 transition-colors"
+                          >
+                            <Paperclip size={22} className="text-gray-400" />
+                            <span className="text-xs text-gray-500 text-center px-2 truncate w-full text-center">{doc.documentNaam}</span>
+                          </a>
+                        )}
+                        {isImg && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/40 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <p className="text-xs text-white truncate">{doc.documentNaam}</p>
+                          </div>
+                        )}
+                        {isEdit && (
+                          <button
+                            onClick={() => { if (confirm('Bijlage verwijderen?')) deleteDoc.mutate(doc.id) }}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {lightbox && (
+                <div
+                  className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+                  onClick={() => setLightbox(null)}
+                >
+                  <img src={lightbox} className="max-w-full max-h-full rounded-lg shadow-2xl" />
+                  <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white hover:text-gray-300">
+                    <X size={24} />
+                  </button>
                 </div>
               )}
             </div>

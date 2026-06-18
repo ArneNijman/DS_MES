@@ -4545,6 +4545,19 @@ function BijlagenTab({ step }: { step: Step }) {
                     >
                       <img src={att.fileUrl} alt={att.fileName} className="w-full h-full object-cover" />
                     </button>
+                  ) : (att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.fileName)) ? (
+                    <div
+                      className="w-full h-full overflow-hidden cursor-pointer"
+                      onClick={() => window.open(att.fileUrl, '_blank')}
+                    >
+                      <iframe
+                        src={att.fileUrl}
+                        title={att.fileName}
+                        loading="lazy"
+                        className="border-none pointer-events-none absolute top-0 left-0"
+                        style={{ width: '800px', height: '800px', transform: 'scale(0.2)', transformOrigin: 'top left' }}
+                      />
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1 p-2">
                       <FileText size={28} className="text-gray-400" />

@@ -279,6 +279,19 @@ function NcrBijlagesTab({ ncrId }: { ncrId: string }) {
                   className="w-full h-full object-cover cursor-pointer"
                   onClick={() => setLightbox(att.fileUrl)}
                 />
+              ) : (att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.fileName)) ? (
+                <div
+                  className="w-full h-full overflow-hidden cursor-pointer"
+                  onClick={() => window.open(att.fileUrl, '_blank')}
+                >
+                  <iframe
+                    src={att.fileUrl}
+                    title={att.fileName}
+                    loading="lazy"
+                    className="border-none pointer-events-none absolute top-0 left-0"
+                    style={{ width: '800px', height: '800px', transform: 'scale(0.2)', transformOrigin: 'top left' }}
+                  />
+                </div>
               ) : (
                 <a
                   href={att.fileUrl}
