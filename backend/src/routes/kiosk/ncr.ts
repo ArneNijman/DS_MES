@@ -145,21 +145,23 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
     // Retry-loop om race conditions bij gelijktijdig aanmaken op te vangen.
     // De UNIQUE constraint op ncrId is de garantie; bij botsing proberen we
     // automatisch het volgende nummer.
-    let ncr!: typeof ncrRegistrations.$inferSelect
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const ncrId = await nextNcrId(fastify)
-      try {
-        ;[ncr!] = await fastify.db
-          .insert(ncrRegistrations)
-          .values({ ...body.data, ncrId })
-          .returning()
-        break
-      } catch (err) {
-        const isUnique = err instanceof Error && err.message.toLowerCase().includes('unique')
-        if (!isUnique || attempt === 4) throw err
-        // Concurrent insert: volgende poging met het volgende nummer
+    const ncr = await (async () => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const ncrId = await nextNcrId(fastify)
+        try {
+          const [result] = await fastify.db
+            .insert(ncrRegistrations)
+            .values({ ...body.data, ncrId })
+            .returning()
+          return result
+        } catch (err) {
+          const isUnique = err instanceof Error && err.message.toLowerCase().includes('unique')
+          if (!isUnique || attempt === 4) throw err
+          // Concurrent insert: volgende poging met het volgende nummer
+        }
       }
-    }
+      throw new Error('NCR aanmaken mislukt na 5 pogingen')
+    })()
 
     await logStatusChange(fastify, 'ncr', ncr.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
 
