@@ -145,7 +145,7 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
     // Retry-loop om race conditions bij gelijktijdig aanmaken op te vangen.
     // De UNIQUE constraint op ncrId is de garantie; bij botsing proberen we
     // automatisch het volgende nummer.
-    let ncr: typeof ncrRegistrations.$inferSelect
+    let ncr!: typeof ncrRegistrations.$inferSelect
     for (let attempt = 0; attempt < 5; attempt++) {
       const ncrId = await nextNcrId(fastify)
       try {
