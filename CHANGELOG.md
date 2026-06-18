@@ -9,6 +9,18 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-18] — Deployfix: TypeScript build + migratie 0021 + CNC agent URL
+
+### Opgelost
+- **TypeScript TS2454 in `ncr.ts`**: variabele `ncr` werd als niet-gegarandeerd-toegewezen gezien door de compiler omdat de toewijzing in een `try`-blok binnen een retry-loop zat. Opgelost door de loop te herschrijven als een IIFE (`const ncr = await (async () => { ... })()`), zodat `ncr` altijd een `const` met gegarandeerde waarde is.
+- **Migratie 0021 (`customer_complaints_v2.sql`) blokkeerde backend**: migratie probeerde `DROP TABLE customer_complaints` maar tabel had afhankelijke objecten (`customer_complaint_documents_ctr_id_fkey`). Opgelost door de migratie idempotent te maken: `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` per kolom. Migratie 0068 toegevoegd als vangnet voor bestaande servers.
+- **`CNC_AGENT_URL` hardcoded in `docker-compose.yml`**: waarde `http://host.docker.internal:3099` stond vast in de compose file en kon niet via `.env` overschreven worden. Gewijzigd naar `${CNC_AGENT_URL:-http://host.docker.internal:3099}` zodat de URL per omgeving configureerbaar is.
+
+### Openstaand
+- **Backend → CNC-agent niet bereikbaar** (`502` op `/send-to-machine` en `/trigger-sync`): server (10.85.27.x) kan Windows machine (192.168.1.x) niet bereiken — verschillende subnetten zonder route. Oplossing afhankelijk van netwerkarchitectuur (tweede netwerkaansluiting, VPN, of polling-architectuur).
+
+---
+
 ## [2026-06-17] — last-known-good state in CNC agent
 
 ### Opgelost
