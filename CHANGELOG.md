@@ -9,6 +9,15 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-19] — CNC dropdown, product setup tab, HyperMill protocol
+
+### Opgelost
+- **CNC machining dropdown toonde alle machinetypen**: dropdown filtert nu uitsluitend op categorie `Freesmachine`.
+- **Product setup detailscherm opende op CNC informatie**: bij het selecteren van een stap opent het scherm nu op de tab **Algemene informatie** in plaats van CNC informatie.
+- **HyperMill protocol-installatie downloadde HTML in plaats van .reg bestand**: `hypermill-protocol-install.reg` ontbrak in `frontend/public/`. Bestand aangemaakt (UTF-16 LE) dat het `hmopen://` protocol registreert. De registry-command zoekt `hmc.exe` recursief in `C:\Program Files\OPEN MIND\hyperCAD-S\`, waardoor het bij elke versie-update blijft werken.
+
+---
+
 ## [2026-06-18] — Deployfix: TypeScript build + migratie 0021 + CNC agent URL
 
 ### Opgelost
