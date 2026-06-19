@@ -1331,7 +1331,7 @@ function SetupDetail({
             {setup.steps.map(step => (
               <div key={step.id} className="group relative">
                 <button
-                  onClick={() => { setSelectedStepId(step.id); setActiveTab('cnc') }}
+                  onClick={() => { setSelectedStepId(step.id); setActiveTab('info') }}
                   className="w-full flex flex-col gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-teal-400 hover:bg-teal-50 hover:shadow-sm transition-all text-left"
                 >
                   <span className="text-xs font-mono text-gray-400">#{step.stepNumber}</span>
