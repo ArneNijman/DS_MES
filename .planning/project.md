@@ -288,4 +288,5 @@ Standaard kwaliteitsstatistieken (Cp/Cpk) vereisen een steekproef van tientallen
 | NCR Human Factor, Meetmiddelen, Meet Setup | mei 2026 | ~10 uur |
 | CNC Agent + Machine Dashboard | mei 2026 | ~8 uur |
 | Metrologie Inspectieviewer Phase 1–3 | mei–jun 2026 | ~20 uur |
-| **Totaal** | **feb–jun 2026** | **~148 uur** |
+| Bugfixes + UX verbeteringen (CNC dropdown, product setup, HyperMill protocol) | jun 2026 | ~2 uur |
+| **Totaal** | **feb–jun 2026** | **~150 uur** |

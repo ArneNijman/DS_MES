@@ -26,6 +26,13 @@ docker compose restart backend
 
 Wijzigingen in bestaande bestanden worden wél automatisch opgepikt via `tsx watch`.
 
+**Productie (zonder dev-override):** `docker compose restart` herstart de container maar rebuildt de image niet. Na code-wijzigingen in productie altijd rebuilden:
+```bash
+docker compose up -d --build backend   # of: --build frontend
+```
+
+**Let op:** `docker-compose.override.yml` wordt automatisch samengevoegd bij `docker compose up` (zonder `-f` vlag). Dit activert de dev-modus met volume-mounts en tsx watch. Gebruik de `-f` vlag expliciet om dit te omzeilen.
+
 ## Database migraties
 
 De eigen migratie-runner (`backend/src/plugins/db.ts`) vervangt Drizzle's `migrate()`. Tracking op **bestandsnaam** (niet hash) — immuniseert tegen silent skips bij bestandswijzigingen.
@@ -34,7 +41,7 @@ Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0065_beschrijving.sql` (oplopend nummer, huidig laatste: 0065)
+   - Naamconventie: `0069_beschrijving.sql` (oplopend nummer, huidig laatste: 0068)
    - Gebruik `IF NOT EXISTS` / `IF EXISTS` zodat migraties idempotent zijn
 3. De runner past nieuwe bestanden toe bij elke backend-opstart
 

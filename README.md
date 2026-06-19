@@ -202,6 +202,21 @@ powershell -ExecutionPolicy Bypass -File install-scheduler.ps1
 
 De agent draait nu automatisch op de achtergrond: synchroniseert bij elke Windows-opstart en elke 30 minuten daarna, en bewaakt continu de machinestatus.
 
+**Stap 6** — Open poort 3099 in Windows Defender Firewall:
+De MES-server communiceert via poort 3099 terug naar de agent (voor de Sync-knop in de kiosk). Windows Defender Firewall blokkeert dit standaard. Open PowerShell als administrator en voer uit:
+```powershell
+New-NetFirewallRule -DisplayName "CNC Agent" -Direction Inbound -Protocol TCP -LocalPort 3099 -Action Allow
+```
+
+> **Zonder deze firewallregel geeft de Sync-knop een `502`-fout** en kunnen `/send-to-machine` en `/trigger-sync` de agent niet bereiken.
+
+**Stap 7** — Stel het IP-adres van de agent in op de MES-server:
+Standaard verwacht de backend de agent op `http://host.docker.internal:3099`. Als de agent op een **andere PC** dan de server draait, zet dan in de `.env` van de MES-server:
+```
+CNC_AGENT_URL=http://<ip-adres-windows-pc>:3099
+```
+Herstart daarna de backend: `docker compose up -d --build backend`.
+
 > **Volg voor de volledige installatie van de CNC agent het stappenplan in [`cnc-agent\README.md`](cnc-agent/README.md#eerste-installatie).**
 > Dat document bevat uitgebreide uitleg per stap, probleemoplossing, de werking van de Sync-knop in de kiosk en het instellen van meerdere agents voor redundantie.
 
@@ -444,6 +459,21 @@ In de CNC-tab van Product Setup, bij het geselecteerde .h bestand:
 | .h bestand en machine hebben een **andere** postprocessor | Oranje waarschuwing: bestand is voor X, machine verwacht Y | Geblokkeerd |
 
 Een geblokkeerde knop voorkomt dat een operator per ongeluk een NC-programma naar de verkeerde machine stuurt.
+
+---
+
+## HyperMill bestanden openen vanuit Product Setup
+
+In de Product Setup kiosk kunnen HyperMill-bestanden direct worden geopend via een `hmopen://`-protocol link. Hiervoor moet het protocol eenmalig per Windows-PC worden geregistreerd.
+
+### Installatie (eenmalig per PC)
+
+1. Open Product Setup in de kiosk → klik op **Hypermill bestanden**
+2. Klik onderaan op **Installeer het HyperMill protocol**
+3. Het bestand `hypermill-protocol-install.reg` wordt gedownload
+4. Dubbelklik het bestand en bevestig de import in de Register-editor
+
+Het `.reg` bestand zoekt automatisch `hmc.exe` in `C:\Program Files\OPEN MIND\hyperCAD-S\`, ongeacht het versienummer. Bij een update van hyperCAD-S hoeft de registratie **niet** opnieuw te worden uitgevoerd.
 
 ---
 
