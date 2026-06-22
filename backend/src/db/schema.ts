@@ -701,6 +701,7 @@ export const toolLibraryItems = pgTable('tool_library_items', {
   wisselplaatPhotoUrl: text('wisselplaat_photo_url'),
   schroefOrderingCode: text('schroef_ordering_code'),
   schroefPhotoUrl:     text('schroef_photo_url'),
+  estimatedQuantity:   integer('estimated_quantity'),
   importedAt:    timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -711,9 +712,10 @@ export const toolLibraryAssemblies = pgTable('tool_library_assemblies', {
   comment:        text('comment'),
   toolLength:     doublePrecision('tool_length'),
   presetDiameter: doublePrecision('preset_diameter'),
-  toolItemId:     uuid('tool_item_id').references(() => toolLibraryItems.id),
-  holderItemId:   uuid('holder_item_id').references(() => toolLibraryItems.id),
-  importedAt:     timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
+  toolItemId:        uuid('tool_item_id').references(() => toolLibraryItems.id),
+  holderItemId:      uuid('holder_item_id').references(() => toolLibraryItems.id),
+  estimatedQuantity: integer('estimated_quantity'),
+  importedAt:        timestamp('imported_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const toolLibraryAssemblyComponents = pgTable('tool_library_assembly_components', {

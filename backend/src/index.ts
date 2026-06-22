@@ -37,6 +37,7 @@ import { cncMetricsRoutes } from './routes/admin/cnc-metrics.js'
 import smtpRoutes from './routes/admin/smtp.js'
 import { ncrStatsRoutes } from './routes/kiosk/ncr-stats.js'
 import { systemHealthRoutes } from './routes/admin/system-health.js'
+import { cncToolingUsageRoutes } from './routes/admin/cnc-tooling-usage.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
 import { validateEncryptionKey } from './utils/crypto.js'
@@ -104,7 +105,8 @@ async function main() {
   await fastify.register(cncEventsRoutes,  { prefix: '/api' })
   await fastify.register(cncMetricsRoutes, { prefix: '/api' })
   await fastify.register(smtpRoutes,       { prefix: '/api' })
-  await fastify.register(systemHealthRoutes, { prefix: '/api' })
+  await fastify.register(systemHealthRoutes,      { prefix: '/api' })
+  await fastify.register(cncToolingUsageRoutes,   { prefix: '/api' })
 
   startEmailReminders(fastify)
 

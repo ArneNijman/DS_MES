@@ -78,6 +78,41 @@ interface AllToolsResponse {
   tools: CncToolEntry[]
 }
 
+interface ProjectUsageEntry {
+  setupId: string
+  articleNo: string | null
+  articleName: string | null
+  createdAt: string
+  archivedAt: string | null
+  totalSeconds: number
+}
+
+interface AssemblyUsageItem {
+  id: string
+  ncNumber: number
+  ncName: string
+  estimatedQuantity: number | null
+  totalUses: number
+  uniqueSetups: number
+  totalSeconds: number
+  maxConcurrent: number
+  projects: ProjectUsageEntry[]
+}
+
+interface ItemUsageItem {
+  id: string
+  itemType: string
+  name: string
+  orderingCode: string | null
+  estimatedQuantity: number | null
+  totalUses: number
+  uniqueSetups: number
+  totalSeconds: number
+  maxConcurrent: number
+  assemblyNames: string[]
+  projects: ProjectUsageEntry[]
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseToolCode(name: string | null): string {
@@ -220,6 +255,14 @@ function formatDate(iso: string): string {
     day: '2-digit', month: '2-digit', year: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function fmtDuration(secs: number): string {
+  if (secs <= 0) return '—'
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (h > 0) return `${h}u ${m}m`
+  return `${m}m`
 }
 
 function parseWisselplaat(comment: string | null): { body: string; wisselplaat: string } | null {
@@ -1325,10 +1368,282 @@ function AssemblyBrowser() {
   )
 }
 
+// ── Estimated quantity inline input ──────────────────────────────────────────
+
+function EstQtyInput({ value, onSave }: { value: number | null; onSave: (v: number | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [localVal, setLocalVal] = useState(value !== null ? String(value) : '')
+
+  useEffect(() => {
+    setLocalVal(value !== null ? String(value) : '')
+  }, [value])
+
+  const commit = () => {
+    const trimmed = localVal.trim()
+    const n = trimmed === '' ? null : parseInt(trimmed, 10)
+    onSave(n !== null && isNaN(n) ? null : n)
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className={cn(
+          'text-sm font-medium px-2 py-0.5 rounded border transition-colors',
+          value !== null
+            ? 'text-gray-700 border-gray-200 hover:border-gray-400'
+            : 'text-gray-400 border-dashed border-gray-300 hover:border-gray-400',
+        )}
+      >
+        {value !== null ? value : '—'}
+      </button>
+    )
+  }
+
+  return (
+    <input
+      type="number"
+      min={0}
+      className="w-16 text-sm text-center border border-primary rounded px-1 py-0.5 focus:outline-none"
+      value={localVal}
+      autoFocus
+      onChange={e => setLocalVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') { setEditing(false); setLocalVal(value !== null ? String(value) : '') }
+      }}
+    />
+  )
+}
+
+// ── Gebruik tab ───────────────────────────────────────────────────────────────
+
+function GebruikTab() {
+  const [subTab, setSubTab] = useState<'Samenstellingen' | 'Componenten'>('Samenstellingen')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const qc = useQueryClient()
+
+  const { data: assemblies = [], isLoading: aLoading } = useQuery<AssemblyUsageItem[]>({
+    queryKey: ['tooling-usage-assemblies'],
+    queryFn: () => apiFetch('/admin/cnc/tooling-usage/assemblies') as Promise<AssemblyUsageItem[]>,
+  })
+
+  const { data: items = [], isLoading: iLoading } = useQuery<ItemUsageItem[]>({
+    queryKey: ['tooling-usage-items'],
+    queryFn: () => apiFetch('/admin/cnc/tooling-usage/items') as Promise<ItemUsageItem[]>,
+  })
+
+  const maxAssemblySeconds = Math.max(...assemblies.map(a => a.totalSeconds), 1)
+  const maxItemSeconds     = Math.max(...items.map(i => i.totalSeconds), 1)
+
+  async function patchEstimatedQty(type: 'assemblies' | 'items', id: string, val: number | null) {
+    await apiFetch(`/admin/cnc/tooling-usage/${type}/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ estimatedQuantity: val }),
+    })
+    qc.invalidateQueries({ queryKey: type === 'assemblies' ? ['tooling-usage-assemblies'] : ['tooling-usage-items'] })
+  }
+
+  const isLoading = subTab === 'Samenstellingen' ? aLoading : iLoading
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-gray-200 mb-6">
+        {(['Samenstellingen', 'Componenten'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => { setSubTab(tab); setExpandedId(null) }}
+            className={cn(
+              'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              subTab === tab ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700',
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && <p className="text-sm text-gray-400">Laden...</p>}
+
+      {/* Samenstellingen */}
+      {!isLoading && subTab === 'Samenstellingen' && (
+        <div className="space-y-2">
+          {assemblies.length === 0 && (
+            <p className="text-sm text-gray-400">Geen samenstellingen gekoppeld aan projecten gevonden.</p>
+          )}
+          {assemblies.map(a => {
+            const barPct = Math.round((a.totalSeconds / maxAssemblySeconds) * 100)
+            const isOver = a.estimatedQuantity !== null && a.maxConcurrent >= a.estimatedQuantity
+            const expanded = expandedId === a.id
+            return (
+              <div key={a.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div
+                  className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => setExpandedId(expanded ? null : a.id)}
+                >
+                  <ChevronRight size={14} className={cn('text-gray-400 shrink-0 transition-transform', expanded && 'rotate-90')} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-800 text-sm">{a.ncName}</span>
+                      <span className="text-xs text-gray-400 font-mono">T{a.ncNumber}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 shrink-0">{fmtDuration(a.totalSeconds)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5 shrink-0">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Projecten</div>
+                      <div className="text-sm font-medium text-gray-700">{a.uniqueSetups}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Max gelijktijdig</div>
+                      <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : 'text-gray-700')}>
+                        {a.maxConcurrent}
+                        {isOver && <AlertTriangle size={12} className="text-red-400" />}
+                      </div>
+                    </div>
+                    <div className="text-center" onClick={e => e.stopPropagation()}>
+                      <div className="text-xs text-gray-400">Geschat aantal</div>
+                      <EstQtyInput
+                        value={a.estimatedQuantity}
+                        onSave={val => patchEstimatedQty('assemblies', a.id, val)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {expanded && a.projects.length > 0 && (
+                  <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-400">
+                          <th className="text-left pb-1 font-medium">Artikel</th>
+                          <th className="text-left pb-1 font-medium">Naam</th>
+                          <th className="text-right pb-1 font-medium">Machinetijd</th>
+                          <th className="text-right pb-1 font-medium">Afgerond</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {a.projects.map(p => (
+                          <tr key={p.setupId}>
+                            <td className="py-1 pr-3 font-mono text-gray-600">{p.articleNo ?? '—'}</td>
+                            <td className="py-1 pr-3 text-gray-700">{p.articleName ?? '—'}</td>
+                            <td className="py-1 text-right text-gray-600">{fmtDuration(p.totalSeconds)}</td>
+                            <td className="py-1 text-right text-gray-400">
+                              {p.archivedAt ? new Date(p.archivedAt).toLocaleDateString('nl-NL') : 'Actief'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Componenten */}
+      {!isLoading && subTab === 'Componenten' && (
+        <div className="space-y-2">
+          {items.length === 0 && (
+            <p className="text-sm text-gray-400">Geen componenten gekoppeld aan projecten gevonden.</p>
+          )}
+          {items.map(item => {
+            const barPct = Math.round((item.totalSeconds / maxItemSeconds) * 100)
+            const isOver = item.estimatedQuantity !== null && item.maxConcurrent >= item.estimatedQuantity
+            const expanded = expandedId === item.id
+            return (
+              <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div
+                  className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => setExpandedId(expanded ? null : item.id)}
+                >
+                  <ChevronRight size={14} className={cn('text-gray-400 shrink-0 transition-transform', expanded && 'rotate-90')} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-800 text-sm">{item.name}</span>
+                      {item.orderingCode && (
+                        <span className="text-xs text-gray-400 font-mono">{item.orderingCode}</span>
+                      )}
+                    </div>
+                    {item.assemblyNames.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">In: {item.assemblyNames.join(', ')}</p>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 shrink-0">{fmtDuration(item.totalSeconds)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5 shrink-0">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Projecten</div>
+                      <div className="text-sm font-medium text-gray-700">{item.uniqueSetups}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Max gelijktijdig</div>
+                      <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : 'text-gray-700')}>
+                        {item.maxConcurrent}
+                        {isOver && <AlertTriangle size={12} className="text-red-400" />}
+                      </div>
+                    </div>
+                    <div className="text-center" onClick={e => e.stopPropagation()}>
+                      <div className="text-xs text-gray-400">Geschat aantal</div>
+                      <EstQtyInput
+                        value={item.estimatedQuantity}
+                        onSave={val => patchEstimatedQty('items', item.id, val)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {expanded && item.projects.length > 0 && (
+                  <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-400">
+                          <th className="text-left pb-1 font-medium">Artikel</th>
+                          <th className="text-left pb-1 font-medium">Naam</th>
+                          <th className="text-right pb-1 font-medium">Machinetijd</th>
+                          <th className="text-right pb-1 font-medium">Afgerond</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {item.projects.map(p => (
+                          <tr key={p.setupId}>
+                            <td className="py-1 pr-3 font-mono text-gray-600">{p.articleNo ?? '—'}</td>
+                            <td className="py-1 pr-3 text-gray-700">{p.articleName ?? '—'}</td>
+                            <td className="py-1 text-right text-gray-600">{fmtDuration(p.totalSeconds)}</td>
+                            <td className="py-1 text-right text-gray-400">
+                              {p.archivedAt ? new Date(p.archivedAt).toLocaleDateString('nl-NL') : 'Actief'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Content component (gebruikt in kiosk dashboard) ───────────────────────────
 
 export function CncMachiningContent() {
-  const [activeTab, setActiveTab] = useState<'Samenstellingen' | 'ToolTabel'>('ToolTabel')
+  const [activeTab, setActiveTab] = useState<'Samenstellingen' | 'ToolTabel' | 'Gebruik'>('ToolTabel')
   const [selectedMachine, setSelectedMachine] = useState<CncMachine | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [search, setSearch] = useState('')
@@ -1435,7 +1750,7 @@ export function CncMachiningContent() {
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <h1 className="text-xl font-semibold text-gray-900 tracking-wide">TOOLING</h1>
         <div className="flex gap-1 mt-3 border-b border-gray-200 -mb-px">
-          {(['Samenstellingen', 'ToolTabel'] as const).map((tab) => (
+          {(['Samenstellingen', 'ToolTabel', 'Gebruik'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1662,6 +1977,9 @@ export function CncMachiningContent() {
         )}
       </div>
       )}
+
+      {/* Gebruik tab */}
+      {activeTab === 'Gebruik' && <GebruikTab />}
     </div>
   )
 }
