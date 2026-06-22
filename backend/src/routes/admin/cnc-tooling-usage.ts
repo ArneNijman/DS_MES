@@ -120,15 +120,15 @@ export async function cncToolingUsageRoutes(fastify: FastifyInstance) {
     `)
 
     return rows.map(r => {
-      const projects: ProjectEntry[] = JSON.parse(r.projects as unknown as string)
+      const projects = r.projects as unknown as ProjectEntry[]
       return {
         id:                r.id,
         ncNumber:          r.nc_number,
         ncName:            r.nc_name,
         estimatedQuantity: r.estimated_quantity,
-        totalUses:         parseInt(r.total_uses),
-        uniqueSetups:      parseInt(r.unique_setups),
-        totalSeconds:      fmtSeconds(parseFloat(r.total_seconds)),
+        totalUses:         parseInt(r.total_uses as string),
+        uniqueSetups:      parseInt(r.unique_setups as string),
+        totalSeconds:      fmtSeconds(parseFloat(r.total_seconds as string)),
         maxConcurrent:     maxConcurrent(projects),
         projects,
       }
@@ -227,17 +227,17 @@ export async function cncToolingUsageRoutes(fastify: FastifyInstance) {
     `)
 
     return rows.map(r => {
-      const projects: ProjectEntry[] = JSON.parse(r.projects as unknown as string)
-      const assemblyNames: string[] = JSON.parse(r.assembly_names as unknown as string) ?? []
+      const projects = r.projects as unknown as ProjectEntry[]
+      const assemblyNames = (r.assembly_names as unknown as string[] | null) ?? []
       return {
         id:                r.id,
         itemType:          r.item_type,
         name:              r.name,
         orderingCode:      r.ordering_code,
         estimatedQuantity: r.estimated_quantity,
-        totalUses:         parseInt(r.total_uses),
-        uniqueSetups:      parseInt(r.unique_setups),
-        totalSeconds:      fmtSeconds(parseFloat(r.total_seconds)),
+        totalUses:         parseInt(r.total_uses as string),
+        uniqueSetups:      parseInt(r.unique_setups as string),
+        totalSeconds:      fmtSeconds(parseFloat(r.total_seconds as string)),
         maxConcurrent:     maxConcurrent(projects),
         assemblyNames,
         projects,
