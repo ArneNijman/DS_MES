@@ -609,6 +609,7 @@ interface ComponentDetail {
     wisselplaatPhotoUrl: string | null
     schroefOrderingCode: string | null
     schroefPhotoUrl: string | null
+    estimatedQuantity: number | null
   }
   assemblies: ComponentAssemblyUsage[]
 }
@@ -881,9 +882,21 @@ function ComponentBrowser() {
                 )
                 return null
               })()}
-              <div className="flex gap-4 mt-1.5 text-xs text-gray-400 flex-wrap">
+              <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-400 flex-wrap">
                 {detail.item.manufacturer && <span>{detail.item.manufacturer}</span>}
                 {detail.item.orderingCode  && <span className="font-mono">{detail.item.orderingCode}</span>}
+                <span className="flex items-center gap-1.5">
+                  Voorraad:
+                  <EstQtyInput
+                    value={detail.item.estimatedQuantity}
+                    onSave={val =>
+                      apiFetch(`/admin/cnc/tooling-usage/items/${detail.item.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ estimatedQuantity: val }),
+                      }).then(() => queryClient.invalidateQueries({ queryKey: ['cnc-component-detail', detail.item.id] }))
+                    }
+                  />
+                </span>
               </div>
             </div>
 

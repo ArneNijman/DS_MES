@@ -607,6 +607,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
         wisselplaatPhotoUrl: item.wisselplaatPhotoUrl  ?? null,
         schroefOrderingCode: item.schroefOrderingCode  ?? null,
         schroefPhotoUrl:     item.schroefPhotoUrl      ?? null,
+        estimatedQuantity:   item.estimatedQuantity    ?? null,
       },
       assemblies: usageRows.map(r => ({
         assemblyId: r.assembly_id,
