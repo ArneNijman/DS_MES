@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Star, X, Minus, Plus, Trash2, ArrowRightLeft, Package } from 'lucide-react'
+import { Search, Star, X, Minus, Plus, Trash2, ArrowRightLeft, Package, Camera } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +15,7 @@ interface ToolingArticle {
   orderingCode: string | null
   manufacturer: string | null
   photoUrl: string | null
+  libraryPhotoUrl?: string | null
   totalStock: number
 }
 
@@ -396,6 +397,30 @@ function ArticleDetailModal({
   const [transferLocId, setTransferLocId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [mutateAmounts, setMutateAmounts] = useState<Record<string, number>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const uploadPhoto = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return apiFetch(`/kiosk/tooling/articles/${articleId}/photo`, { method: 'POST', body: fd })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tooling-article', articleId] })
+      qc.invalidateQueries({ queryKey: ['tooling-articles'] })
+    },
+  })
+
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.items ?? [])
+        .find((item) => item.type.startsWith('image/'))
+        ?.getAsFile()
+      if (file) uploadPhoto.mutate(file)
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [articleId])
 
   const { data, isLoading } = useQuery<ArticleDetail>({
     queryKey: ['tooling-article', articleId],
@@ -459,7 +484,36 @@ function ArticleDetailModal({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl min-h-0">
         {/* Header */}
         <div className="flex items-start gap-4 p-5 border-b border-gray-100">
-          <PhotoBox src={article.photoUrl} size={72} />
+          <button
+            className="relative shrink-0 rounded bg-gray-100 border border-gray-200 overflow-hidden group"
+            style={{ width: 72, height: 72 }}
+            onClick={() => fileInputRef.current?.click()}
+            title="Foto uploaden (of Ctrl+V plakken)"
+          >
+            {(article.photoUrl || article.libraryPhotoUrl)
+              ? <img src={article.photoUrl ?? article.libraryPhotoUrl!} alt="" style={{ width: 72, height: 72, objectFit: 'contain', display: 'block' }} />
+              : <Package size={28} className="text-gray-300 absolute inset-0 m-auto" />
+            }
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Camera size={18} className="text-white" />
+            </div>
+            {uploadPhoto.isPending && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                <span className="text-xs text-gray-500">...</span>
+              </div>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) uploadPhoto.mutate(file)
+              e.target.value = ''
+            }}
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <TypeBadge type={article.articleType} />

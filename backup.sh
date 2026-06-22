@@ -17,9 +17,22 @@ RESET='\033[0m'
 ok()   { echo -e "${GREEN}✓${RESET} $1"; }
 fail() { echo -e "${RED}✗${RESET} $1"; exit 1; }
 
+if [ ! -f docker-compose.yml ]; then
+  echo -e "${RED}✗ Voer dit script uit vanuit de DS_MES map:${RESET}"
+  echo "    cd DS_MES && ./backup.sh"
+  exit 1
+fi
+
+# .env laden zodat POSTGRES_USER / POSTGRES_DB beschikbaar zijn
+if [ -f .env ]; then
+  set -a; source .env 2>/dev/null; set +a
+fi
+
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 KEEP_MIN=5
+DB_USER="${POSTGRES_USER:-mes}"
+DB_NAME="${POSTGRES_DB:-mes}"
 
 echo ""
 echo -e "${BOLD}════════════════════════════════${RESET}"
@@ -37,7 +50,7 @@ mkdir -p "$BACKUP_DIR"
 # ── Database ─────────────────────────────────────────────────
 
 echo -e "${BOLD}[1/2] Database back-uppen...${RESET}"
-docker compose exec -T postgres pg_dump -U mes mes \
+docker compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" \
   | gzip > "${BACKUP_DIR}/db_${TIMESTAMP}.sql.gz"
 ok "Database: backups/db_${TIMESTAMP}.sql.gz"
 
@@ -77,5 +90,5 @@ echo "  Uploads : uploads_${TIMESTAMP}.tar.gz  (${UL_SIZE})"
 echo "  Bewaren : minimaal ${KEEP_MIN} backups (oudste verwijderd boven dit aantal)"
 echo ""
 echo "  Terugzetten database:"
-echo "    gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes"
+echo "    gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U \"$DB_USER\" \"$DB_NAME\""
 echo ""

@@ -1820,6 +1820,9 @@ if (runScanIp) {
         }
       })
 
+    } else if (req.method === 'GET' && req.url === '/health') {
+      res.end(JSON.stringify({ ok: true, uptime: process.uptime() }))
+
     } else {
       res.statusCode = 404
       res.end(JSON.stringify({ error: 'Not found' }))

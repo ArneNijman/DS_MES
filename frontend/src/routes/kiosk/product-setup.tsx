@@ -62,7 +62,7 @@ interface Step {
   machineId:            string | null
   machineName:          string | null
   machinePhotoUrl:      string | null
-  machinePostprocessor: string | null
+  machinePostprocessors: string[]
   zeroX:                string | null
   zeroY:                string | null
   zeroZ:                string | null
@@ -1696,8 +1696,9 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
         {step.ncFiles.length > 0 && (() => {
           const selFile = selectedNcFileId ? step.ncFiles.find(f => f.id === selectedNcFileId) : null
           const filePp = selFile?.postprocessor ?? null
-          const machinePp = step.machinePostprocessor ?? null
-          const ppBlocked = !!filePp && (!machinePp || machinePp.toLowerCase() !== filePp.toLowerCase())
+          const machinePps = step.machinePostprocessors ?? []
+          const ppBlocked = !!filePp && machinePps.length > 0 &&
+            !machinePps.some(pp => pp.toLowerCase() === filePp.toLowerCase())
           const canSend = !!(step.machineId && step.bewerkingNr != null && selectedNcFileId)
           const sendBlocked = ppBlocked || !step.checklistCompleted
           return (
@@ -1706,10 +1707,10 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
               {filePp && canSend && (
                 <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700">
                   <AlertTriangle size={14} className="shrink-0 mt-0.5 text-orange-500" />
-                  {machinePp && machinePp.toLowerCase() !== filePp.toLowerCase() ? (
-                    <span>Dit .h bestand is voor <strong>{filePp}</strong>, maar deze machine verwacht <strong>{machinePp}</strong>.</span>
+                  {ppBlocked ? (
+                    <span>Dit .h bestand is voor <strong>{filePp}</strong>, maar deze machine ondersteunt: <strong>{machinePps.join(', ')}</strong>.</span>
                   ) : (
-                    <span>Dit .h bestand is gegenereerd voor postprocessor <strong>{filePp}</strong>. Stel de postprocessor in op de machine (Admin → Machines) om te verifiëren.</span>
+                    <span>Dit .h bestand is gegenereerd voor postprocessor <strong>{filePp}</strong>. Stel de postprocessor(s) in op de machine (Admin → Machines) om te verifiëren.</span>
                   )}
                 </div>
               )}

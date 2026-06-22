@@ -53,7 +53,7 @@ const machineSchema = z.object({
   cncNcVersion: z.string().optional().nullable(),
   cncPlcVersion: z.string().optional().nullable(),
   toolTableFormat: z.string().optional().nullable(),
-  postprocessor: z.string().optional().nullable(),
+  postprocessors: z.string().array().default([]),
   supplierEmail: z.string().optional().nullable(),
   supplierPhone: z.string().optional().nullable(),
   maintenanceEmail1: z.string().optional().nullable(),
@@ -70,7 +70,7 @@ const maintenanceSchema = z.object({
   scheduledDate: z.string().optional().nullable(),
   completedDate: z.string().optional().nullable(),
   interval: z.enum(['wekelijks', 'maandelijks', 'kwartaal', 'halfjaar', 'jaarlijks']).optional().nullable(),
-  logType: z.enum(['spindel_uren', 'spindel_koeling', 'las_uren', 'centrale_smering', 'spindel_smering', 'koelwater', 'hydroliek_32', 'meetdata']).optional().nullable(),
+  logType: z.enum(['spindel_uren', 'spindel_koeling', 'las_uren', 'centrale_smering', 'spindel_smering', 'koelwater', 'hydroliek_32', 'meetdata', 'standaard_controle']).optional().nullable(),
   assignedToId: z.string().uuid().optional().nullable(),
 })
 
@@ -115,7 +115,7 @@ const machineDocumentSchema = z.object({
 })
 
 const maintenanceLogSchema = z.object({
-  type: z.enum(['spindel_uren', 'spindel_koeling', 'las_uren', 'centrale_smering', 'spindel_smering', 'koelwater', 'hydroliek_32', 'meetdata']),
+  type: z.enum(['spindel_uren', 'spindel_koeling', 'las_uren', 'centrale_smering', 'spindel_smering', 'koelwater', 'hydroliek_32', 'meetdata', 'standaard_controle']),
   registeredByName: z.string().min(1),
   registeredById: z.string().optional().nullable(),
   year: z.number().int(),

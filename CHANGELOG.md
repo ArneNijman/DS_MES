@@ -9,6 +9,32 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-22] — Systeemgezondheid, meerdere postprocessors, scripts audit
+
+### Toegevoegd
+- **`doctor.sh`** — health check script: 10 checks (environment, Docker containers, backend HTTP, database, migraties, CNC agent, firewall, machine TCP, schijfruimte, git versie); kleuruitvoer met ✓/⚠/✗; exit code 1 bij fouten. Wordt automatisch aangeroepen aan het einde van `update.sh`
+- **`GET /health` in CNC agent** — `cnc-agent.js` geeft nu `{ ok: true, uptime: ... }` terug op `GET /health`, gebruikt door `doctor.sh` en de backend health check
+- **Systeemstatus widget in admin sidebar** — gekleurd bolletje (groen/oranje/rood) onderaan de navigatie; klik opent modal met alle checks; vernieuwd elke 5 minuten
+- **`GET /api/admin/system-health`** — nieuw endpoint (auth vereist): controleert database, migraties en CNC agent bereikbaarheid; retourneert JSON met per-check status en detail
+- **Meerdere postprocessors per machine** — machines.postprocessors is nu een `text[]` array; tag-invoer UI in admin (type + Enter of + knop om toe te voegen, ✕ om te verwijderen); bestaande waarden automatisch gemigreerd; postprocessor-controle in Product Setup matcht op één van de ingestelde waarden (case-insensitive)
+- **Postprocessor detectie uit .h bestanden** — parser las de `; Postprocessor:` commentaarregel nooit uit omdat die na de commentaar-skip stond; bugfix: check verplaatst vóór de skip
+- **Standaard registratie** — nieuw onderhoudsregistratietype "Standaard registratie": toont alleen "Gecontroleerd: Ja" (geen gebruikersinvoer), jaar/weeknummer automatisch ingevuld, registrerende medewerker is standaard
+- **Tooling foto fallback** — artikeldetailmodal in Tooling Beheer toont eigen foto als eerste keuze, daarna de bibliotheekfoto (via `sourceItemId`), daarna placeholder; eigen foto uploaden via klik of Ctrl+V
+
+### Opgelost
+- **`docker-compose.override.yml` activeerde dev-modus in productie** — bestand was identiek aan `docker-compose.dev.yml` maar werd automatisch samengevoegd; verwijderd en toegevoegd aan `.gitignore`; `update.sh` en `install.sh` gebruiken nu expliciete `-f docker-compose.yml` vlag
+- **`docker compose exec -T db` in `doctor.sh`** — service heet `postgres`, niet `db`; databasechecks faalden altijd stilzwijgend
+- **`pg_dump -U mes mes` hardcoded in `backup.sh`** — gebruikt nu `${POSTGRES_USER:-mes}` / `${POSTGRES_DB:-mes}` uit `.env`
+- **Stapnummering `update.sh`** — was `[1/4]...[4/4]` gevolgd door `[5/5]`; gecorrigeerd naar consistent `[1/5]...[5/5]`
+- **`sleep 5` na herstart in `update.sh`** — vervangen door health-check loop (max 60s) zodat `doctor.sh` pas draait als de backend écht bereikbaar is
+
+### Verbeterd
+- `backup.sh` — directorycheck toegevoegd; laadt `.env` voor DB-credentials
+- `install.sh` — directorycheck toegevoegd
+- `doctor.sh` — redundante sed verwijderd; variabele `MISSING` → `APPLIED_NAMES`
+
+---
+
 ## [2026-06-19] — CNC dropdown, product setup tab, HyperMill protocol
 
 ### Opgelost

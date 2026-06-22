@@ -63,6 +63,12 @@ export function parseNcProgram(content: string): ParsedNcProgram {
   for (const raw of lines) {
     const trimmed = raw.trim()
 
+    // Postprocessor zoeken in elke regel (ook commentaarregels en in-line commentaar)
+    if (!postprocessor) {
+      const ppMatch = trimmed.match(/;\s*Postprocessor:\s*(.+)/i)
+      if (ppMatch) postprocessor = ppMatch[1].trim()
+    }
+
     if (trimmed === '' || trimmed.startsWith(';')) {
       skipped++
       continue
@@ -74,13 +80,6 @@ export function parseNcProgram(content: string): ParsedNcProgram {
     const beginMatch = line.match(RE_BEGIN_PGM)
     if (beginMatch) {
       programName = beginMatch[1]
-      skipped++
-      continue
-    }
-
-    const ppMatch = line.match(/^;\s*Postprocessor:\s*(.+)/i)
-    if (ppMatch) {
-      postprocessor = ppMatch[1].trim()
       skipped++
       continue
     }

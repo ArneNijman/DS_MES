@@ -41,7 +41,7 @@ interface MachineDetail extends Machine {
   cncNcVersion: string | null
   cncPlcVersion: string | null
   toolTableFormat: string | null
-  postprocessor: string | null
+  postprocessors: string[]
   spindleHours: string | null
   supplierEmail: string | null
   supplierPhone: string | null
@@ -150,14 +150,15 @@ interface MachineInvoice {
 }
 
 const MAINTENANCE_LOG_TYPES = [
-  { key: 'spindel_uren',     label: 'Spindel uur registratie' },
-  { key: 'spindel_koeling',  label: 'Spindelkoeling' },
-  { key: 'las_uren',         label: 'Las uren' },
-  { key: 'centrale_smering', label: 'Centrale smering' },
-  { key: 'spindel_smering',  label: 'Spindelsmering' },
-  { key: 'koelwater',        label: 'Koelwater' },
-  { key: 'hydroliek_32',     label: 'Hydroliek 32' },
-  { key: 'meetdata',         label: 'Meetdata' },
+  { key: 'standaard_controle', label: 'Standaard registratie' },
+  { key: 'spindel_uren',       label: 'Spindel uur registratie' },
+  { key: 'spindel_koeling',    label: 'Spindelkoeling' },
+  { key: 'las_uren',           label: 'Las uren' },
+  { key: 'centrale_smering',   label: 'Centrale smering' },
+  { key: 'spindel_smering',    label: 'Spindelsmering' },
+  { key: 'koelwater',          label: 'Koelwater' },
+  { key: 'hydroliek_32',       label: 'Hydroliek 32' },
+  { key: 'meetdata',           label: 'Meetdata' },
 ] as const
 
 type MaintenanceLogType = typeof MAINTENANCE_LOG_TYPES[number]['key']
@@ -291,7 +292,6 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     cncNcVersion: initial.cncNcVersion ?? '',
     cncPlcVersion: initial.cncPlcVersion ?? '',
     toolTableFormat: initial.toolTableFormat ?? '',
-    postprocessor: initial.postprocessor ?? '',
     supplierEmail: initial.supplierEmail ?? '',
     supplierPhone: initial.supplierPhone ?? '',
     maintenanceEmail1: initial.maintenanceEmail1 ?? '',
@@ -299,6 +299,18 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     maintenanceEmail2: initial.maintenanceEmail2 ?? '',
     maintenancePhone2: initial.maintenancePhone2 ?? '',
   })
+  const [postprocessors, setPostprocessors] = useState<string[]>(initial.postprocessors ?? [])
+  const [ppInput, setPpInput] = useState('')
+
+  const addPostprocessor = () => {
+    const val = ppInput.trim()
+    if (!val) return
+    if (postprocessors.some(p => p.toLowerCase() === val.toLowerCase())) { setPpInput(''); return }
+    setPostprocessors(prev => [...prev, val])
+    setPpInput('')
+  }
+  const removePostprocessor = (pp: string) => setPostprocessors(prev => prev.filter(p => p !== pp))
+
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const formRef = useRef<{ current: typeof form }>({ current: form })
   formRef.current = { current: form }
@@ -343,6 +355,7 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
     e.preventDefault()
     onSave({
       ...form,
+      postprocessors,
       photoUrl: form.photoUrl || null,
       yearOfPurchase: form.yearOfPurchase ? parseInt(form.yearOfPurchase) : null,
       cncMaxTools: form.cncMaxTools ? parseInt(form.cncMaxTools) : null,
@@ -508,14 +521,28 @@ function MachineForm({ initial = {}, onSave, onClose, loading, error }: MachineF
                   <option value="portaal">Portaal</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Postprocessor</label>
-                <input
-                  value={form.postprocessor}
-                  onChange={(e) => set('postprocessor', e.target.value)}
-                  placeholder="bijv. 04-MTE_BF4200_iTNC530"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Postprocessors</label>
+                {postprocessors.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {postprocessors.map((pp) => (
+                      <span key={pp} className="flex items-center gap-1 px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs rounded-full">
+                        {pp}
+                        <button type="button" onClick={() => removePostprocessor(pp)} className="text-teal-400 hover:text-teal-700 leading-none">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-1.5">
+                  <input
+                    value={ppInput}
+                    onChange={(e) => setPpInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPostprocessor() } }}
+                    placeholder="bijv. 04-MTE_BF4200_iTNC530 → Enter"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <button type="button" onClick={addPostprocessor} className="px-3 py-2 bg-teal-50 border border-teal-200 text-teal-700 text-sm rounded-lg hover:bg-teal-100 transition-colors">+</button>
+                </div>
               </div>
             </div>
           </div>
@@ -850,7 +877,7 @@ function SpecificMaintenanceForm({ type, initial, registeredByName, registeredBy
       spindleHours: spindleHours || null,
       lasValueA: lasValueA || null,
       lasValueB: lasValueB || null,
-      bijgevuld,
+      bijgevuld: type === 'standaard_controle' ? true : bijgevuld,
       vervangen,
       afvoerGeleegd,
       percentage: percentage || null,
@@ -903,6 +930,13 @@ function SpecificMaintenanceForm({ type, initial, registeredByName, registeredBy
           </div>
 
           {/* Type-specifieke velden */}
+          {type === 'standaard_controle' && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-lg">
+              <span className="text-sm text-teal-700 font-medium">Gecontroleerd:</span>
+              <span className="text-sm font-bold text-teal-700">Ja</span>
+            </div>
+          )}
+
           {type === 'spindel_uren' && (
             <div>
               <label className={labelCls}>Aantal uur</label>
@@ -1186,7 +1220,7 @@ function TaskPortal({ task, onClose, onEditTask }: { task: MaintenanceTask; onCl
                       <p className="text-xs text-gray-400 mt-0.5">{log.registeredByName}</p>
                       <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                         {log.spindleHours != null && <span>Uren: <strong>{log.spindleHours}</strong></span>}
-                        {log.bijgevuld != null && <span>Bijgevuld: <strong>{log.bijgevuld ? 'Ja' : 'Nee'}</strong></span>}
+                        {log.bijgevuld != null && <span>{log.type === 'standaard_controle' ? 'Gecontroleerd' : 'Bijgevuld'}: <strong>{log.bijgevuld ? 'Ja' : 'Nee'}</strong></span>}
                         {log.vervangen != null && <span>Vervangen: <strong>{log.vervangen ? 'Ja' : 'Nee'}</strong></span>}
                         {log.afvoerGeleegd != null && <span>Afvoer geleegd: <strong>{log.afvoerGeleegd ? 'Ja' : 'Nee'}</strong></span>}
                         {log.percentage && <span>Percentage: <strong>{log.percentage}</strong></span>}

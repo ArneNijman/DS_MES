@@ -125,7 +125,7 @@ Data (database, uploads) blijft altijd behouden.
 Slaat de database en uploads op in `backups/` op de server. Er worden altijd minimaal 5 backups bewaard; als er meer dan 5 zijn wordt de oudste automatisch verwijderd. Terugzetten:
 
 ```bash
-gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U mes mes
+gunzip -c backups/db_<datum>.sql.gz | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
 ```
 
 Automatische wekelijkse back-up via cron (optioneel, elke zondag om 02:00):
@@ -443,7 +443,7 @@ Het MES leest deze regel automatisch uit bij het uploaden van een .h bestand en 
 
 ### Instellen per machine
 
-Admin → Machines → machine openen → **CNC configuratie** → veld **Postprocessor** invullen (bijv. `04-MTE_BF4200_iTNC530`) → Opslaan.
+Admin → Machines → machine openen → **CNC configuratie** → veld **Postprocessors** → type een waarde en druk Enter (of klik +) om toe te voegen; klik ✕ om te verwijderen. Meerdere waarden zijn mogelijk.
 
 Dit hoeft eenmalig per machine ingesteld te worden.
 
@@ -454,9 +454,9 @@ In de CNC-tab van Product Setup, bij het geselecteerde .h bestand:
 | Situatie | Melding | Knop "Stuur naar machine" |
 |----------|---------|--------------------------|
 | .h bestand heeft geen postprocessor-regel | Geen melding | Actief |
-| .h bestand heeft postprocessor, machine heeft **geen** postprocessor ingesteld | Oranje waarschuwing: bestand is voor postprocessor X — stel in via Admin → Machines | Geblokkeerd |
-| .h bestand en machine hebben **dezelfde** postprocessor | Geen melding | Actief |
-| .h bestand en machine hebben een **andere** postprocessor | Oranje waarschuwing: bestand is voor X, machine verwacht Y | Geblokkeerd |
+| .h bestand heeft postprocessor, machine heeft **geen** postprocessors ingesteld | Oranje waarschuwing: bestand is voor postprocessor X — stel in via Admin → Machines | Geblokkeerd |
+| .h bestand komt overeen met **één van** de ingestelde postprocessors | Geen melding | Actief |
+| .h bestand stemt **niet overeen** met een van de ingestelde postprocessors | Oranje waarschuwing: bestand is voor X, machine verwacht één van: Y, Z | Geblokkeerd |
 
 Een geblokkeerde knop voorkomt dat een operator per ongeluk een NC-programma naar de verkeerde machine stuurt.
 

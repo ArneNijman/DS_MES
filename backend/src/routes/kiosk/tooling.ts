@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify'
 import { eq, desc, ilike, or, sql, and, asc, inArray } from 'drizzle-orm'
 import { z } from 'zod'
+import { extname } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import {
   toolingArticles,
   toolingStockLocations,
@@ -69,6 +71,16 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
       .limit(1)
 
     if (!article) return reply.status(404).send({ error: 'Artikel niet gevonden' })
+
+    let libraryPhotoUrl: string | null = null
+    if (article.sourceItemId) {
+      const [libItem] = await fastify.db
+        .select({ photoUrl: toolLibraryItems.photoUrl })
+        .from(toolLibraryItems)
+        .where(eq(toolLibraryItems.id, article.sourceItemId))
+        .limit(1)
+      libraryPhotoUrl = libItem?.photoUrl ?? null
+    }
 
     const locations = await fastify.db
       .select()
@@ -149,7 +161,37 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
       }
     }
 
-    return { article, locations, mutations: mutationRows, related, assemblies }
+    return { article: { ...article, libraryPhotoUrl }, locations, mutations: mutationRows, related, assemblies }
+  })
+
+  // ── Artikel foto uploaden ─────────────────────────────────────────────────
+
+  fastify.post('/kiosk/tooling/articles/:id/photo', auth, async (req, reply) => {
+    const { id } = req.params as { id: string }
+
+    const [article] = await fastify.db
+      .select({ id: toolingArticles.id })
+      .from(toolingArticles)
+      .where(eq(toolingArticles.id, id))
+      .limit(1)
+    if (!article) return reply.status(404).send({ error: 'Artikel niet gevonden' })
+
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ error: 'Geen bestand ontvangen' })
+
+    const ext = extname(data.filename).toLowerCase()
+    const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+    if (!ALLOWED.has(ext)) return reply.status(400).send({ error: 'Alleen jpg, png en webp toegestaan' })
+
+    const filename = `tooling-article-${id}-${Date.now()}${ext}`
+    const dest = `/app/uploads/${filename}`
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) chunks.push(chunk as Buffer)
+    await writeFile(dest, Buffer.concat(chunks))
+
+    const photoUrl = `/uploads/${filename}`
+    await fastify.db.update(toolingArticles).set({ photoUrl }).where(eq(toolingArticles.id, id))
+    return { photoUrl }
   })
 
   // ── Locatie toevoegen ──────────────────────────────────────────────────────

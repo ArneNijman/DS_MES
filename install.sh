@@ -25,6 +25,12 @@ echo ""
 
 # ── Stap 1: Controles ────────────────────────────────────────
 
+if [ ! -f docker-compose.yml ]; then
+  echo -e "${RED}✗ Voer dit script uit vanuit de DS_MES map:${RESET}"
+  echo "    cd DS_MES && ./install.sh"
+  exit 1
+fi
+
 echo -e "${BOLD}[1/4] Systeem controleren...${RESET}"
 
 if ! command -v docker &>/dev/null; then
@@ -73,7 +79,7 @@ echo -e "${BOLD}[3/4] Docker images bouwen en starten...${RESET}"
 echo "  (eerste keer duurt dit 3-5 minuten)"
 echo ""
 
-docker compose up --build -d
+docker compose -f docker-compose.yml up --build -d
 
 ok "Containers gestart"
 

@@ -203,7 +203,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         machineId:            productSetupSteps.machineId,
         machineName:          machines.name,
         machinePhotoUrl:      machines.photoUrl,
-        machinePostprocessor: machines.postprocessor,
+        machinePostprocessors: machines.postprocessors,
         zeroX:                productSetupSteps.zeroX,
         zeroY:                productSetupSteps.zeroY,
         zeroZ:                productSetupSteps.zeroZ,

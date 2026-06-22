@@ -118,7 +118,7 @@ export const machines = pgTable('machines', {
   cncNcVersion: text('cnc_nc_version'),
   cncPlcVersion: text('cnc_plc_version'),
   toolTableFormat: text('tool_table_format'),  // null = 'heidenhain', 'fooke'
-  postprocessor: text('postprocessor'),
+  postprocessors: text('postprocessors').array().notNull(),
   spindleHours: numeric('spindle_hours', { precision: 10, scale: 2 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
