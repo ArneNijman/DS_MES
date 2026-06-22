@@ -284,6 +284,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
       comment: string | null
       tool_length: number | null
       preset_diameter: number | null
+      estimated_quantity: number | null
       tool_name: string | null
       tool_category: string | null
       tool_comment: string | null
@@ -303,7 +304,7 @@ export async function cncRoutes(fastify: FastifyInstance) {
       holder_schroef_photo_url: string | null
     }>(sql`
       SELECT
-        a.id, a.nc_number, a.nc_name, a.comment, a.tool_length, a.preset_diameter,
+        a.id, a.nc_number, a.nc_name, a.comment, a.tool_length, a.preset_diameter, a.estimated_quantity,
         t.name                    AS tool_name,
         t.item_category           AS tool_category,
         t.comment                 AS tool_comment,
@@ -440,12 +441,13 @@ export async function cncRoutes(fastify: FastifyInstance) {
 
     return {
       assembly: {
-        id:             a.id,
-        ncNumber:       a.nc_number,
-        ncName:         a.nc_name,
-        comment:        a.comment,
-        toolLength:     a.tool_length,
-        presetDiameter: a.preset_diameter,
+        id:                a.id,
+        ncNumber:          a.nc_number,
+        ncName:            a.nc_name,
+        comment:           a.comment,
+        toolLength:        a.tool_length,
+        presetDiameter:    a.preset_diameter,
+        estimatedQuantity: a.estimated_quantity,
       },
       components,
       instances: instanceRows,

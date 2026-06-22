@@ -470,6 +470,7 @@ interface AssemblyDetail {
     comment: string | null
     toolLength: number | null
     presetDiameter: number | null
+    estimatedQuantity: number | null
   }
   components: AssemblyComponent[]
   instances: AssemblyInstance[]
@@ -1158,6 +1159,7 @@ function AssemblyBrowser() {
   const [search, setSearch]             = useState('')
   const [debouncedSearch, setDebounced] = useState('')
   const [selected, setSelected]         = useState<AssemblyListItem | null>(null)
+  const qc                              = useQueryClient()
 
   // Debounce zoekterm
   useEffect(() => {
@@ -1271,13 +1273,25 @@ function AssemblyBrowser() {
               {detail.assembly.comment && (
                 <p className="text-sm text-gray-500 mt-0.5">{detail.assembly.comment}</p>
               )}
-              <div className="flex gap-4 mt-2 text-xs text-gray-400">
+              <div className="flex items-center gap-4 mt-2 text-xs text-gray-400 flex-wrap">
                 {detail.assembly.toolLength != null && (
                   <span>Lengte: <span className="text-gray-600 font-medium">{detail.assembly.toolLength.toFixed(3)} mm</span></span>
                 )}
                 {detail.assembly.presetDiameter != null && detail.assembly.presetDiameter > 0 && (
                   <span>Diameter: <span className="text-gray-600 font-medium">{detail.assembly.presetDiameter.toFixed(3)} mm</span></span>
                 )}
+                <span className="flex items-center gap-1.5">
+                  Voorraad:
+                  <EstQtyInput
+                    value={detail.assembly.estimatedQuantity}
+                    onSave={val =>
+                      apiFetch(`/admin/cnc/tooling-usage/assemblies/${detail.assembly.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ estimatedQuantity: val }),
+                      }).then(() => qc.invalidateQueries({ queryKey: ['cnc-assembly-detail', detail.assembly.ncName] }))
+                    }
+                  />
+                </span>
               </div>
             </div>
 
@@ -1485,8 +1499,16 @@ function GebruikTab() {
                             : idx === 1 ? 'bg-gray-300 text-gray-700'
                             : idx === 2 ? 'bg-orange-300 text-orange-900'
                             : 'bg-gray-100 text-gray-500'
-            const visibleProjects = a.projects.slice(0, 3)
-            const hiddenCount     = a.projects.length - visibleProjects.length
+            // Dedupliceer op articleNo voor chips — meest machinetijd per artikel
+            const uniqueProjects = Object.values(
+              a.projects.reduce<Record<string, typeof a.projects[0]>>((acc, p) => {
+                const key = p.articleNo ?? p.setupId
+                if (!acc[key] || p.totalSeconds > acc[key].totalSeconds) acc[key] = p
+                return acc
+              }, {})
+            )
+            const visibleProjects = uniqueProjects.slice(0, 3)
+            const hiddenCount     = uniqueProjects.length - visibleProjects.length
             return (
               <div key={a.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
@@ -1602,8 +1624,15 @@ function GebruikTab() {
                             : idx === 1 ? 'bg-gray-300 text-gray-700'
                             : idx === 2 ? 'bg-orange-300 text-orange-900'
                             : 'bg-gray-100 text-gray-500'
-            const visibleProjects = item.projects.slice(0, 3)
-            const hiddenCount     = item.projects.length - visibleProjects.length
+            const uniqueProjects = Object.values(
+              item.projects.reduce<Record<string, typeof item.projects[0]>>((acc, p) => {
+                const key = p.articleNo ?? p.setupId
+                if (!acc[key] || p.totalSeconds > acc[key].totalSeconds) acc[key] = p
+                return acc
+              }, {})
+            )
+            const visibleProjects = uniqueProjects.slice(0, 3)
+            const hiddenCount     = uniqueProjects.length - visibleProjects.length
             return (
               <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
