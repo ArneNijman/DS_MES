@@ -96,10 +96,11 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Het script begeleidt je door de rest:
-- Secrets worden automatisch gegenereerd
-- Docker images bouwen en starten
-- Admin-inloggegevens worden aan het einde getoond
+Het script doorloopt vier stappen:
+1. Systeem controleren (Docker, Docker Compose, openssl)
+2. `.env` aanmaken met automatisch gegenereerde secrets
+3. Docker images bouwen en starten (`-f docker-compose.yml` — productie-modus)
+4. Wachten tot de backend klaar is en admin-inloggegevens tonen
 
 **Sla het getoonde wachtwoord op — het wordt niet opnieuw getoond.**
 
@@ -112,7 +113,26 @@ cd DS_MES
 ./update.sh
 ```
 
+Het script doorloopt vijf stappen:
+1. Back-up maken van database en uploads
+2. Laatste code ophalen (`git pull origin main`)
+3. Docker images herbouwen (productie-modus)
+4. Containers herstarten + wachten tot backend bereikbaar is
+5. Health check uitvoeren (`doctor.sh`)
+
 Data (database, uploads) blijft altijd behouden.
+
+---
+
+### Systeemgezondheid controleren
+
+```bash
+./doctor.sh
+```
+
+Controleert de volledige installatie: environment-variabelen, Docker containers, backend bereikbaarheid, database, migraties, CNC agent, Windows firewall regel, machine TCP-verbindingen en schijfruimte. Toont ✓/⚠/✗ per check en geeft exit code 1 als er fouten zijn.
+
+Wordt automatisch aangeroepen aan het einde van `update.sh`. In het admin panel is een status-dot zichtbaar (groen/oranje/rood) die elke 5 minuten ververst.
 
 ---
 
