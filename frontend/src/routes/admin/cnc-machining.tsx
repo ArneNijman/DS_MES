@@ -1449,11 +1449,6 @@ export function CncMachiningContent() {
               {tab}
             </button>
           ))}
-          {['Instanties', 'Spaandelen'].map((tab) => (
-            <button key={tab} disabled className="px-4 py-2 text-sm font-medium border-b-2 -mb-px border-transparent text-gray-300 cursor-not-allowed">
-              {tab}
-            </button>
-          ))}
         </div>
       </div>
 
