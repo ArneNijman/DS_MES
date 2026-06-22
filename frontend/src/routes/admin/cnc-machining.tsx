@@ -1435,8 +1435,10 @@ function GebruikTab() {
     queryFn: () => apiFetch('/admin/cnc/tooling-usage/items') as Promise<ItemUsageItem[]>,
   })
 
-  const maxAssemblySeconds = Math.max(...assemblies.map(a => a.totalSeconds), 1)
-  const maxItemSeconds     = Math.max(...items.map(i => i.totalSeconds), 1)
+  const maxAssemblySeconds   = Math.max(...assemblies.map(a => a.totalSeconds), 1)
+  const totalAssemblySeconds = assemblies.reduce((s, a) => s + a.totalSeconds, 0)
+  const maxItemSeconds       = Math.max(...items.map(i => i.totalSeconds), 1)
+  const totalItemSeconds     = items.reduce((s, i) => s + i.totalSeconds, 0)
 
   async function patchEstimatedQty(type: 'assemblies' | 'items', id: string, val: number | null) {
     await apiFetch(`/admin/cnc/tooling-usage/${type}/${id}`, {
@@ -1474,34 +1476,69 @@ function GebruikTab() {
           {assemblies.length === 0 && (
             <p className="text-sm text-gray-400">Geen samenstellingen gekoppeld aan projecten gevonden.</p>
           )}
-          {assemblies.map(a => {
-            const barPct = Math.round((a.totalSeconds / maxAssemblySeconds) * 100)
-            const isOver = a.estimatedQuantity !== null && a.maxConcurrent >= a.estimatedQuantity
-            const expanded = expandedId === a.id
+          {assemblies.map((a, idx) => {
+            const barPct    = Math.round((a.totalSeconds / maxAssemblySeconds) * 100)
+            const pctOfAll  = totalAssemblySeconds > 0 ? Math.round((a.totalSeconds / totalAssemblySeconds) * 100) : 0
+            const isOver    = a.estimatedQuantity !== null && a.maxConcurrent >= a.estimatedQuantity
+            const expanded  = expandedId === a.id
+            const rankColor = idx === 0 ? 'bg-yellow-400 text-yellow-900'
+                            : idx === 1 ? 'bg-gray-300 text-gray-700'
+                            : idx === 2 ? 'bg-orange-300 text-orange-900'
+                            : 'bg-gray-100 text-gray-500'
+            const visibleProjects = a.projects.slice(0, 3)
+            const hiddenCount     = a.projects.length - visibleProjects.length
             return (
               <div key={a.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
-                  className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => setExpandedId(expanded ? null : a.id)}
                 >
-                  <ChevronRight size={14} className={cn('text-gray-400 shrink-0 transition-transform', expanded && 'rotate-90')} />
+                  {/* Rang badge */}
+                  <div className={cn('shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mt-0.5', rankColor)}>
+                    {idx + 1}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-gray-800 text-sm">{a.ncName}</span>
                       <span className="text-xs text-gray-400 font-mono">T{a.ncNumber}</span>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
+                    {/* Pareto balk */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden max-w-sm">
                         <div className="h-full bg-teal-500 rounded-full" style={{ width: `${barPct}%` }} />
                       </div>
-                      <span className="text-xs text-gray-500 shrink-0">{fmtDuration(a.totalSeconds)}</span>
+                      <span className="text-xs font-semibold text-teal-700 w-8 shrink-0">{pctOfAll}%</span>
+                      <span className="text-xs text-gray-400 shrink-0">{fmtDuration(a.totalSeconds)}</span>
                     </div>
+                    {/* Project chips — altijd zichtbaar */}
+                    {visibleProjects.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {visibleProjects.map(p => (
+                          <span
+                            key={p.setupId}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border',
+                              p.archivedAt
+                                ? 'bg-gray-50 border-gray-200 text-gray-500'
+                                : 'bg-teal-50 border-teal-200 text-teal-700',
+                            )}
+                          >
+                            <span className="font-mono font-medium">{p.articleNo ?? '—'}</span>
+                            {p.articleName && <span className="text-gray-400 max-w-[120px] truncate">{p.articleName}</span>}
+                            <span className="text-gray-300">·</span>
+                            <span>{p.archivedAt ? new Date(p.archivedAt).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : 'Actief'}</span>
+                          </span>
+                        ))}
+                        {hiddenCount > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 border border-gray-200">
+                            +{hiddenCount} meer
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-5 shrink-0">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-400">Projecten</div>
-                      <div className="text-sm font-medium text-gray-700">{a.uniqueSetups}</div>
-                    </div>
+                  {/* Stats rechts */}
+                  <div className="flex items-center gap-5 shrink-0 mt-0.5">
                     <div className="text-center">
                       <div className="text-xs text-gray-400">Max gelijktijdig</div>
                       <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : 'text-gray-700')}>
@@ -1556,17 +1593,27 @@ function GebruikTab() {
           {items.length === 0 && (
             <p className="text-sm text-gray-400">Geen componenten gekoppeld aan projecten gevonden.</p>
           )}
-          {items.map(item => {
-            const barPct = Math.round((item.totalSeconds / maxItemSeconds) * 100)
-            const isOver = item.estimatedQuantity !== null && item.maxConcurrent >= item.estimatedQuantity
+          {items.map((item, idx) => {
+            const barPct   = Math.round((item.totalSeconds / maxItemSeconds) * 100)
+            const pctOfAll = totalItemSeconds > 0 ? Math.round((item.totalSeconds / totalItemSeconds) * 100) : 0
+            const isOver   = item.estimatedQuantity !== null && item.maxConcurrent >= item.estimatedQuantity
             const expanded = expandedId === item.id
+            const rankColor = idx === 0 ? 'bg-yellow-400 text-yellow-900'
+                            : idx === 1 ? 'bg-gray-300 text-gray-700'
+                            : idx === 2 ? 'bg-orange-300 text-orange-900'
+                            : 'bg-gray-100 text-gray-500'
+            const visibleProjects = item.projects.slice(0, 3)
+            const hiddenCount     = item.projects.length - visibleProjects.length
             return (
               <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
-                  className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => setExpandedId(expanded ? null : item.id)}
                 >
-                  <ChevronRight size={14} className={cn('text-gray-400 shrink-0 transition-transform', expanded && 'rotate-90')} />
+                  {/* Rang badge */}
+                  <div className={cn('shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mt-0.5', rankColor)}>
+                    {idx + 1}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-gray-800 text-sm">{item.name}</span>
@@ -1577,18 +1624,43 @@ function GebruikTab() {
                     {item.assemblyNames.length > 0 && (
                       <p className="text-xs text-gray-400 mt-0.5 truncate">In: {item.assemblyNames.join(', ')}</p>
                     )}
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
+                    {/* Pareto balk */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden max-w-sm">
                         <div className="h-full bg-teal-500 rounded-full" style={{ width: `${barPct}%` }} />
                       </div>
-                      <span className="text-xs text-gray-500 shrink-0">{fmtDuration(item.totalSeconds)}</span>
+                      <span className="text-xs font-semibold text-teal-700 w-8 shrink-0">{pctOfAll}%</span>
+                      <span className="text-xs text-gray-400 shrink-0">{fmtDuration(item.totalSeconds)}</span>
                     </div>
+                    {/* Project chips */}
+                    {visibleProjects.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {visibleProjects.map(p => (
+                          <span
+                            key={p.setupId}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border',
+                              p.archivedAt
+                                ? 'bg-gray-50 border-gray-200 text-gray-500'
+                                : 'bg-teal-50 border-teal-200 text-teal-700',
+                            )}
+                          >
+                            <span className="font-mono font-medium">{p.articleNo ?? '—'}</span>
+                            {p.articleName && <span className="text-gray-400 max-w-[120px] truncate">{p.articleName}</span>}
+                            <span className="text-gray-300">·</span>
+                            <span>{p.archivedAt ? new Date(p.archivedAt).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : 'Actief'}</span>
+                          </span>
+                        ))}
+                        {hiddenCount > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 border border-gray-200">
+                            +{hiddenCount} meer
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-5 shrink-0">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-400">Projecten</div>
-                      <div className="text-sm font-medium text-gray-700">{item.uniqueSetups}</div>
-                    </div>
+                  {/* Stats rechts */}
+                  <div className="flex items-center gap-5 shrink-0 mt-0.5">
                     <div className="text-center">
                       <div className="text-xs text-gray-400">Max gelijktijdig</div>
                       <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : 'text-gray-700')}>
