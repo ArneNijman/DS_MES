@@ -1805,7 +1805,14 @@ if (runScanIp) {
             } catch (err) {
               const out = err.stdout?.trim() ?? ''
               const se  = err.stderr?.trim() ?? ''
-              throw new Error(`PUT mislukt (exit ${err.code}): ${out || se || err.message}`)
+              const raw = out || se || err.message
+              if (isLegacy && raw.includes('File name invalid')) {
+                throw new Error(
+                  `Bestandsnaam niet toegestaan door TNC 426/430M: "${fileName}" — ` +
+                  `gebruik max 16 tekens, alleen hoofdletters, cijfers, koppelteken of underscore`
+                )
+              }
+              throw new Error(`PUT mislukt (exit ${err.code}): ${raw}`)
             }
 
             console.log(`   ✅  ${fileName} verstuurd naar ${ip}:${destPath}`)
