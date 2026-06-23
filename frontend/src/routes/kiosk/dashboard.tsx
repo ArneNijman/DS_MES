@@ -130,7 +130,7 @@ export default function KioskDashboard() {
   const [pendingArchiefSetupId, setPendingArchiefSetupId] = useState<string | null>(null)
   const KWAL_KEYS: NavKey[] = ['ncr', 'preventief', 'klantmelding', 'ncr_statistieken']
   const [kwalOpen, setKwalOpen] = useState(false)
-  const kwalCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
 
   const myTaskCount = useMyTaskCount()
   const { rood, geel } = useTaskCounts()
@@ -226,12 +226,9 @@ export default function KioskDashboard() {
             </NavBtn>
           )}
 
-          {/* Kwaliteit melding — opent bij hover/klik, sluit na 500ms als muis weg is */}
+          {/* Kwaliteit melding — opent alleen bij klik */}
           {(canSee('ncr') || canSee('preventief') || canSee('klantmelding') || canSee('ncr_statistieken')) && (
-            <div
-              onMouseEnter={() => { if (kwalCloseTimer.current) clearTimeout(kwalCloseTimer.current); setKwalOpen(true) }}
-              onMouseLeave={() => { kwalCloseTimer.current = setTimeout(() => setKwalOpen(false), 500) }}
-            >
+            <div>
               <button
                 onClick={() => setKwalOpen((o) => !o)}
                 className={cn(

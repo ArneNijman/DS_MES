@@ -1465,8 +1465,65 @@ function GebruikTab() {
 
   const isLoading = subTab === 'Samenstellingen' ? aLoading : iLoading
 
+  // Tekortlijst — items waar historische piek of actueel gebruik capaciteit overschrijdt
+  const assembliesTekort = assemblies.filter(a =>
+    a.componentCapacity !== null && a.maxConcurrent >= a.componentCapacity
+  )
+  const componentenTekort = items.filter(i =>
+    i.estimatedQuantity !== null && i.maxConcurrent >= i.estimatedQuantity
+  )
+  const heeftTekort = assembliesTekort.length > 0 || componentenTekort.length > 0
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
+
+      {/* Bestellen-banner */}
+      {!aLoading && !iLoading && heeftTekort && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={15} className="text-red-500 shrink-0" />
+            <span className="text-sm font-semibold text-red-700">Mogelijk tekort — controleer voorraad</span>
+          </div>
+          <div className="space-y-1">
+            {assembliesTekort.map(a => (
+              <button
+                key={a.id}
+                className="w-full flex items-center gap-2 text-xs text-red-700 hover:text-red-900 text-left"
+                onClick={() => {
+                  setSubTab('Samenstellingen')
+                  setExpandedId(a.id)
+                  setTimeout(() => document.getElementById(`assembly-${a.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                <span className="font-medium">{a.ncName}</span>
+                <span className="text-red-400">—</span>
+                <span>piek {a.maxConcurrent}× gebruikt, kan {a.componentCapacity} maken</span>
+                <span className="text-red-300 ml-auto">↓ toon</span>
+              </button>
+            ))}
+            {componentenTekort.map(i => (
+              <button
+                key={i.id}
+                className="w-full flex items-center gap-2 text-xs text-red-700 hover:text-red-900 text-left"
+                onClick={() => {
+                  setSubTab('Componenten')
+                  setExpandedId(i.id)
+                  setTimeout(() => document.getElementById(`item-${i.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
+                <span className="font-medium">{i.name}</span>
+                {i.orderingCode && <span className="font-mono text-red-400">{i.orderingCode}</span>}
+                <span className="text-red-400">—</span>
+                <span>piek {i.maxConcurrent}× gebruikt, voorraad {i.estimatedQuantity}</span>
+                <span className="text-red-300 ml-auto">↓ toon</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {(['Samenstellingen', 'Componenten'] as const).map(tab => (
@@ -1513,7 +1570,7 @@ function GebruikTab() {
             const visibleProjects = uniqueProjects.slice(0, 3)
             const hiddenCount     = uniqueProjects.length - visibleProjects.length
             return (
-              <div key={a.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div key={a.id} id={`assembly-${a.id}`} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
                   className="px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => setExpandedId(expanded ? null : a.id)}
@@ -1641,7 +1698,7 @@ function GebruikTab() {
             const visibleProjects = uniqueProjects.slice(0, 3)
             const hiddenCount     = uniqueProjects.length - visibleProjects.length
             return (
-              <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div key={item.id} id={`item-${item.id}`} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div
                   className="px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => setExpandedId(expanded ? null : item.id)}

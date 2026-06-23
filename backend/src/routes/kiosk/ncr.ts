@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { ncrRegistrations, ncrAttachments, statusLogs } from '../../db/schema.js'
 import { eq, desc, asc, and, inArray } from 'drizzle-orm'
 import { sendMail, getNotifiableEmployees, mailLayout } from '../../lib/mailer.js'
+import { smtpSettings } from '../../db/schema.js'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { randomUUID } from 'crypto'
@@ -165,11 +166,16 @@ export async function kioskNcrRoutes(fastify: FastifyInstance) {
 
     await logStatusChange(fastify, 'ncr', ncr.id, null, 'open', employee?.name ?? null, employee?.employeeId ?? null)
 
-    // Broadcast naar quality + admin
-    const qualityTeam = await getNotifiableEmployees(fastify.db, { role: ['quality', 'admin'] })
-    if (qualityTeam.length > 0) {
+    // Broadcast naar geconfigureerd NCR-adres, of anders quality + admin medewerkers
+    const [smtpRow] = await fastify.db.select({ ncrNotificationEmail: smtpSettings.ncrNotificationEmail })
+      .from(smtpSettings).where(eq(smtpSettings.id, 1)).limit(1)
+    const ncrEmail = smtpRow?.ncrNotificationEmail?.trim()
+    const ontvangers: string[] = ncrEmail
+      ? [ncrEmail]
+      : (await getNotifiableEmployees(fastify.db, { role: ['quality', 'admin'] })).map(e => e.email)
+    if (ontvangers.length > 0) {
       sendMail(fastify.db, {
-        to: qualityTeam.map(e => e.email),
+        to: ontvangers,
         subject: `Nieuwe NCR ${ncr.ncrId} aangemaakt`,
         html: mailLayout('Nieuwe NCR', `
           <p>Er is een nieuwe NCR aangemaakt:</p>

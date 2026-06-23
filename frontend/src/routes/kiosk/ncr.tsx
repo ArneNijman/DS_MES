@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, ChevronRight, Search, X, Paperclip, Lightbulb, Printer, ShieldCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
@@ -383,16 +384,37 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
     style.id = 'ncr-print-style'
     style.textContent = `
       @media print {
-        body * { visibility: hidden !important; }
-        .ncr-report-print, .ncr-report-print * { visibility: visible !important; }
-        .ncr-report-print {
-          position: fixed !important;
-          top: 0 !important; left: 0 !important;
-          width: 100% !important;
+        body > #root { display: none !important; }
+        #ncr-report-portal {
+          display: block !important;
+          position: static !important;
+          height: auto !important;
           overflow: visible !important;
-          background: white !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
         }
         .no-print { display: none !important; }
+        .ncr-image-grid {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 16px !important;
+          margin-bottom: 16px !important;
+        }
+        .ncr-image-grid img {
+          width: 100% !important;
+          height: auto !important;
+          max-height: 280px !important;
+          object-fit: contain !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 4px !important;
+          page-break-inside: avoid !important;
+        }
+        .ncr-print-footer {
+          color: #dc2626 !important;
+          border-top: 1px solid #e5e7eb !important;
+          margin-top: 40px !important;
+          padding-top: 16px !important;
+        }
       }
       @page { size: A4; margin: 18mm; }
     `
@@ -403,8 +425,8 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
   const images = attachments.filter((a) => isImage(a.mimeType, a.fileName))
   const files  = attachments.filter((a) => !isImage(a.mimeType, a.fileName))
 
-  return (
-    <div className="ncr-report-print fixed inset-0 z-[9999] bg-white overflow-y-auto">
+  return createPortal(
+    <div id="ncr-report-portal" className="fixed inset-0 z-[9999] bg-white overflow-y-auto">
 
       {/* Actiebalk — alleen op scherm zichtbaar */}
       <div className="no-print sticky top-0 bg-white border-b border-gray-200 px-8 py-3 flex items-center justify-between shadow-sm">
@@ -527,7 +549,7 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
               Bijlages ({attachments.length})
             </h2>
             {images.length > 0 && (
-              <div className="flex flex-wrap gap-4 mb-4">
+              <div className="ncr-image-grid flex flex-wrap gap-4 mb-4">
                 {images.map((att) => (
                   <div key={att.id} className="flex flex-col items-center gap-1.5">
                     <img
@@ -541,7 +563,7 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
               </div>
             )}
             {files.length > 0 && (
-              <ul className="space-y-1.5">
+              <ul className="space-y-1.5 mt-2">
                 {files.map((att) => (
                   <li key={att.id} className="flex items-center gap-2 text-sm text-gray-600">
                     <Paperclip size={12} className="text-gray-400 shrink-0" />
@@ -556,12 +578,13 @@ function NcrReportModal({ ncr, onClose }: { ncr: Partial<NcrRegistration>; onClo
         )}
 
         {/* Voettekst */}
-        <div className="mt-12 pt-4 border-t border-gray-200 text-xs text-red-600 space-y-3">
+        <div className="ncr-print-footer mt-12 pt-4 border-t border-gray-200 text-xs text-red-600 space-y-2">
           <p>Proprietary data of and copyright by Dutch-Shape&nbsp;&nbsp;B.V. Disclosure to third parties of this document or any part thereof, the content of this document or the use of any information contained therein for purposes other than provided for by this document, is not permitted, except with prior and express written permission.</p>
           <p>Any copy outside the Dutch-Shape BMS (printed or digital) is not controlled</p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

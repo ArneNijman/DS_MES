@@ -17,6 +17,7 @@ interface SmtpConfig {
   intervalOnderhoud: string
   intervalKalibratie: string
   intervalKwaliteit: string
+  ncrNotificationEmail: string
 }
 
 const INTERVAL_OPTIES = [
@@ -54,6 +55,7 @@ export default function SmtpSettings() {
     intervalOnderhoud: 'wekelijks',
     intervalKalibratie: 'wekelijks',
     intervalKwaliteit: 'dagelijks',
+    ncrNotificationEmail: '',
   })
   const [initialized, setInitialized] = useState(false)
 
@@ -130,6 +132,10 @@ export default function SmtpSettings() {
           {field('Poort', 'port', 'text', '25')}
           {field('Gebruikersnaam (optioneel)', 'user')}
           {field('Wachtwoord (optioneel)', 'password', 'password')}
+
+          <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2 pt-2">NCR notificaties</h2>
+          {field('NCR notificatie-adres', 'ncrNotificationEmail', 'email', 'quality@dutch-shape.nl')}
+          <p className="text-xs text-gray-400 -mt-1">Nieuwe NCR-meldingen worden naar dit adres gestuurd. Leeg laten = medewerkers met rol quality/admin ontvangen de mail.</p>
 
           <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2 pt-2">Herinnerings-interval per categorie</h2>
           <p className="text-xs text-gray-400 -mt-2">Emails worden verstuurd om 07:30 op werkdagen. Stel per categorie in hoe vaak.</p>

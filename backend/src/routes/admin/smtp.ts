@@ -51,8 +51,9 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
       intervalTaken:      row.intervalTaken,
       intervalNcr:        row.intervalNcr,
       intervalOnderhoud:  row.intervalOnderhoud,
-      intervalKalibratie: row.intervalKalibratie,
-      intervalKwaliteit:  row.intervalKwaliteit,
+      intervalKalibratie:   row.intervalKalibratie,
+      intervalKwaliteit:    row.intervalKwaliteit,
+      ncrNotificationEmail: row.ncrNotificationEmail ?? '',
     }
   })
 
@@ -64,6 +65,7 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
       fromEmail: string; fromName: string; reminderInterval: string
       intervalTaken: string; intervalNcr: string
       intervalOnderhoud: string; intervalKalibratie: string; intervalKwaliteit: string
+      ncrNotificationEmail?: string
     }
 
     const [existing] = await fastify.db.select({ password: smtpSettings.password })
@@ -89,8 +91,9 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
         intervalNcr:        body.intervalNcr ?? 'dagelijks',
         intervalOnderhoud:  body.intervalOnderhoud ?? 'wekelijks',
         intervalKalibratie: body.intervalKalibratie ?? 'wekelijks',
-        intervalKwaliteit:  body.intervalKwaliteit ?? 'dagelijks',
-        updatedAt:          new Date(),
+        intervalKwaliteit:    body.intervalKwaliteit ?? 'dagelijks',
+        ncrNotificationEmail: body.ncrNotificationEmail?.trim() || null,
+        updatedAt:            new Date(),
       })
       .onConflictDoUpdate({
         target: smtpSettings.id,
@@ -107,6 +110,7 @@ export default async function smtpRoutes(fastify: FastifyInstance) {
           intervalOnderhoud:  body.intervalOnderhoud ?? 'wekelijks',
           intervalKalibratie: body.intervalKalibratie ?? 'wekelijks',
           intervalKwaliteit:  body.intervalKwaliteit ?? 'dagelijks',
+          ncrNotificationEmail: body.ncrNotificationEmail?.trim() || null,
           updatedAt:          new Date(),
         },
       })

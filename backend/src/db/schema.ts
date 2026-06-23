@@ -62,8 +62,9 @@ export const smtpSettings = pgTable('smtp_settings', {
   intervalNcr:         text('interval_ncr').notNull().default('dagelijks'),
   intervalOnderhoud:   text('interval_onderhoud').notNull().default('wekelijks'),
   intervalKalibratie:  text('interval_kalibratie').notNull().default('wekelijks'),
-  intervalKwaliteit:   text('interval_kwaliteit').notNull().default('dagelijks'),
-  updatedAt:           timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  intervalKwaliteit:      text('interval_kwaliteit').notNull().default('dagelijks'),
+  ncrNotificationEmail:   text('ncr_notification_email'),
+  updatedAt:              timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const bcFieldMap = pgTable(
