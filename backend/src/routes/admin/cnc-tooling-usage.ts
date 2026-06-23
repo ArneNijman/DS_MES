@@ -7,6 +7,7 @@ interface AssemblyUsageRow extends Record<string, unknown> {
   nc_number: number
   nc_name: string
   estimated_quantity: number | null
+  component_capacity: number | null
   total_uses: string
   unique_setups: string
   total_seconds: string
@@ -80,6 +81,8 @@ export async function cncToolingUsageRoutes(fastify: FastifyInstance) {
           a.nc_number,
           a.nc_name,
           a.estimated_quantity,
+          a.tool_item_id,
+          a.holder_item_id,
           ps.id               AS setup_id,
           ps.article_no,
           ps.article_name,
@@ -95,38 +98,44 @@ export async function cncToolingUsageRoutes(fastify: FastifyInstance) {
         JOIN product_setups ps          ON ps.id = s.setup_id
         LEFT JOIN setup_machine_seconds sms ON sms.article_no = ps.article_no
         GROUP BY a.id, a.nc_number, a.nc_name, a.estimated_quantity,
+                 a.tool_item_id, a.holder_item_id,
                  ps.id, ps.article_no, ps.article_name, ps.created_at, ps.archived_at,
                  sms.seconds
       )
       SELECT
-        assembly_id                               AS id,
-        nc_number,
-        nc_name,
-        estimated_quantity,
-        SUM(uses_in_setup)::text                  AS total_uses,
-        COUNT(DISTINCT setup_id)::text            AS unique_setups,
-        SUM(setup_seconds)::text                  AS total_seconds,
+        s.assembly_id                             AS id,
+        s.nc_number,
+        s.nc_name,
+        s.estimated_quantity,
+        LEAST(t.estimated_quantity, h.estimated_quantity) AS component_capacity,
+        SUM(s.uses_in_setup)::text                AS total_uses,
+        COUNT(DISTINCT s.setup_id)::text          AS unique_setups,
+        SUM(s.setup_seconds)::text                AS total_seconds,
         JSON_AGG(JSON_BUILD_OBJECT(
-          'setupId',     setup_id,
-          'articleNo',   article_no,
-          'articleName', article_name,
-          'createdAt',   created_at,
-          'archivedAt',  archived_at,
-          'totalSeconds', setup_seconds
-        ) ORDER BY setup_seconds DESC)            AS projects
-      FROM assembly_setups
-      GROUP BY assembly_id, nc_number, nc_name, estimated_quantity
-      ORDER BY SUM(setup_seconds) DESC, SUM(uses_in_setup) DESC
+          'setupId',     s.setup_id,
+          'articleNo',   s.article_no,
+          'articleName', s.article_name,
+          'createdAt',   s.created_at,
+          'archivedAt',  s.archived_at,
+          'totalSeconds', s.setup_seconds
+        ) ORDER BY s.setup_seconds DESC)          AS projects
+      FROM assembly_setups s
+      LEFT JOIN tool_library_items t ON t.id = s.tool_item_id
+      LEFT JOIN tool_library_items h ON h.id = s.holder_item_id
+      GROUP BY s.assembly_id, s.nc_number, s.nc_name, s.estimated_quantity,
+               t.estimated_quantity, h.estimated_quantity
+      ORDER BY SUM(s.setup_seconds) DESC, SUM(s.uses_in_setup) DESC
     `)
 
     return rows.map(r => {
       const projects = r.projects as unknown as ProjectEntry[]
       return {
-        id:                r.id,
-        ncNumber:          r.nc_number,
-        ncName:            r.nc_name,
-        estimatedQuantity: r.estimated_quantity,
-        totalUses:         parseInt(r.total_uses as string),
+        id:                 r.id,
+        ncNumber:           r.nc_number,
+        ncName:             r.nc_name,
+        estimatedQuantity:  r.estimated_quantity,
+        componentCapacity:  r.component_capacity ?? null,
+        totalUses:          parseInt(r.total_uses as string),
         uniqueSetups:      parseInt(r.unique_setups as string),
         totalSeconds:      fmtSeconds(parseFloat(r.total_seconds as string)),
         maxConcurrent:     maxConcurrent(projects),

@@ -92,6 +92,7 @@ interface AssemblyUsageItem {
   ncNumber: number
   ncName: string
   estimatedQuantity: number | null
+  componentCapacity: number | null
   totalUses: number
   uniqueSetups: number
   totalSeconds: number
@@ -1495,6 +1496,8 @@ function GebruikTab() {
             const pctOfAll      = totalAssemblySeconds > 0 ? Math.round((a.totalSeconds / totalAssemblySeconds) * 100) : 0
             const expanded      = expandedId === a.id
             const nuActief      = a.projects.filter(p => !p.archivedAt).length
+            const capaciteit    = a.componentCapacity
+            const capTekort     = capaciteit !== null && nuActief > capaciteit
             const rankColor = idx === 0 ? 'bg-yellow-400 text-yellow-900'
                             : idx === 1 ? 'bg-gray-300 text-gray-700'
                             : idx === 2 ? 'bg-orange-300 text-orange-900'
@@ -1563,10 +1566,19 @@ function GebruikTab() {
                   <div className="flex items-center gap-5 shrink-0 mt-0.5">
                     <div className="text-center">
                       <div className="text-xs text-gray-400">Nu in productie</div>
-                      <div className={cn('text-sm font-bold', nuActief > 0 ? 'text-teal-600' : 'text-gray-400')}>
+                      <div className={cn('text-sm font-bold', capTekort ? 'text-red-500' : nuActief > 0 ? 'text-teal-600' : 'text-gray-400')}>
                         {nuActief}
+                        {capTekort && <AlertTriangle size={12} className="inline ml-1 text-red-400" />}
                       </div>
                     </div>
+                    {capaciteit !== null && (
+                      <div className="text-center">
+                        <div className="text-xs text-gray-400">Kan maken</div>
+                        <div className={cn('text-sm font-bold', capTekort ? 'text-red-500' : 'text-gray-700')}>
+                          {capaciteit}
+                        </div>
+                      </div>
+                    )}
                     <div className="text-center">
                       <div className="text-xs text-gray-400">Piek ooit</div>
                       <div className="text-sm font-medium text-gray-400">{a.maxConcurrent}</div>
