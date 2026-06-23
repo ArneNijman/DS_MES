@@ -180,7 +180,7 @@ info "Versie: $GIT_INFO"
 
 # Server IP
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-[ -n "$SERVER_IP" ] && info "Adres:  ${CYAN}http://${SERVER_IP}:8080/admin/login${RESET}"
+[ -n "$SERVER_IP" ] && info "Adres:  ${CYAN}http://${SERVER_IP}:5173/admin/login${RESET}"
 
 # ── Samenvatting ──────────────────────────────────────────────
 echo ""
