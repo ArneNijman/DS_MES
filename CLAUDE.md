@@ -19,6 +19,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 docker compose up -d --build
 ```
 
+**Testserver (Dutch Shape — DS-MES01):** draait in dev-modus op poort **5173** (Vite), niet nginx op 8080. `update.sh` gebruikt automatisch de dev-overlay en houdt poort 5173 actief na elke update.
+
 **Belangrijk:** Na het toevoegen van een nieuw `.ts` bestand aan de backend moet de backend-container herstart worden — `tsx watch` pikt nieuwe bestanden niet automatisch op:
 ```bash
 docker compose restart backend

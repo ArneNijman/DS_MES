@@ -117,7 +117,8 @@ Het server-IP en het admin-wachtwoord zijn getoond aan het einde van het `instal
 > | Situatie | BACKEND_URL |
 > |----------|-------------|
 > | Dev (lokaal op laptop) | `http://localhost:3000` |
-> | Testserver / productie | `http://192.168.1.x:8080` |
+> | Testserver DS-MES01 (dev-modus) | `http://10.85.27.10:5173` |
+> | Productie (nginx) | `http://192.168.1.x:8080` |
 > | Windows VM op zelfde server | `http://host-ip:8080` |
 
 ### Stap 2 — Testen of de agent werkt
@@ -406,3 +407,4 @@ De overige machines worden gewoon gesynchroniseerd.
 | Spindeluren worden niet bijgewerkt | Geen DNC-licentie (optie #18) | Normaal gedrag op iTNC 530 zonder licentie; spindeluren handmatig in te stellen in het MES |
 | Logboek events worden niet verwerkt | Logboek monitoring uitgeschakeld of verkeerd pad | Controleer `TNCREMO_LOGBOOK_ENABLED=true` en `TNCREMO_LOGBOOK_PATH` in `.env`; zorg dat TNCremo op dezelfde PC draait |
 | Machine IP niet gevonden in logboek | REMO A_LG entry ontbreekt | Open TNCremo en maak verbinding met de machine — TNCremo logt het IP bij de eerste verbinding |
+| `Bestandsnaam niet toegestaan door TNC 426/430M` | NC-bestandsnaam te lang of bevat ongeldige tekens | TNC 426/430M (bijv. MTE3200) accepteert max. 16 tekens voor de bestandsnaam (zonder `.H`), alleen hoofdletters, cijfers, koppelteken of underscore — hernoem het NC-bestand |
