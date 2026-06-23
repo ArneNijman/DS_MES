@@ -1491,9 +1491,10 @@ function GebruikTab() {
             <p className="text-sm text-gray-400">Geen samenstellingen gekoppeld aan projecten gevonden.</p>
           )}
           {assemblies.map((a, idx) => {
-            const barPct   = Math.round((a.totalSeconds / maxAssemblySeconds) * 100)
-            const pctOfAll = totalAssemblySeconds > 0 ? Math.round((a.totalSeconds / totalAssemblySeconds) * 100) : 0
-            const expanded = expandedId === a.id
+            const barPct        = Math.round((a.totalSeconds / maxAssemblySeconds) * 100)
+            const pctOfAll      = totalAssemblySeconds > 0 ? Math.round((a.totalSeconds / totalAssemblySeconds) * 100) : 0
+            const expanded      = expandedId === a.id
+            const nuActief      = a.projects.filter(p => !p.archivedAt).length
             const rankColor = idx === 0 ? 'bg-yellow-400 text-yellow-900'
                             : idx === 1 ? 'bg-gray-300 text-gray-700'
                             : idx === 2 ? 'bg-orange-300 text-orange-900'
@@ -1561,8 +1562,14 @@ function GebruikTab() {
                   {/* Stats rechts */}
                   <div className="flex items-center gap-5 shrink-0 mt-0.5">
                     <div className="text-center">
-                      <div className="text-xs text-gray-400">Max gelijktijdig</div>
-                      <div className="text-sm font-bold text-gray-700">{a.maxConcurrent}</div>
+                      <div className="text-xs text-gray-400">Nu in productie</div>
+                      <div className={cn('text-sm font-bold', nuActief > 0 ? 'text-teal-600' : 'text-gray-400')}>
+                        {nuActief}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Piek ooit</div>
+                      <div className="text-sm font-medium text-gray-400">{a.maxConcurrent}</div>
                     </div>
                   </div>
                 </div>
@@ -1607,8 +1614,9 @@ function GebruikTab() {
           {items.map((item, idx) => {
             const barPct   = Math.round((item.totalSeconds / maxItemSeconds) * 100)
             const pctOfAll = totalItemSeconds > 0 ? Math.round((item.totalSeconds / totalItemSeconds) * 100) : 0
-            const isOver   = item.estimatedQuantity !== null && item.maxConcurrent >= item.estimatedQuantity
             const expanded = expandedId === item.id
+            const nuActief = item.projects.filter(p => !p.archivedAt).length
+            const isOver   = item.estimatedQuantity !== null && nuActief >= item.estimatedQuantity
             const rankColor = idx === 0 ? 'bg-yellow-400 text-yellow-900'
                             : idx === 1 ? 'bg-gray-300 text-gray-700'
                             : idx === 2 ? 'bg-orange-300 text-orange-900'
@@ -1680,14 +1688,14 @@ function GebruikTab() {
                   {/* Stats rechts */}
                   <div className="flex items-center gap-5 shrink-0 mt-0.5">
                     <div className="text-center">
-                      <div className="text-xs text-gray-400">Max gelijktijdig</div>
-                      <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : 'text-gray-700')}>
-                        {item.maxConcurrent}
+                      <div className="text-xs text-gray-400">Nu in productie</div>
+                      <div className={cn('text-sm font-bold flex items-center justify-center gap-1', isOver ? 'text-red-500' : nuActief > 0 ? 'text-teal-600' : 'text-gray-400')}>
+                        {nuActief}
                         {isOver && <AlertTriangle size={12} className="text-red-400" />}
                       </div>
                     </div>
                     <div className="text-center" onClick={e => e.stopPropagation()}>
-                      <div className="text-xs text-gray-400">Geschat aantal</div>
+                      <div className="text-xs text-gray-400">Voorraad</div>
                       <EstQtyInput
                         value={item.estimatedQuantity}
                         onSave={val => patchEstimatedQty('items', item.id, val)}
