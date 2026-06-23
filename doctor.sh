@@ -136,27 +136,19 @@ if command -v powershell.exe &>/dev/null || command -v pwsh &>/dev/null; then
   fi
 fi
 
-# ── 4. Machines TCP bereikbaarheid ────────────────────────────
+# ── 4. Machines ───────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}[ Machines ]${RESET}"
 
-MACHINES=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-mes}" -d "${POSTGRES_DB:-mes}" -t -A -F'|' -c \
-  "SELECT name, cnc_ip_address FROM machines WHERE is_active = true AND category = 'Freesmachine' AND cnc_ip_address IS NOT NULL;" \
-  2>/dev/null || echo "")
+MACHINE_COUNT=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-mes}" -d "${POSTGRES_DB:-mes}" -t -c \
+  "SELECT COUNT(*) FROM machines WHERE is_active = true AND category = 'Freesmachine' AND cnc_ip_address IS NOT NULL;" \
+  2>/dev/null | tr -d ' \n' || echo "0")
 
-if [ -z "$MACHINES" ]; then
-  info "Geen Freesmachines met IP-adres geconfigureerd"
+if [ "${MACHINE_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+  ok "$MACHINE_COUNT Freesmachine(s) geconfigureerd"
+  info "LSV2-verbinding loopt via de CNC agent (192.168.1.x netwerk)"
 else
-  while IFS='|' read -r mname mip; do
-    [ -z "$mname" ] && continue
-    mname=$(echo "$mname" | tr -d ' ')
-    mip=$(echo "$mip" | tr -d ' ')
-    if timeout 3 bash -c "echo >/dev/tcp/$mip/19000" 2>/dev/null; then
-      ok "$mname ($mip) TCP bereikbaar (LSV2 poort 19000)"
-    else
-      warn "$mname ($mip) niet bereikbaar op poort 19000 (LSV2)"
-    fi
-  done <<< "$MACHINES"
+  warn "Geen Freesmachines met IP-adres geconfigureerd"
 fi
 
 # ── 5. Systeem ────────────────────────────────────────────────
