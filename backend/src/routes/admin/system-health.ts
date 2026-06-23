@@ -44,7 +44,7 @@ export async function systemHealthRoutes(fastify: FastifyInstance) {
     try {
       const files = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql'))
       const [row] = await fastify.db.execute<{ count: string }>(
-        sql`SELECT COUNT(*)::text AS count FROM applied_migrations`
+        sql`SELECT COUNT(*)::text AS count FROM mes_migrations`
       )
       const applied = parseInt(row.count ?? '0', 10)
       const total = files.length
@@ -52,7 +52,7 @@ export async function systemHealthRoutes(fastify: FastifyInstance) {
         checks.push({ name: 'Migraties', status: 'ok', detail: `${applied}/${total}` })
       } else {
         const appliedNames = await fastify.db.execute<{ filename: string }>(
-          sql`SELECT filename FROM applied_migrations`
+          sql`SELECT filename FROM mes_migrations`
         )
         const appliedSet = new Set(appliedNames.map(r => r.filename))
         const missing = files.filter(f => !appliedSet.has(f))

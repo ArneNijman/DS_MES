@@ -91,13 +91,13 @@ fi
 # Migraties
 MIGRATION_FILES=$(ls backend/src/db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')
 APPLIED=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-mes}" -d "${POSTGRES_DB:-mes}" -t -c \
-  "SELECT COUNT(*) FROM applied_migrations;" 2>/dev/null | tr -d ' \n' || echo "0")
+  "SELECT COUNT(*) FROM mes_migrations;" 2>/dev/null | tr -d ' \n' || echo "0")
 
 if [ "$MIGRATION_FILES" = "$APPLIED" ]; then
   ok "Migraties up-to-date ($APPLIED/$MIGRATION_FILES)"
 elif [ "$APPLIED" -lt "$MIGRATION_FILES" ] 2>/dev/null; then
   APPLIED_NAMES=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-mes}" -d "${POSTGRES_DB:-mes}" -t -c \
-    "SELECT filename FROM applied_migrations ORDER BY applied_at;" 2>/dev/null | \
+    "SELECT filename FROM mes_migrations ORDER BY applied_at;" 2>/dev/null | \
     tr -d ' ' | grep -v '^$')
   DIFF=$((MIGRATION_FILES - APPLIED))
   fail "Migraties: $APPLIED/$MIGRATION_FILES toegepast — $DIFF openstaand"
