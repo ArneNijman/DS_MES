@@ -35,8 +35,27 @@ ok "Back-up gemaakt"
 
 echo ""
 echo -e "${BOLD}[2/5] Laatste code ophalen...${RESET}"
+
+# Stash lokale wijzigingen zodat git pull niet blokkeert
+STASH_OUT=$(git stash 2>&1)
+if echo "$STASH_OUT" | grep -q "No local changes"; then
+  STASHED=false
+else
+  STASHED=true
+  ok "Lokale wijzigingen tijdelijk opgeslagen (git stash)"
+fi
+
 git pull origin main
 ok "Code bijgewerkt"
+
+# Herstel lokale wijzigingen na de pull
+if [ "$STASHED" = "true" ]; then
+  if git stash pop; then
+    ok "Lokale wijzigingen hersteld (git stash pop)"
+  else
+    echo -e "${RED}  ⚠ Stash pop mislukt — los conflicten op met: git stash pop${RESET}"
+  fi
+fi
 
 # ── Stap 3: Images herbouwen ─────────────────────────────────
 
