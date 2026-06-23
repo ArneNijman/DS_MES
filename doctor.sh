@@ -152,10 +152,10 @@ else
     [ -z "$mname" ] && continue
     mname=$(echo "$mname" | tr -d ' ')
     mip=$(echo "$mip" | tr -d ' ')
-    if timeout 3 bash -c "echo >/dev/tcp/$mip/5001" 2>/dev/null; then
-      ok "$mname ($mip) TCP bereikbaar"
+    if timeout 3 bash -c "echo >/dev/tcp/$mip/19000" 2>/dev/null; then
+      ok "$mname ($mip) TCP bereikbaar (LSV2 poort 19000)"
     else
-      warn "$mname ($mip) niet bereikbaar op poort 5001"
+      warn "$mname ($mip) niet bereikbaar op poort 19000 (LSV2)"
     fi
   done <<< "$MACHINES"
 fi
