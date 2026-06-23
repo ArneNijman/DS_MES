@@ -61,14 +61,14 @@ fi
 
 echo ""
 echo -e "${BOLD}[3/5] Docker images herbouwen...${RESET}"
-docker compose -f docker-compose.yml build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build
 ok "Images herbouwd"
 
 # ── Stap 4: Herstarten ───────────────────────────────────────
 
 echo ""
 echo -e "${BOLD}[4/5] Herstarten...${RESET}"
-docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ok "Containers herstart (database en uploads blijven behouden — volumes worden nooit verwijderd)"
 
 # Wacht tot backend klaar is (max 60 sec)
@@ -76,7 +76,7 @@ echo "  Wachten tot backend klaar is..."
 MAX_WAIT=60
 ELAPSED=0
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-  if docker compose -f docker-compose.yml exec -T backend wget -qO- http://localhost:3000/health 2>/dev/null | grep -q '"status"'; then
+  if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend wget -qO- http://localhost:3000/health 2>/dev/null | grep -q '"status"'; then
     break
   fi
   printf "."
