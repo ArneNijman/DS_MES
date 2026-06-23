@@ -1571,14 +1571,12 @@ function GebruikTab() {
                         {capTekort && <AlertTriangle size={12} className="inline ml-1 text-red-400" />}
                       </div>
                     </div>
-                    {capaciteit !== null && (
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400">Kan maken</div>
-                        <div className={cn('text-sm font-bold', capTekort ? 'text-red-500' : 'text-gray-700')}>
-                          {capaciteit}
-                        </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-400">Kan maken</div>
+                      <div className={cn('text-sm font-bold', capTekort ? 'text-red-500' : capaciteit !== null ? 'text-gray-700' : 'text-gray-300')}>
+                        {capaciteit !== null ? capaciteit : '—'}
                       </div>
-                    )}
+                    </div>
                     <div className="text-center">
                       <div className="text-xs text-gray-400">Piek ooit</div>
                       <div className="text-sm font-medium text-gray-400">{a.maxConcurrent}</div>
