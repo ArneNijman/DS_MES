@@ -755,6 +755,8 @@ export const toolingStockLocations = pgTable('tooling_stock_locations', {
   id:           uuid('id').primaryKey().defaultRandom(),
   articleId:    uuid('article_id').notNull().references(() => toolingArticles.id, { onDelete: 'cascade' }),
   locationCode: text('location_code').notNull(),
+  lade:         text('lade'),
+  vak:          text('vak'),
   quantity:     integer('quantity').notNull().default(0),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })

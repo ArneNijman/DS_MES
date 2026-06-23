@@ -95,9 +95,18 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
         quantityDelta: toolingMutations.quantityDelta,
         createdAt:     toolingMutations.createdAt,
         employeeName:  employees.name,
+        lade:          toolingStockLocations.lade,
+        vak:           toolingStockLocations.vak,
       })
       .from(toolingMutations)
       .leftJoin(employees, eq(employees.id, toolingMutations.employeeId))
+      .leftJoin(
+        toolingStockLocations,
+        and(
+          eq(toolingStockLocations.articleId, toolingMutations.articleId),
+          eq(toolingStockLocations.locationCode, toolingMutations.locationCode),
+        ),
+      )
       .where(eq(toolingMutations.articleId, id))
       .orderBy(desc(toolingMutations.createdAt))
       .limit(20)
@@ -198,7 +207,11 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
 
   fastify.post('/kiosk/tooling/articles/:id/locations', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const body = z.object({ locationCode: z.string().min(1).max(100) }).safeParse(req.body)
+    const body = z.object({
+      locationCode: z.string().min(1).max(100),
+      lade: z.string().max(50).optional(),
+      vak:  z.string().max(50).optional(),
+    }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ error: 'Ongeldige locatiecode' })
 
     const [article] = await fastify.db
@@ -210,12 +223,38 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
 
     const [loc] = await fastify.db
       .insert(toolingStockLocations)
-      .values({ articleId: id, locationCode: body.data.locationCode, quantity: 0 })
+      .values({
+        articleId:    id,
+        locationCode: body.data.locationCode,
+        lade:         body.data.lade ?? null,
+        vak:          body.data.vak  ?? null,
+        quantity:     0,
+      })
       .onConflictDoNothing()
       .returning()
 
     if (!loc) return reply.status(409).send({ error: 'Locatie bestaat al' })
     return loc
+  })
+
+  // ── Locatie lade/vak bijwerken ─────────────────────────────────────────────
+
+  fastify.patch('/kiosk/tooling/stock-locations/:locId', auth, async (req, reply) => {
+    const { locId } = req.params as { locId: string }
+    const body = z.object({
+      lade: z.string().max(50).nullable().optional(),
+      vak:  z.string().max(50).nullable().optional(),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ error: 'Ongeldige waarden' })
+
+    await fastify.db
+      .update(toolingStockLocations)
+      .set({
+        ...(body.data.lade !== undefined ? { lade: body.data.lade || null } : {}),
+        ...(body.data.vak  !== undefined ? { vak:  body.data.vak  || null } : {}),
+      })
+      .where(eq(toolingStockLocations.id, locId))
+    return { ok: true }
   })
 
   // ── Locatie verwijderen ────────────────────────────────────────────────────
@@ -268,6 +307,8 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
     const body = z
       .object({
         toLocationCode: z.string().min(1).max(100),
+        toLade:         z.string().max(50).optional(),
+        toVak:          z.string().max(50).optional(),
         quantity:       z.number().int().min(1).max(9999),
       })
       .safeParse(req.body)
@@ -300,12 +341,16 @@ export async function kioskToolingRoutes(fastify: FastifyInstance) {
         .values({
           articleId:    sourceLoc.articleId,
           locationCode: body.data.toLocationCode,
+          lade:         body.data.toLade ?? null,
+          vak:          body.data.toVak  ?? null,
           quantity:     body.data.quantity,
         })
         .onConflictDoUpdate({
           target: [toolingStockLocations.articleId, toolingStockLocations.locationCode],
           set: {
             quantity: sql`${toolingStockLocations.quantity} + ${body.data.quantity}`,
+            ...(body.data.toLade !== undefined ? { lade: body.data.toLade || null } : {}),
+            ...(body.data.toVak  !== undefined ? { vak:  body.data.toVak  || null } : {}),
           },
         })
 

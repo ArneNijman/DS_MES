@@ -23,6 +23,8 @@ interface StockLocation {
   id: string
   articleId: string
   locationCode: string
+  lade: string | null
+  vak: string | null
   quantity: number
 }
 
@@ -32,6 +34,8 @@ interface Mutation {
   quantityDelta: number
   createdAt: string
   employeeName: string | null
+  lade: string | null
+  vak: string | null
 }
 
 interface AssemblyRelation {
@@ -325,13 +329,20 @@ function TransferForm({
 }) {
   const qc = useQueryClient()
   const [toCode, setToCode] = useState('')
-  const [qty, setQty] = useState(1)
+  const [toLade, setToLade] = useState('')
+  const [toVak, setToVak]   = useState('')
+  const [qty, setQty]       = useState(1)
 
   const transfer = useMutation({
     mutationFn: () =>
       apiFetch(`/kiosk/tooling/stock-locations/${locId}/transfer`, {
         method: 'POST',
-        body: JSON.stringify({ toLocationCode: toCode, quantity: qty }),
+        body: JSON.stringify({
+          toLocationCode: toCode,
+          quantity: qty,
+          toLade: toLade.trim() || undefined,
+          toVak:  toVak.trim()  || undefined,
+        }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tooling-article', articleId] })
@@ -346,7 +357,7 @@ function TransferForm({
       <div className="flex gap-2">
         <input
           className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
-          placeholder="Doellocatie"
+          placeholder="Locatie (bijv. 100-1113)"
           value={toCode}
           onChange={(e) => setToCode(e.target.value)}
         />
@@ -357,6 +368,20 @@ function TransferForm({
           className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center"
           value={qty}
           onChange={(e) => setQty(Math.max(1, Math.min(maxQty, parseInt(e.target.value) || 1)))}
+        />
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+          placeholder="Lade (optioneel)"
+          value={toLade}
+          onChange={(e) => setToLade(e.target.value)}
+        />
+        <input
+          className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+          placeholder="Vak (optioneel)"
+          value={toVak}
+          onChange={(e) => setToVak(e.target.value)}
         />
       </div>
       <div className="flex gap-2">
@@ -393,7 +418,9 @@ function ArticleDetailModal({
 }) {
   const qc = useQueryClient()
   const [newLocCode, setNewLocCode] = useState('')
-  const [addingLoc, setAddingLoc] = useState(false)
+  const [newLade, setNewLade]       = useState('')
+  const [newVak, setNewVak]         = useState('')
+  const [addingLoc, setAddingLoc]   = useState(false)
   const [transferLocId, setTransferLocId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [mutateAmounts, setMutateAmounts] = useState<Record<string, number>>({})
@@ -422,23 +449,37 @@ function ArticleDetailModal({
     return () => window.removeEventListener('paste', handlePaste)
   }, [articleId])
 
-  const { data, isLoading } = useQuery<ArticleDetail>({
+  const { data, isLoading, isError } = useQuery<ArticleDetail>({
     queryKey: ['tooling-article', articleId],
     queryFn: () => apiFetch(`/kiosk/tooling/articles/${articleId}`),
+    retry: false,
   })
 
   const addLocation = useMutation({
     mutationFn: () =>
       apiFetch(`/kiosk/tooling/articles/${articleId}/locations`, {
         method: 'POST',
-        body: JSON.stringify({ locationCode: newLocCode.trim() }),
+        body: JSON.stringify({
+          locationCode: newLocCode.trim(),
+          lade: newLade.trim() || undefined,
+          vak:  newVak.trim()  || undefined,
+        }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tooling-article', articleId] })
       qc.invalidateQueries({ queryKey: ['tooling-articles'] })
-      setNewLocCode('')
+      setNewLocCode(''); setNewLade(''); setNewVak('')
       setAddingLoc(false)
     },
+  })
+
+  const patchLocation = useMutation({
+    mutationFn: ({ locId, lade, vak }: { locId: string; lade: string | null; vak: string | null }) =>
+      apiFetch(`/kiosk/tooling/stock-locations/${locId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ lade, vak }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tooling-article', articleId] }),
   })
 
   const deleteLocation = useMutation({
@@ -465,11 +506,22 @@ function ArticleDetailModal({
 
   const getAmount = (locId: string) => mutateAmounts[locId] ?? 1
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
         <div className="bg-white rounded-2xl p-8">
           <p className="text-gray-500 text-sm">Laden...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-6 space-y-3 text-center">
+          <p className="text-red-500 text-sm font-medium">Artikel niet gevonden</p>
+          <button className="px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-700 hover:bg-gray-200" onClick={onClose}>Sluiten</button>
         </div>
       </div>
     )
@@ -480,10 +532,10 @@ function ArticleDetailModal({
   const isFav = favoriteIds.includes(article.id)
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl min-h-0">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col" style={{ maxHeight: '96vh' }}>
         {/* Header */}
-        <div className="flex items-start gap-4 p-5 border-b border-gray-100">
+        <div className="flex items-start gap-4 p-5 border-b border-gray-100 shrink-0">
           <button
             className="relative shrink-0 rounded bg-gray-100 border border-gray-200 overflow-hidden group"
             style={{ width: 72, height: 72 }}
@@ -548,9 +600,9 @@ function ArticleDetailModal({
           </div>
         </div>
 
-        <div className="flex divide-x divide-gray-100">
+        <div className="flex flex-1 min-h-0 divide-x divide-gray-100">
           {/* Linker paneel */}
-          <div className="flex-1 p-5 space-y-5 overflow-y-auto max-h-[65vh]">
+          <div className="flex-1 p-5 flex flex-col gap-5 min-h-0">
             {/* Voorraad header */}
             <div className="flex items-center justify-between">
               <div>
@@ -570,6 +622,7 @@ function ArticleDetailModal({
 
             {/* Locaties */}
             <div className="space-y-2">
+              <div className="space-y-2 overflow-y-auto" style={{ maxHeight: '320px' }}>
               {locations.map((loc) => {
                 const amt = getAmount(loc.id)
                 const isTransfer = transferLocId === loc.id
@@ -577,10 +630,24 @@ function ArticleDetailModal({
                 return (
                   <div key={loc.id} className="border border-gray-200 rounded-lg p-3">
                     <div className="flex items-center gap-3">
-                      {/* Locatie code + qty */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-mono font-semibold text-gray-800">{loc.locationCode}</p>
-                        <p className="text-lg font-bold text-gray-900">{loc.quantity} <span className="text-xs font-normal text-gray-400">st.</span></p>
+                      {/* Gelabelde kolommen: Locatie · Lade · Vak · Voorraad */}
+                      <div className="flex-1 min-w-0 flex items-end gap-4">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Locatie</p>
+                          <p className="text-sm font-mono font-semibold text-gray-800 truncate">{loc.locationCode}</p>
+                        </div>
+                        <div className="min-w-[48px]">
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Lade</p>
+                          <p className="text-sm font-semibold text-gray-700">{loc.lade || <span className="text-gray-300">—</span>}</p>
+                        </div>
+                        <div className="min-w-[48px]">
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Vak</p>
+                          <p className="text-sm font-semibold text-gray-700">{loc.vak || <span className="text-gray-300">—</span>}</p>
+                        </div>
+                        <div className="ml-auto shrink-0">
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Voorraad</p>
+                          <p className="text-lg font-bold text-gray-900">{loc.quantity} <span className="text-xs font-normal text-gray-400">st.</span></p>
+                        </div>
                       </div>
 
                       {/* Verwijder */}
@@ -621,38 +688,38 @@ function ArticleDetailModal({
                           <ArrowRightLeft size={15} />
                         </button>
                       )}
-
-                      {/* Aantal invoerveld + -/+ knoppen */}
-                      {!isDelConfirm && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-40"
-                            disabled={loc.quantity === 0 || amt > loc.quantity || mutateStock.isPending}
-                            onClick={() => mutateStock.mutate({ locId: loc.id, delta: -amt })}
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            max={999}
-                            className="w-10 text-center text-sm border border-gray-200 rounded py-0.5"
-                            value={amt}
-                            onChange={(e) => {
-                              const v = Math.max(1, Math.min(999, parseInt(e.target.value) || 1))
-                              setMutateAmounts((prev) => ({ ...prev, [loc.id]: v }))
-                            }}
-                          />
-                          <button
-                            className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-40"
-                            disabled={mutateStock.isPending}
-                            onClick={() => mutateStock.mutate({ locId: loc.id, delta: amt })}
-                          >
-                            <Plus size={12} />
-                          </button>
-                        </div>
-                      )}
                     </div>
+
+                    {/* Uitboeken / Bijboeken rij */}
+                    {!isDelConfirm && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          className="flex items-center gap-1 px-3 py-1 rounded text-xs font-semibold bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-40 transition-colors"
+                          disabled={loc.quantity === 0 || amt > loc.quantity || mutateStock.isPending}
+                          onClick={() => mutateStock.mutate({ locId: loc.id, delta: -amt })}
+                        >
+                          <Minus size={11} /> Uitboeken
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={999}
+                          className="w-14 text-center text-sm border border-gray-200 rounded py-1"
+                          value={amt}
+                          onChange={(e) => {
+                            const v = Math.max(1, Math.min(999, parseInt(e.target.value) || 1))
+                            setMutateAmounts((prev) => ({ ...prev, [loc.id]: v }))
+                          }}
+                        />
+                        <button
+                          className="flex items-center gap-1 px-3 py-1 rounded text-xs font-semibold bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-40 transition-colors"
+                          disabled={mutateStock.isPending}
+                          onClick={() => mutateStock.mutate({ locId: loc.id, delta: amt })}
+                        >
+                          <Plus size={11} /> Bijboeken
+                        </button>
+                      </div>
+                    )}
 
                     {/* Transfer form */}
                     {isTransfer && (
@@ -668,6 +735,8 @@ function ArticleDetailModal({
                 )
               })}
 
+              </div>
+
               {/* Locatie toevoegen */}
               {!addingLoc ? (
                 <button
@@ -682,7 +751,7 @@ function ArticleDetailModal({
                   <div className="flex gap-2">
                     <input
                       className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
-                      placeholder="bijv. 100-1113"
+                      placeholder="Locatie (bijv. 100-1113)"
                       value={newLocCode}
                       autoFocus
                       onChange={(e) => setNewLocCode(e.target.value)}
@@ -697,10 +766,24 @@ function ArticleDetailModal({
                     </button>
                     <button
                       className="px-2 py-1 text-sm text-gray-500 hover:text-gray-700"
-                      onClick={() => { setAddingLoc(false); setNewLocCode('') }}
+                      onClick={() => { setAddingLoc(false); setNewLocCode(''); setNewLade(''); setNewVak('') }}
                     >
                       <X size={16} />
                     </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                      placeholder="Lade (optioneel)"
+                      value={newLade}
+                      onChange={(e) => setNewLade(e.target.value)}
+                    />
+                    <input
+                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                      placeholder="Vak (optioneel)"
+                      value={newVak}
+                      onChange={(e) => setNewVak(e.target.value)}
+                    />
                   </div>
                   {addLocation.isError && (
                     <p className="text-xs text-red-600">{(addLocation.error as Error).message}</p>
@@ -711,17 +794,28 @@ function ArticleDetailModal({
 
             {/* Laatste mutaties */}
             {mutations.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Laatste mutaties</p>
-                <div className="space-y-1">
+              <div className="flex flex-col flex-1 min-h-0">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 shrink-0">Laatste mutaties</p>
+                {/* Header labels */}
+                <div className="flex items-center gap-4 px-3 mb-1 shrink-0">
+                  <span className="w-24 shrink-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Datum</span>
+                  <span className="flex-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Medewerker</span>
+                  <span className="w-24 shrink-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Locatie</span>
+                  <span className="w-12 shrink-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Lade</span>
+                  <span className="w-12 shrink-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Vak</span>
+                  <span className="w-14 shrink-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wide text-right">Mutatie</span>
+                </div>
+                <div className="space-y-1 overflow-y-auto flex-1">
                   {mutations.map((m) => (
-                    <div key={m.id} className="flex items-center gap-2 text-xs text-gray-500">
-                      <span className="text-gray-300 w-24 shrink-0">{formatMutDate(m.createdAt)}</span>
-                      <span className="truncate">{m.employeeName ?? '—'}</span>
-                      <span className="shrink-0 ml-auto font-semibold" style={{ color: m.quantityDelta < 0 ? '#dc2626' : '#16a34a' }}>
+                    <div key={m.id} className="flex items-center gap-4 text-xs text-gray-600 bg-gray-50 rounded px-3 py-1.5">
+                      <span className="w-24 shrink-0 text-gray-400 font-mono">{formatMutDate(m.createdAt)}</span>
+                      <span className="flex-1 truncate">{m.employeeName ?? '—'}</span>
+                      <span className="w-24 shrink-0 truncate font-mono text-gray-700">{m.locationCode}</span>
+                      <span className="w-12 shrink-0 text-gray-700">{m.lade || <span className="text-gray-300">—</span>}</span>
+                      <span className="w-12 shrink-0 text-gray-700">{m.vak || <span className="text-gray-300">—</span>}</span>
+                      <span className="w-14 shrink-0 text-right font-semibold" style={{ color: m.quantityDelta < 0 ? '#dc2626' : '#16a34a' }}>
                         {m.quantityDelta > 0 ? '+' : ''}{m.quantityDelta} st.
                       </span>
-                      <span className="text-gray-300 font-mono shrink-0">{m.locationCode}</span>
                     </div>
                   ))}
                 </div>
@@ -731,7 +825,7 @@ function ArticleDetailModal({
 
           {/* Rechter paneel — gerelateerd + samenstellingen */}
           {(related.length > 0 || assemblies.length > 0) && (
-            <div className="w-60 shrink-0 p-4 space-y-4 overflow-y-auto max-h-[65vh]">
+            <div className="w-60 shrink-0 p-4 space-y-4 overflow-y-auto">
               {/* WP-gerelateerde artikelen (body / wisselplaat / schroef) */}
               {related.length > 0 && (
                 <div className="space-y-2">
