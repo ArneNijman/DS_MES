@@ -31,7 +31,7 @@ Wijzigingen in bestaande bestanden worden wél automatisch opgepikt via `tsx wat
 docker compose up -d --build backend   # of: --build frontend
 ```
 
-**Let op:** `docker-compose.override.yml` wordt automatisch samengevoegd bij `docker compose up` (zonder `-f` vlag). Dit activert de dev-modus met volume-mounts en tsx watch. Gebruik de `-f` vlag expliciet om dit te omzeilen.
+**Let op:** `docker-compose.override.yml` bestaat **niet** (verwijderd juni 2026). Dev-modus vereist de expliciete `-f docker-compose.yml -f docker-compose.dev.yml` vlag — zonder deze vlag draait alleen de productie-config (nginx op 8080, geen Vite).
 
 ## Database migraties
 
@@ -41,7 +41,7 @@ Werkwijze:
 
 1. Pas `backend/src/db/schema.ts` aan
 2. Maak handmatig een nieuw SQL-bestand aan in `backend/src/db/migrations/`:
-   - Naamconventie: `0069_beschrijving.sql` (oplopend nummer, huidig laatste: 0068)
+   - Naamconventie: `0073_beschrijving.sql` (oplopend nummer, huidig laatste: 0072)
    - Gebruik `IF NOT EXISTS` / `IF EXISTS` zodat migraties idempotent zijn
 3. De runner past nieuwe bestanden toe bij elke backend-opstart
 
@@ -185,6 +185,8 @@ qc.invalidateQueries({ queryKey: ['sleutel', id] })
 | `cnc_machine_metrics` | Historische machine-metrics (bijv. spindle_hours) als tijdreeks; index op (machineId, metric_type, recorded_at DESC) |
 | `tool_library_assemblies` | Samenstellingen in toolbibliotheek |
 | `tool_library_items` | Individuele toolcomponenten |
+| `tooling_stock_locations` | Voorraadlocaties per artikel; `location_code` + `quantity` + `lade` + `vak`; unique op `(article_id, location_code)` |
+| `tooling_mutations` | Mutatiehistorie (uitboeken/bijboeken) per artikel + locatie; JOIN met `tooling_stock_locations` voor lade/vak |
 | `product_setups` | Product/Meet setup; `setup_type` = `'product'` of `'meet'` scheidt de modules |
 | `product_setup_steps` | Stappen per setup (machineId, nulpunt X/Y/Z als text, bewerkingNr, opmerkingen) |
 | `product_setup_nc_files` | NC-bestanden per stap |

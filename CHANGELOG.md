@@ -9,6 +9,23 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-23] — Tooling stocklocaties lade/vak + modal redesign
+
+### Toegevoegd
+- **Lade en Vak velden per stocklocatie** — `tooling_stock_locations` uitgebreid met `lade` en `vak` kolommen (migratie `0072`); invulbaar bij aanmaken én bewerken van locaties
+- **Uitboeken / Bijboeken knoppen** — rode "Uitboeken" en groene "Bijboeken" knoppen flankeren het aantalveld; vervangt de generieke +/- knoppen
+- **Lade/vak in mutatielijst** — "Laatste mutaties" toont gelabelde kolommen Datum · Medewerker · Locatie · Lade · Vak · Mutatie, uitgelijnd onder vaste breedtes
+
+### Verbeterd
+- **Artikel-detail modal vergroot** — `max-w-6xl` breedte, `96vh` hoogte; flex-layout zodat mutaties altijd zichtbaar blijven ongeacht locatieaantal
+- **Locaties scrollbaar** — max 320px hoog, daarna scrolbaar; mutaties vullen resterende hoogte en scrollen onafhankelijk
+- **Lade/vak in locatierij** — gelabelde kolommen (Locatie · Lade · Vak · Voorraad) via `flex items-end gap-4`
+
+### Opgelost
+- **"Artikel niet gevonden" modal bleef hangen op Laden...** — query gebruikt nu `retry: false`; bij fout of ontbrekend artikel toont modal een duidelijke melding met sluitknop
+
+---
+
 ## [2026-06-22] — Systeemgezondheid, meerdere postprocessors, scripts audit
 
 ### Toegevoegd

@@ -232,6 +232,18 @@ Gebouwd (2026-05/06):
 
 ---
 
+## ✅ Tooling stocklocaties verbeteringen
+
+**Afgerond:** 2026-06-23
+
+- Lade/vak velden per stocklocatie (migratie 0072)
+- Uitboeken/Bijboeken knoppen (rood/groen) met aantalveld in het midden
+- Artikel-detail modal vergroot (max-w-6xl, 96vh) met flex-layout
+- Mutatielijst met gelabelde kolommen (Locatie · Lade · Vak · Mutatie), onafhankelijk scrolbaar
+- Foutafhandeling "Artikel niet gevonden": retry:false + sluitknop
+
+---
+
 ## ⬜ Fase 11: CoC-Generatie
 
 **Status:** Not started
@@ -295,5 +307,6 @@ Visuele dashboards zonder code bouwen op basis van de bestaande data. Meer front
 | 10b | Metrologie — Inspectieviewer Phase 1–3 | ✅ Complete | 2026-06 |
 | 10b | Metrologie — Inspectieviewer Phase 4 | 🚧 Gepland | — |
 | — | Verbeteringen juni 2026 (dashboard, contactvelden, migratie-runner) | ✅ Complete | 2026-06-10 |
+| — | Tooling stocklocaties verbeteringen (lade/vak, modal redesign) | ✅ Complete | 2026-06-23 |
 | 11 | CoC-Generatie | ⬜ Not started | — |
 | 13 | BC Webhooks | ⬜ Not started | — |

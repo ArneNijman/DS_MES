@@ -141,6 +141,8 @@ Twee tabs:
 
 De WinTool koppeling werkt via de CNC Agent: als een WinTool .db bestand is ingesteld, detecteert de agent wijzigingen en synchroniseert automatisch naar het MES.
 
+Per artikel zijn voorraadlocaties bij te houden via de Demonteren-tab: locatiecode, lade, vak en hoeveelheid. Uitboeken (rood) en bijboeken (groen) met een aantalveld in het midden loggen mutaties met medewerker en timestamp. De mutatielijst toont locatie, lade en vak als gelabelde kolommen.
+
 ---
 
 ### Kwaliteitsmodules (NCR / Preventief / Klantmeldingen)
@@ -289,4 +291,5 @@ Standaard kwaliteitsstatistieken (Cp/Cpk) vereisen een steekproef van tientallen
 | CNC Agent + Machine Dashboard | mei 2026 | ~8 uur |
 | Metrologie Inspectieviewer Phase 1–3 | mei–jun 2026 | ~20 uur |
 | Bugfixes + UX verbeteringen (CNC dropdown, product setup, HyperMill protocol) | jun 2026 | ~2 uur |
-| **Totaal** | **feb–jun 2026** | **~150 uur** |
+| Tooling stocklocaties lade/vak + modal redesign | jun 2026 | ~3 uur |
+| **Totaal** | **feb–jun 2026** | **~153 uur** |
