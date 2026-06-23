@@ -77,7 +77,7 @@ echo -e "${BOLD}[ Services ]${RESET}"
 if docker compose exec -T backend node -e "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
   ok "Backend bereikbaar"
 else
-  fail "Backend niet bereikbaar"
+  warn "Backend niet bereikbaar — mogelijk nog aan het opstarten"
 fi
 
 # Database

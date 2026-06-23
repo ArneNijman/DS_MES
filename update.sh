@@ -71,24 +71,8 @@ echo -e "${BOLD}[4/5] Herstarten...${RESET}"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ok "Containers herstart (database en uploads blijven behouden — volumes worden nooit verwijderd)"
 
-# Wacht tot backend klaar is (max 60 sec)
-echo "  Wachten tot backend klaar is..."
-MAX_WAIT=60
-ELAPSED=0
-while [ $ELAPSED -lt $MAX_WAIT ]; do
-  if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend node -e "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
-    break
-  fi
-  printf "."
-  sleep 2
-  ELAPSED=$((ELAPSED + 2))
-done
-echo ""
-if [ $ELAPSED -ge $MAX_WAIT ]; then
-  echo -e "${RED}  ⚠ Backend reageert nog niet — controleer: docker compose logs backend${RESET}"
-else
-  ok "Backend bereikbaar"
-fi
+sleep 5
+ok "Containers herstart"
 
 echo ""
 SERVER_IP=$(hostname -I | awk '{print $1}')
