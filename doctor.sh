@@ -74,8 +74,7 @@ echo ""
 echo -e "${BOLD}[ Services ]${RESET}"
 
 # Backend HTTP
-HEALTH=$(docker compose exec -T backend wget -qO- http://localhost:3000/health 2>/dev/null || echo "")
-if echo "$HEALTH" | grep -q '"status"'; then
+if docker compose exec -T backend node -e "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
   ok "Backend bereikbaar"
 else
   fail "Backend niet bereikbaar"

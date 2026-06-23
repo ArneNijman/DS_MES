@@ -76,7 +76,7 @@ echo "  Wachten tot backend klaar is..."
 MAX_WAIT=60
 ELAPSED=0
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-  if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend wget -qO- http://localhost:3000/health 2>/dev/null | grep -q '"status"'; then
+  if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend node -e "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
     break
   fi
   printf "."
