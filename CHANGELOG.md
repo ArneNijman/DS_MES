@@ -9,6 +9,17 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [2026-06-23] — Deployment fix: update.sh brak dev-modus op testserver
+
+### Opgelost
+- **`update.sh` schakelde server terug naar productie-modus na elke update** — `update.sh` gebruikte alleen `-f docker-compose.yml` waardoor de containers na elke `./update.sh` in productie-modus (nginx op poort 8080) herstartten. De testserver DS-MES01 draait in dev-modus (Vite op poort 5173); na een update was de kiosk daardoor niet meer bereikbaar. Fix: build én up gebruiken nu altijd de dev-overlay (`-f docker-compose.yml -f docker-compose.dev.yml`)
+- **`doctor.sh` machine TCP-checks gaven altijd 7 valse waarschuwingen** — de MES-server (subnet `10.85.27.x`) kan de CNC-machines (subnet `192.168.1.x`) nooit direct bereiken via LSV2 poort 19000; dat is het werk van de CNC agent. TCP-checks verwijderd en vervangen door een telling van geconfigureerde machines uit de database
+- **`doctor.sh` CNC agent check faalde altijd vanaf de server** — `curl` vanaf de Linux host kon de CNC agent niet bereiken terwijl de admin panel (via backend Docker container) hem wél zag. Check verplaatst naar `docker compose exec backend node -e fetch(...)` zodat het hetzelfde netwerkpad gebruikt als de admin panel
+- **`doctor.sh` backend health check toonde altijd rood bij timing** — bij een verse herstart was de backend nog niet klaar als `doctor.sh` de check deed; omgezet naar een waarschuwing (⚠) in plaats van een fout (✗)
+- **CNC agent: onduidelijke foutmelding bij upload naar TNC 426/430M (MTE3200)** — `Error E2000171F: File name invalid` van TNCcmd werd rauw doorgestuurd; nu verschijnt een begrijpelijke melding: _"Bestandsnaam niet toegestaan door TNC 426/430M: &lt;naam&gt; — gebruik max 16 tekens, alleen hoofdletters, cijfers, koppelteken of underscore"_
+
+---
+
 ## [2026-06-23] — Tooling stocklocaties lade/vak + modal redesign
 
 ### Toegevoegd
