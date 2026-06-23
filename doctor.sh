@@ -111,15 +111,18 @@ else
   warn "Migraties: kon niet vergelijken ($APPLIED applied, $MIGRATION_FILES bestanden)"
 fi
 
-# CNC agent
-CNC_URL="${CNC_AGENT_URL:-http://localhost:3099}"
-# Zet host.docker.internal om naar localhost voor checks vanaf de host
-CNC_CHECK_URL=$(echo "$CNC_URL" | sed 's|host\.docker\.internal|localhost|')
-CNC_HEALTH=$(curl -s --max-time 5 "${CNC_CHECK_URL}/health" 2>/dev/null || echo "")
-if echo "$CNC_HEALTH" | grep -q '"ok":true'; then
-  ok "CNC agent bereikbaar ($CNC_CHECK_URL)"
+# CNC agent — check via backend container (zelfde netwerkpad als admin panel)
+CNC_URL="${CNC_AGENT_URL:-http://host.docker.internal:3099}"
+CNC_OK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+  node -e "
+    const url = '${CNC_URL}/health';
+    fetch(url).then(r => { process.stdout.write(r.ok ? 'ok' : 'fail'); process.exit(0); })
+              .catch(() => { process.stdout.write('fail'); process.exit(0); });
+  " 2>/dev/null || echo "fail")
+if [ "$CNC_OK" = "ok" ]; then
+  ok "CNC agent bereikbaar"
 else
-  warn "CNC agent niet bereikbaar op $CNC_CHECK_URL"
+  warn "CNC agent niet bereikbaar op $CNC_URL"
 fi
 
 # Firewall regel CNC Agent (alleen op Windows)
