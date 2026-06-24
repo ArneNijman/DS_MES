@@ -868,19 +868,12 @@ function SetupDetail({
   const [selectedCadUrl, setSelectedCadUrl] = useState<string | null>(null)
   const [compareCadUrl, setCompareCadUrl]   = useState<string | null>(null)
   const [inspectionPoints, setInspectionPoints] = useState<InspectionFeature[]>([])
-  const [editingHypermillPath, setEditingHypermillPath] = useState(false)
-  const [hypermillPathInput, setHypermillPathInput]     = useState('')
-  const [copiedPath, setCopiedPath] = useState(false)
 
   const { data: setup, isLoading } = useQuery<SetupDetail>({
     queryKey: ['product-setup', setupId],
     queryFn:  () => apiFetch(`/kiosk/product-setups/${setupId}`),
   })
 
-
-  useEffect(() => {
-    if (setup) setHypermillPathInput(setup.hypermillFolderPath ?? '')
-  }, [setup?.hypermillFolderPath])
 
   const patchSetup = useMutation({
     mutationFn: (body: object) => apiFetch(`/kiosk/product-setups/${setupId}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -1109,98 +1102,18 @@ function SetupDetail({
 
 
                   {/* Hypermill & Aanpak frezen kaarten */}
-                  <div className="space-y-3">
-                    {/* Hypermill mappad */}
-                    <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <FolderOpen size={15} className="text-gray-400" />
-                          <p className="text-sm font-medium text-gray-700">Hypermill bestanden</p>
-                        </div>
-                        <button
-                          onClick={() => setOpenPortal('hypermill')}
-                          className="text-xs text-teal-600 hover:underline"
-                        >
-                          Bestanden ({setup.documents.filter(d => d.documentType === 'hypermill').length})
-                        </button>
-                      </div>
-                      {editingHypermillPath ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            autoFocus
-                            className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-teal-400"
-                            placeholder="Y:\ProjectMap\HyperMill"
-                            value={hypermillPathInput}
-                            onChange={e => setHypermillPathInput(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                const val = hypermillPathInput.trim() || null
-                                patchSetup.mutate({ hypermillFolderPath: val })
-                                setEditingHypermillPath(false)
-                              }
-                              if (e.key === 'Escape') {
-                                setHypermillPathInput(setup.hypermillFolderPath ?? '')
-                                setEditingHypermillPath(false)
-                              }
-                            }}
-                            onBlur={e => {
-                              patchSetup.mutate({ hypermillFolderPath: e.target.value.trim() || null })
-                              setEditingHypermillPath(false)
-                            }}
-                          />
-                        </div>
-                      ) : setup.hypermillFolderPath ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="flex-1 font-mono text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1 truncate">
-                            {setup.hypermillFolderPath}
-                          </span>
-                          <button
-                            onClick={() => setEditingHypermillPath(true)}
-                            className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0"
-                            title="Pad bewerken"
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              const url = 'file:///' + setup.hypermillFolderPath!.replace(/\\/g, '/')
-                              window.open(url, '_blank')
-                            }}
-                            className="p-1.5 rounded text-gray-400 hover:text-teal-600 hover:bg-teal-50 shrink-0"
-                            title="Open in Verkenner"
-                          >
-                            <ExternalLink size={12} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(setup.hypermillFolderPath!)
-                              setCopiedPath(true)
-                              setTimeout(() => setCopiedPath(false), 2000)
-                            }}
-                            className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0"
-                            title="Kopieer pad"
-                          >
-                            {copiedPath ? <Check size={12} className="text-green-500" /> : <Paperclip size={12} />}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setEditingHypermillPath(true)}
-                          className="text-xs text-teal-600 hover:underline"
-                        >
-                          + Mappad instellen
-                        </button>
-                      )}
-                    </div>
-                    {/* Aanpak frezen kaart */}
-                    {([{ key: 'aanpak_frezen', label: 'Aanpak frezen' }] as const).map(({ key, label }) => {
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: 'hypermill',     label: 'Hypermill bestanden' },
+                      { key: 'aanpak_frezen', label: 'Aanpak frezen' },
+                    ] as const).map(({ key, label }) => {
                       const count = setup.documents.filter(d => d.documentType === key).length
                       const last  = setup.documents.filter(d => d.documentType === key)[0]
                       return (
                         <button
                           key={key}
                           onClick={() => setOpenPortal(key)}
-                          className="w-full flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
+                          className="flex flex-col items-start gap-1.5 p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:border-teal-300 hover:shadow-sm transition-all text-left"
                         >
                           <div className="flex items-center justify-between w-full">
                             <FolderOpen size={16} className="text-gray-400" />
@@ -1290,6 +1203,8 @@ function SetupDetail({
           <HypermillModal
             docs={setup.documents.filter(d => d.documentType === 'hypermill')}
             setupId={setupId}
+            folderPath={setup.hypermillFolderPath}
+            onSaveFolderPath={val => patchSetup.mutate({ hypermillFolderPath: val })}
             onClose={() => setOpenPortal(null)}
           />
         )}
@@ -3879,16 +3794,21 @@ function toHmopenUrl(filePath: string): string {
 }
 
 function HypermillModal({
-  docs, setupId, onClose,
+  docs, setupId, folderPath, onSaveFolderPath, onClose,
 }: {
   docs: Document[]
   setupId: string
+  folderPath: string | null
+  onSaveFolderPath: (val: string | null) => void
   onClose: () => void
 }) {
   const qc = useQueryClient()
-  const [pathInput, setPathInput]   = useState('')
-  const [saving, setSaving]       = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [pathInput, setPathInput]         = useState('')
+  const [saving, setSaving]               = useState(false)
+  const [saveError, setSaveError]         = useState<string | null>(null)
+  const [folderPathInput, setFolderPathInput] = useState(folderPath ?? '')
+  const [editingFolder, setEditingFolder]     = useState(!folderPath)
+  const [copiedFolder, setCopiedFolder]       = useState(false)
 
   const deleteDoc = useMutation({
     mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
@@ -3925,6 +3845,74 @@ function HypermillModal({
             <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{docs.length}</span>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
+        </div>
+
+        {/* Mappad (folder) */}
+        <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+          <p className="text-xs font-semibold text-gray-500 mb-1.5">Mappad</p>
+          {editingFolder ? (
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                type="text"
+                value={folderPathInput}
+                onChange={e => setFolderPathInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const val = folderPathInput.trim() || null
+                    onSaveFolderPath(val)
+                    if (val) setEditingFolder(false)
+                  }
+                  if (e.key === 'Escape') {
+                    setFolderPathInput(folderPath ?? '')
+                    if (folderPath) setEditingFolder(false)
+                  }
+                }}
+                onBlur={e => {
+                  const val = e.target.value.trim() || null
+                  onSaveFolderPath(val)
+                  if (val) setEditingFolder(false)
+                }}
+                placeholder="Y:\ProjectMap\HyperMill"
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono"
+              />
+            </div>
+          ) : folderPath ? (
+            <div className="flex items-center gap-1.5">
+              <span className="flex-1 font-mono text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 truncate">
+                {folderPath}
+              </span>
+              <button
+                onClick={() => { setFolderPathInput(folderPath); setEditingFolder(true) }}
+                className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0"
+                title="Pad bewerken"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={() => window.open('file:///' + folderPath.replace(/\\/g, '/'), '_blank')}
+                className="p-1.5 rounded text-gray-400 hover:text-teal-600 hover:bg-teal-50 shrink-0"
+                title="Open in Verkenner"
+              >
+                <ExternalLink size={13} />
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(folderPath)
+                  setCopiedFolder(true)
+                  setTimeout(() => setCopiedFolder(false), 2000)
+                }}
+                className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0"
+                title="Kopieer pad"
+              >
+                {copiedFolder ? <Check size={13} className="text-green-500" /> : <Paperclip size={13} />}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditingFolder(true)} className="text-xs text-teal-600 hover:underline">
+              + Mappad instellen
+            </button>
+          )}
         </div>
 
         {/* Pad invoeren */}
