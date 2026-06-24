@@ -1496,6 +1496,7 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const [pathSyncStatus, setPathSyncStatus] = useState<'idle' | 'syncing'>('idle')
   const [pathSyncMsg, setPathSyncMsg]       = useState<string | null>(null)
   const [ncFilePathInput, setNcFilePathInput] = useState(step.ncFilePath ?? '')
+  const [editingPath, setEditingPath]         = useState(!step.ncFilePath)
 
   useEffect(() => {
     if (!step.ncFilePath) return
@@ -1699,15 +1700,44 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
       {/* Bestandspad instelling */}
       <section>
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mappad voor NC-bestanden</h3>
-        <div className="flex items-center gap-2">
-          <input
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-teal-400"
-            placeholder="\\server\CAM\artikel\BEW01\"
-            value={ncFilePathInput}
-            onChange={e => setNcFilePathInput(e.target.value)}
-            onBlur={e => patchStep.mutate({ ncFilePath: e.target.value.trim() || null })}
-          />
-          {step.ncFilePath && (
+        {editingPath ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-teal-400"
+              placeholder="\\server\CAM\artikel\BEW01\"
+              value={ncFilePathInput}
+              onChange={e => setNcFilePathInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const val = ncFilePathInput.trim() || null
+                  patchStep.mutate({ ncFilePath: val })
+                  if (val) setEditingPath(false)
+                }
+                if (e.key === 'Escape') {
+                  setNcFilePathInput(step.ncFilePath ?? '')
+                  if (step.ncFilePath) setEditingPath(false)
+                }
+              }}
+              onBlur={e => {
+                const val = e.target.value.trim() || null
+                patchStep.mutate({ ncFilePath: val })
+                if (val) setEditingPath(false)
+              }}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm text-gray-700 font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 truncate">
+              {step.ncFilePath}
+            </span>
+            <button
+              onClick={() => setEditingPath(true)}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0"
+              title="Pad bewerken"
+            >
+              <Pencil size={14} />
+            </button>
             <button
               onClick={handleSyncFromPath}
               disabled={pathSyncStatus === 'syncing'}
@@ -1716,8 +1746,8 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
               <RefreshCw size={13} className={pathSyncStatus === 'syncing' ? 'animate-spin' : ''} />
               {pathSyncStatus === 'syncing' ? 'Laden…' : 'Laden van pad'}
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {pathSyncMsg && (
           <p className="mt-1.5 text-xs text-gray-500">{pathSyncMsg}</p>
         )}
