@@ -286,19 +286,21 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
   fastify.patch('/kiosk/product-setups/:id', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
     const body = req.body as {
-      productionOrderNo?: string
-      articleNo?:         string
-      description?:       string
-      matenNiveau?:       string
+      productionOrderNo?:   string
+      articleNo?:           string
+      description?:         string
+      matenNiveau?:         string
+      hypermillFolderPath?: string | null
     }
 
     const [updated] = await fastify.db
       .update(productSetups)
       .set({
-        ...(body.productionOrderNo !== undefined && { productionOrderNo: body.productionOrderNo.trim() || null }),
-        ...(body.articleNo         !== undefined && { articleNo:         body.articleNo.trim() || null }),
-        ...(body.description       !== undefined && { description:       body.description.trim() || null }),
-        ...(body.matenNiveau       !== undefined && { matenNiveau:       body.matenNiveau }),
+        ...(body.productionOrderNo   !== undefined && { productionOrderNo:   body.productionOrderNo.trim() || null }),
+        ...(body.articleNo           !== undefined && { articleNo:           body.articleNo.trim() || null }),
+        ...(body.description         !== undefined && { description:         body.description.trim() || null }),
+        ...(body.matenNiveau         !== undefined && { matenNiveau:         body.matenNiveau }),
+        ...(body.hypermillFolderPath !== undefined && { hypermillFolderPath: body.hypermillFolderPath || null }),
         updatedAt: new Date(),
       })
       .where(eq(productSetups.id, id))
