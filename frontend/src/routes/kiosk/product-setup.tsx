@@ -3892,14 +3892,10 @@ function HypermillModal({
           )}
         </div>
 
-        {/* Bestandslijst */}
+        {/* Bestandslijst (legacy — alleen zichtbaar als er bestaande items zijn) */}
+        {docs.length > 0 && (
         <div className="flex-1 overflow-auto">
-          {docs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-300">
-              <FolderOpen size={36} className="mb-2" />
-              <p className="text-sm">Nog geen Hypermill paden toegevoegd</p>
-            </div>
-          ) : (
+          {(
             <ul className="divide-y divide-gray-50">
               {docs.map(doc => (
                 <li key={doc.id} className="flex items-center gap-3 px-5 py-3 group hover:bg-gray-50">
@@ -3930,6 +3926,7 @@ function HypermillModal({
             </ul>
           )}
         </div>
+        )}
       </div>
     </div>
   )
