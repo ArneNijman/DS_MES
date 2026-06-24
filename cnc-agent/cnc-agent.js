@@ -1830,6 +1830,39 @@ if (runScanIp) {
     } else if (req.method === 'GET' && req.url === '/health') {
       res.end(JSON.stringify({ ok: true, uptime: process.uptime() }))
 
+    } else if (req.method === 'GET' && req.url?.startsWith('/list-nc-files')) {
+      try {
+        const folder = decodeURIComponent(new URL(req.url, 'http://localhost').searchParams.get('folder') ?? '')
+        if (!folder) {
+          res.statusCode = 400
+          return res.end(JSON.stringify({ error: 'folder parameter verplicht' }))
+        }
+        let entries
+        try {
+          entries = await readdir(folder)
+        } catch {
+          res.statusCode = 404
+          return res.end(JSON.stringify({ error: `Map niet gevonden: ${folder}`, files: [] }))
+        }
+        const hFiles = entries.filter(f => f.toLowerCase().endsWith('.h'))
+        if (hFiles.length === 0) {
+          return res.end(JSON.stringify({ files: [] }))
+        }
+        const files = await Promise.all(hFiles.map(async fileName => {
+          const filePath = join(folder, fileName)
+          const [content, fileStat] = await Promise.all([
+            readFile(filePath, 'utf8'),
+            stat(filePath),
+          ])
+          return { fileName, mtime: fileStat.mtimeMs, content }
+        }))
+        res.end(JSON.stringify({ files }))
+      } catch (err) {
+        console.error('❌  list-nc-files fout:', err.message)
+        res.statusCode = 500
+        res.end(JSON.stringify({ error: err.message, files: [] }))
+      }
+
     } else {
       res.statusCode = 404
       res.end(JSON.stringify({ error: 'Not found' }))

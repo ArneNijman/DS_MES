@@ -68,20 +68,22 @@ interface Step {
   zeroZ:                string | null
   stepDescription:      string | null
   opmerkingen:          string | null
+  ncFilePath:           string | null
   checklistCompleted:   boolean
   ncFiles:              NcFile[]
   attachments:          Attachment[]
 }
 
 interface NcFile {
-  id:            string
-  stepId:        string
-  fileName:      string
-  programName:   string | null
-  postprocessor: string | null
-  toolCallCount: number
-  uploadedAt:    string
-  toolCalls:     StoredToolCall[]
+  id:               string
+  stepId:           string
+  fileName:         string
+  programName:      string | null
+  postprocessor:    string | null
+  toolCallCount:    number
+  uploadedAt:       string
+  sourceModifiedAt: string | null
+  toolCalls:        StoredToolCall[]
 }
 
 interface StoredToolCall {
@@ -1491,6 +1493,16 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const [showNcPortal, setShowNcPortal] = useState(false)
   const [syncStatus, setSyncStatus]   = useState<'idle' | 'syncing' | 'error'>('idle')
   const [syncError, setSyncError]     = useState<string | null>(null)
+  const [pathSyncStatus, setPathSyncStatus] = useState<'idle' | 'syncing'>('idle')
+  const [pathSyncMsg, setPathSyncMsg]       = useState<string | null>(null)
+  const [ncFilePathInput, setNcFilePathInput] = useState(step.ncFilePath ?? '')
+
+  useEffect(() => {
+    if (!step.ncFilePath) return
+    apiFetch(`/kiosk/product-setups/steps/${step.id}/sync-from-path`, { method: 'POST' })
+      .then(() => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }))
+      .catch(() => {})
+  }, [step.id])
 
   async function handleSyncAndValidate() {
     setSyncStatus('syncing')
@@ -1503,6 +1515,31 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
     }
     await validate()
     setSyncStatus('idle')
+  }
+
+  async function handleSyncFromPath() {
+    setPathSyncStatus('syncing')
+    setPathSyncMsg(null)
+    try {
+      const res = await apiFetch<{ ok: boolean; created: number; updated: number; skipped: number; message?: string; errors?: string[] }>(
+        `/kiosk/product-setups/steps/${step.id}/sync-from-path`, { method: 'POST' }
+      )
+      await qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
+      if (res.message) {
+        setPathSyncMsg(res.message)
+      } else {
+        const parts = []
+        if (res.created > 0) parts.push(`${res.created} nieuw`)
+        if (res.updated > 0) parts.push(`${res.updated} bijgewerkt`)
+        if (res.skipped > 0) parts.push(`${res.skipped} ongewijzigd`)
+        setPathSyncMsg(parts.length > 0 ? parts.join(', ') : 'Geen wijzigingen')
+        if (res.errors?.length) setPathSyncMsg(prev => `${prev} (${res.errors![0]})`)
+      }
+    } catch (err) {
+      setPathSyncMsg(`Fout: ${err instanceof Error ? err.message : 'onbekend'}`)
+    } finally {
+      setPathSyncStatus('idle')
+    }
   }
 
   const patchStep = useMutation({
@@ -1659,6 +1696,33 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
         </div>
       </div>
 
+      {/* Bestandspad instelling */}
+      <section>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mappad voor NC-bestanden</h3>
+        <div className="flex items-center gap-2">
+          <input
+            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-teal-400"
+            placeholder="\\server\CAM\artikel\BEW01\"
+            value={ncFilePathInput}
+            onChange={e => setNcFilePathInput(e.target.value)}
+            onBlur={e => patchStep.mutate({ ncFilePath: e.target.value.trim() || null })}
+          />
+          {step.ncFilePath && (
+            <button
+              onClick={handleSyncFromPath}
+              disabled={pathSyncStatus === 'syncing'}
+              className="flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 shrink-0"
+            >
+              <RefreshCw size={13} className={pathSyncStatus === 'syncing' ? 'animate-spin' : ''} />
+              {pathSyncStatus === 'syncing' ? 'Laden…' : 'Laden van pad'}
+            </button>
+          )}
+        </div>
+        {pathSyncMsg && (
+          <p className="mt-1.5 text-xs text-gray-500">{pathSyncMsg}</p>
+        )}
+      </section>
+
       {/* NC bestanden */}
       <section>
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">NC-programmabestanden (.h)</h3>
@@ -1794,9 +1858,13 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
             files={step.ncFiles}
             stepId={step.id}
             setupId={setupId}
+            ncFilePath={step.ncFilePath}
             activeId={selectedNcFileId}
             onSelect={id => { setSelectedNcFileId(id) }}
             onClose={() => setShowNcPortal(false)}
+            onSyncFromPath={handleSyncFromPath}
+            pathSyncStatus={pathSyncStatus}
+            pathSyncMsg={pathSyncMsg}
           />
         )}
 
@@ -3027,14 +3095,18 @@ interface NcFile {
 }
 
 function NcFilePortalModal({
-  files, stepId, setupId, activeId, onSelect, onClose,
+  files, stepId, setupId, ncFilePath, activeId, onSelect, onClose, onSyncFromPath, pathSyncStatus, pathSyncMsg,
 }: {
   files: NcFile[]
   stepId: string
   setupId: string
+  ncFilePath: string | null
   activeId: string | null
   onSelect: (id: string) => void
   onClose: () => void
+  onSyncFromPath?: () => void
+  pathSyncStatus?: 'idle' | 'syncing'
+  pathSyncMsg?: string | null
 }) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -3072,6 +3144,7 @@ function NcFilePortalModal({
         if (files.length > 1) setUploadProgress(`${i + 1}/${files.length}`)
         const fd = new FormData()
         fd.append('file', files[i])
+        if (files[i].lastModified) fd.append('lastModified', String(files[i].lastModified))
         const res = await apiFetch<{ ncFileId: string }>(`/kiosk/product-setups/steps/${stepId}/nc-files`, {
           method: 'POST', body: fd,
         })
@@ -3102,6 +3175,16 @@ function NcFilePortalModal({
             <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{files.length}</span>
           </div>
           <div className="flex items-center gap-2">
+            {ncFilePath && onSyncFromPath && (
+              <button
+                onClick={onSyncFromPath}
+                disabled={pathSyncStatus === 'syncing'}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw size={13} className={pathSyncStatus === 'syncing' ? 'animate-spin' : ''} />
+                {pathSyncStatus === 'syncing' ? 'Laden…' : 'Laden van pad'}
+              </button>
+            )}
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
@@ -3115,6 +3198,9 @@ function NcFilePortalModal({
           </div>
         </div>
 
+        {pathSyncMsg && (
+          <div className="mx-5 mt-3 p-2 bg-teal-50 border border-teal-200 rounded text-xs text-teal-700 shrink-0">{pathSyncMsg}</div>
+        )}
         {uploadError && (
           <div className="mx-5 mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600 shrink-0">{uploadError}</div>
         )}
@@ -3162,8 +3248,10 @@ function NcFilePortalModal({
                       )}
                       <p className="text-[10px] text-gray-400 mt-0.5">
                         {f.programName && <span className="mr-2">{f.programName}</span>}
-                        {f.toolCallCount} tool calls ·{' '}
-                        {new Date(f.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {f.toolCallCount} tool calls · geïmp. {new Date(f.uploadedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}
+                        {f.sourceModifiedAt && (
+                          <span> · bestand {new Date(f.sourceModifiedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>

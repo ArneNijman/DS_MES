@@ -209,6 +209,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         zeroZ:                productSetupSteps.zeroZ,
         stepDescription:      productSetupSteps.stepDescription,
         opmerkingen:          productSetupSteps.opmerkingen,
+        ncFilePath:           productSetupSteps.ncFilePath,
         checklistCompleted:   productSetupSteps.checklistCompleted,
         createdAt:            productSetupSteps.createdAt,
         updatedAt:            productSetupSteps.updatedAt,
@@ -363,6 +364,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       zeroZ?:              number | null
       stepDescription?:    string | null
       opmerkingen?:        string | null
+      ncFilePath?:         string | null
       checklistCompleted?: boolean
     }
 
@@ -377,6 +379,7 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         ...(body.zeroZ              !== undefined && { zeroZ:              body.zeroZ?.toString() ?? null }),
         ...(body.stepDescription    !== undefined && { stepDescription:    body.stepDescription || null }),
         ...(body.opmerkingen        !== undefined && { opmerkingen:        body.opmerkingen || null }),
+        ...(body.ncFilePath         !== undefined && { ncFilePath:         body.ncFilePath || null }),
         ...(body.checklistCompleted !== undefined && { checklistCompleted: body.checklistCompleted }),
         updatedAt: new Date(),
       })
@@ -427,16 +430,22 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
 
       const { programName, postprocessor, toolCalls, summary } = parseNcProgram(content)
 
+      const lastModifiedField = req.body as { lastModified?: string } | null
+      const sourceModifiedAt = lastModifiedField?.lastModified
+        ? new Date(Number(lastModifiedField.lastModified))
+        : null
+
       const [ncFile] = await fastify.db.transaction(async (tx) => {
         const [inserted] = await tx
           .insert(productSetupNcFiles)
           .values({
             stepId,
-            fileName:      file.filename,
-            programName:   programName ?? null,
-            postprocessor: postprocessor ?? null,
-            fileContent:   content,
-            toolCallCount: toolCalls.length,
+            fileName:         file.filename,
+            programName:      programName ?? null,
+            postprocessor:    postprocessor ?? null,
+            fileContent:      content,
+            toolCallCount:    toolCalls.length,
+            sourceModifiedAt: sourceModifiedAt ?? undefined,
           })
           .returning()
 
@@ -469,6 +478,131 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       const message = err instanceof Error ? err.message : 'Onbekende fout'
       return reply.status(422).send({ error: message })
     }
+  })
+
+  // ── NC-bestanden laden van netwerkpad via cnc-agent ──────────────────────
+
+  fastify.post('/kiosk/product-setups/steps/:stepId/sync-from-path', auth, async (req, reply) => {
+    const { stepId } = req.params as { stepId: string }
+
+    const [step] = await fastify.db
+      .select({ id: productSetupSteps.id, ncFilePath: productSetupSteps.ncFilePath })
+      .from(productSetupSteps)
+      .where(eq(productSetupSteps.id, stepId))
+      .limit(1)
+
+    if (!step) return reply.status(404).send({ error: 'Stap niet gevonden' })
+    if (!step.ncFilePath) return reply.status(400).send({ error: 'Geen bestandspad ingesteld voor deze stap' })
+
+    let agentRes: Response
+    try {
+      agentRes = await callAgent(`/list-nc-files?folder=${encodeURIComponent(step.ncFilePath)}`, { method: 'GET' })
+    } catch {
+      return reply.status(503).send({ error: 'CNC agent niet bereikbaar' })
+    }
+
+    if (!agentRes.ok) {
+      const body = await agentRes.json().catch(() => ({})) as { error?: string }
+      return reply.status(502).send({ error: body.error ?? 'Agent fout' })
+    }
+
+    const { files, error: agentError } = await agentRes.json() as {
+      files: { fileName: string; mtime: number; content: string }[]
+      error?: string
+    }
+
+    if (agentError) return reply.status(404).send({ error: agentError })
+    if (!files || files.length === 0) {
+      return { ok: true, created: 0, updated: 0, skipped: 0, message: 'Geen .h bestanden gevonden in opgegeven map' }
+    }
+
+    // Bestaande NC-bestanden voor deze stap ophalen
+    const existing = await fastify.db
+      .select({ id: productSetupNcFiles.id, fileName: productSetupNcFiles.fileName, sourceModifiedAt: productSetupNcFiles.sourceModifiedAt })
+      .from(productSetupNcFiles)
+      .where(eq(productSetupNcFiles.stepId, stepId))
+
+    const existingByName = new Map(existing.map(f => [f.fileName.toLowerCase(), f]))
+
+    let created = 0, updated = 0, skipped = 0
+    const errors: string[] = []
+
+    for (const f of files) {
+      try {
+        const { programName, postprocessor, toolCalls } = parseNcProgram(f.content)
+        const fileMtime = new Date(f.mtime)
+        const found = existingByName.get(f.fileName.toLowerCase())
+
+        if (!found) {
+          // Nieuw bestand
+          await fastify.db.transaction(async (tx) => {
+            const [inserted] = await tx
+              .insert(productSetupNcFiles)
+              .values({
+                stepId,
+                fileName:         f.fileName,
+                programName:      programName ?? null,
+                postprocessor:    postprocessor ?? null,
+                fileContent:      f.content,
+                toolCallCount:    toolCalls.length,
+                sourceModifiedAt: fileMtime,
+              })
+              .returning()
+            if (toolCalls.length > 0) {
+              await tx.insert(productSetupToolCalls).values(
+                toolCalls.map(tc => ({
+                  ncFileId:     inserted.id,
+                  sequence:     tc.sequence,
+                  toolNumber:   tc.toolNumber,
+                  toolName:     tc.toolName,
+                  axis:         tc.axis,
+                  spindleSpeed: tc.spindleSpeed,
+                  dl:           tc.dl?.toString() ?? null,
+                  dr:           tc.dr?.toString() ?? null,
+                })),
+              )
+            }
+          })
+          created++
+        } else if (!found.sourceModifiedAt || fileMtime > found.sourceModifiedAt) {
+          // Gewijzigd — bijwerken
+          await fastify.db.transaction(async (tx) => {
+            await tx.update(productSetupNcFiles).set({
+              fileContent:      f.content,
+              programName:      programName ?? null,
+              postprocessor:    postprocessor ?? null,
+              toolCallCount:    toolCalls.length,
+              sourceModifiedAt: fileMtime,
+              uploadedAt:       new Date(),
+            }).where(eq(productSetupNcFiles.id, found.id))
+
+            await tx.delete(productSetupToolCalls).where(eq(productSetupToolCalls.ncFileId, found.id))
+            if (toolCalls.length > 0) {
+              await tx.insert(productSetupToolCalls).values(
+                toolCalls.map(tc => ({
+                  ncFileId:     found.id,
+                  sequence:     tc.sequence,
+                  toolNumber:   tc.toolNumber,
+                  toolName:     tc.toolName,
+                  axis:         tc.axis,
+                  spindleSpeed: tc.spindleSpeed,
+                  dl:           tc.dl?.toString() ?? null,
+                  dr:           tc.dr?.toString() ?? null,
+                })),
+              )
+            }
+          })
+          updated++
+        } else {
+          skipped++
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Onbekende fout'
+        errors.push(`${f.fileName}: ${msg}`)
+      }
+    }
+
+    return { ok: true, created, updated, skipped, errors }
   })
 
   // ── NC-bestand sturen naar machine via cnc-agent ─────────────────────────

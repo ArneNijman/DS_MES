@@ -606,6 +606,7 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   zeroZ:           text('zero_z'),
   stepDescription:    text('step_description'),
   opmerkingen:        text('opmerkingen'),
+  ncFilePath:         text('nc_file_path'),
   checklistCompleted: boolean('checklist_completed').default(false).notNull(),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -617,9 +618,10 @@ export const productSetupNcFiles = pgTable('product_setup_nc_files', {
   fileName:      text('file_name').notNull(),
   programName:   text('program_name'),
   postprocessor: text('postprocessor'),
-  fileContent:   text('file_content').notNull(),
-  toolCallCount: integer('tool_call_count').notNull().default(0),
-  uploadedAt:    timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+  fileContent:      text('file_content').notNull(),
+  toolCallCount:    integer('tool_call_count').notNull().default(0),
+  sourceModifiedAt: timestamp('source_modified_at', { withTimezone: true }),
+  uploadedAt:       timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const productSetupToolCalls = pgTable('product_setup_tool_calls', {
