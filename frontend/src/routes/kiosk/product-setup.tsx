@@ -3803,9 +3803,6 @@ function HypermillModal({
   onClose: () => void
 }) {
   const qc = useQueryClient()
-  const [pathInput, setPathInput]         = useState('')
-  const [saving, setSaving]               = useState(false)
-  const [saveError, setSaveError]         = useState<string | null>(null)
   const [folderPathInput, setFolderPathInput] = useState(folderPath ?? '')
   const [editingFolder, setEditingFolder]     = useState(!folderPath)
   const [copiedFolder, setCopiedFolder]       = useState(false)
@@ -3814,25 +3811,6 @@ function HypermillModal({
     mutationFn: (docId: string) => apiFetch(`/kiosk/product-setups/documents/${docId}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-setup', setupId] }),
   })
-
-  async function handleSavePath() {
-    const trimmed = pathInput.trim()
-    if (!trimmed) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await apiFetch(`/kiosk/product-setups/${setupId}/documents/path`, {
-        method: 'POST',
-        body: JSON.stringify({ path: trimmed }),
-      })
-      qc.invalidateQueries({ queryKey: ['product-setup', setupId] })
-      setPathInput('')
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSaving(false)
-    }
-  }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
@@ -3868,14 +3846,20 @@ function HypermillModal({
                     if (folderPath) setEditingFolder(false)
                   }
                 }}
-                onBlur={e => {
-                  const val = e.target.value.trim() || null
-                  onSaveFolderPath(val)
-                  if (val) setEditingFolder(false)
-                }}
                 placeholder="Y:\ProjectMap\HyperMill"
                 className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono"
               />
+              <button
+                onClick={() => {
+                  const val = folderPathInput.trim() || null
+                  onSaveFolderPath(val)
+                  if (val) setEditingFolder(false)
+                }}
+                disabled={!folderPathInput.trim()}
+                className="px-3 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 shrink-0"
+              >
+                Opslaan
+              </button>
             </div>
           ) : folderPath ? (
             <div className="flex items-center gap-1.5">
@@ -3888,13 +3872,6 @@ function HypermillModal({
                 title="Pad bewerken"
               >
                 <Pencil size={13} />
-              </button>
-              <button
-                onClick={() => window.open('file:///' + folderPath.replace(/\\/g, '/'), '_blank')}
-                className="p-1.5 rounded text-gray-400 hover:text-teal-600 hover:bg-teal-50 shrink-0"
-                title="Open in Verkenner"
-              >
-                <ExternalLink size={13} />
               </button>
               <button
                 onClick={() => {
@@ -3913,29 +3890,6 @@ function HypermillModal({
               + Mappad instellen
             </button>
           )}
-        </div>
-
-        {/* Pad invoeren */}
-        <div className="px-5 py-3 border-b border-gray-100 shrink-0">
-          <p className="text-xs text-gray-500 mb-1.5">Netwerkpad of lokaal pad (bijv. <code className="bg-gray-100 px-1 rounded">\\SERVER\HyperMill\project.hmc</code>)</p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={pathInput}
-              onChange={e => setPathInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSavePath()}
-              placeholder="\\server\share\project.hmc"
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 font-mono"
-            />
-            <button
-              onClick={handleSavePath}
-              disabled={saving || !pathInput.trim()}
-              className="px-3 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors shrink-0"
-            >
-              {saving ? 'Bezig…' : 'Opslaan'}
-            </button>
-          </div>
-          {saveError && <p className="text-xs text-red-600 mt-1">{saveError}</p>}
         </div>
 
         {/* Bestandslijst */}
@@ -3975,19 +3929,6 @@ function HypermillModal({
               ))}
             </ul>
           )}
-          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
-            <p className="text-[11px] text-gray-400">
-              Werkt de open-knop niet?{' '}
-              <a
-                href="/hypermill-protocol-install.reg"
-                download="hypermill-protocol-install.reg"
-                className="text-teal-600 hover:underline"
-              >
-                Installeer het HyperMill protocol
-              </a>
-              {' '}(eenmalig per PC, dubbelklik na downloaden)
-            </p>
-          </div>
         </div>
       </div>
     </div>
