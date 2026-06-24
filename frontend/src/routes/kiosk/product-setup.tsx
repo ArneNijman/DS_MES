@@ -3185,15 +3185,19 @@ function NcFilePortalModal({
                 {pathSyncStatus === 'syncing' ? 'Laden…' : 'Laden van pad'}
               </button>
             )}
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
-            >
-              <Upload size={13} />
-              {uploading ? (uploadProgress ? `${uploadProgress} bezig…` : 'Bezig…') : 'Uploaden'}
-            </button>
-            <input ref={fileRef} type="file" accept=".h" multiple className="hidden" onChange={handleUpload} />
+            {!ncFilePath && (
+              <>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  <Upload size={13} />
+                  {uploading ? (uploadProgress ? `${uploadProgress} bezig…` : 'Bezig…') : 'Uploaden'}
+                </button>
+                <input ref={fileRef} type="file" accept=".h" multiple className="hidden" onChange={handleUpload} />
+              </>
+            )}
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400"><X size={18} /></button>
           </div>
         </div>
@@ -3210,7 +3214,7 @@ function NcFilePortalModal({
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-300">
               <FileText size={36} className="mb-2" />
-              <p className="text-sm">Nog geen NC-bestanden geüpload</p>
+              <p className="text-sm">{ncFilePath ? 'Geen .h bestanden gevonden in opgegeven map' : 'Nog geen NC-bestanden geüpload'}</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-50">
