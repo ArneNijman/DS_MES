@@ -346,6 +346,10 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
         reportedByName: employees.name,
         resolvedAt: breakdowns.resolvedAt,
         resolution: breakdowns.resolution,
+        resolvedByType: breakdowns.resolvedByType,
+        resolvedByName: breakdowns.resolvedByName,
+        werkbonUrl: breakdowns.werkbonUrl,
+        werkbonFileName: breakdowns.werkbonFileName,
         createdAt: breakdowns.createdAt,
       })
       .from(breakdowns)
@@ -370,6 +374,10 @@ export async function adminMachineRoutes(fastify: FastifyInstance) {
         reportedByName: employees.name,
         resolvedAt: breakdowns.resolvedAt,
         resolution: breakdowns.resolution,
+        resolvedByType: breakdowns.resolvedByType,
+        resolvedByName: breakdowns.resolvedByName,
+        werkbonUrl: breakdowns.werkbonUrl,
+        werkbonFileName: breakdowns.werkbonFileName,
         createdAt: breakdowns.createdAt,
       })
       .from(breakdowns)
