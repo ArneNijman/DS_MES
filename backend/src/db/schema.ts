@@ -608,9 +608,13 @@ export const productSetupSteps = pgTable('product_setup_steps', {
   stepDescription:    text('step_description'),
   opmerkingen:        text('opmerkingen'),
   ncFilePath:         text('nc_file_path'),
-  checklistCompleted: boolean('checklist_completed').default(false).notNull(),
-  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  checklistCompleted:    boolean('checklist_completed').default(false).notNull(),
+  camChecklistCompleted: boolean('cam_checklist_completed').default(false).notNull(),
+  camReleasedById:       uuid('cam_released_by_id').references(() => employees.id, { onDelete: 'set null' }),
+  camReleasedByName:     text('cam_released_by_name'),
+  camReleasedAt:         timestamp('cam_released_at', { withTimezone: true }),
+  createdAt:             timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:             timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const productSetupNcFiles = pgTable('product_setup_nc_files', {

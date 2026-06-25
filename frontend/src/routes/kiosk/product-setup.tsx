@@ -10,6 +10,7 @@ import {
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import PdfViewer from '@/components/PdfViewer'
+import EmployeePickerModal from '@/components/kiosk/EmployeePickerModal'
 import BallonOverlay, { type BallonData } from '@/components/BallonOverlay'
 import { type TextItem } from '@/lib/pdfjs'
 import { detectMaatAnnotaties } from '@/lib/tekening-detectie'
@@ -69,9 +70,13 @@ interface Step {
   stepDescription:      string | null
   opmerkingen:          string | null
   ncFilePath:           string | null
-  checklistCompleted:   boolean
-  ncFiles:              NcFile[]
-  attachments:          Attachment[]
+  checklistCompleted:    boolean
+  camChecklistCompleted: boolean
+  camReleasedById:       string | null
+  camReleasedByName:     string | null
+  camReleasedAt:         string | null
+  ncFiles:               NcFile[]
+  attachments:           Attachment[]
 }
 
 interface NcFile {
@@ -1170,7 +1175,7 @@ function SetupDetail({
               </div>
             )
           })()}
-          {activeTab === 'cnc'        && <CncInfoTab step={selectedStep} setupId={setupId} />}
+          {activeTab === 'cnc'        && <CncInfoTab step={selectedStep} setupId={setupId} documents={setup?.documents ?? []} />}
           {activeTab === 'bijlagen'   && <BijlagenTab step={selectedStep} />}
           {activeTab === 'overdracht' && (
             <OverdrachtTab stepId={selectedStep.id} />
@@ -1487,7 +1492,14 @@ function SetupDetail({
 // TAB: CNC informatie
 // ══════════════════════════════════════════════════════════════════════════════
 
-function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
+const CAM_ITEMS = [
+  { label: 'Alle bewerkingen zijn geprogrammeerd',       subtitle: 'geen bewerkingen overgeslagen' },
+  { label: 'Simulatie volledig uitgevoerd',              subtitle: 'Inclusief heropspanning als die van toepassing is' },
+  { label: 'Restmateriaal per opspanning gecontroleerd', subtitle: 'geen onverwachte aanrakingen' },
+  { label: 'Plaats in de machine bepaald en ingetekend', subtitle: null },
+] as const
+
+function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string; documents: Document[] }) {
   const qc = useQueryClient()
   const [selectedNcFileId, setSelectedNcFileId] = useState<string | null>(
     step.ncFiles.length > 0 ? step.ncFiles[step.ncFiles.length - 1].id : null
@@ -1561,6 +1573,25 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
   const [checks, setChecks] = useState<boolean[]>(Array(5).fill(false))
   const allChecked = checks.every(Boolean)
 
+  const [camChecks, setCamChecks]       = useState<boolean[]>([false, false, false, false])
+  const [camEmployee, setCamEmployee]   = useState<{ id: string; name: string } | null>(null)
+  const [showCamPicker, setShowCamPicker] = useState(false)
+
+  useEffect(() => {
+    setCamChecks([false, false, false, false])
+    setCamEmployee(null)
+  }, [step.id])
+
+  const { data: allEmployees = [] } = useQuery<{ id: string; name: string; role: string }[]>({
+    queryKey: ['kiosk-employees'],
+    queryFn:  () => apiFetch('/kiosk/employees'),
+    staleTime: 5 * 60 * 1000,
+  })
+  const camEmployees = allEmployees.filter(e => e.role === 'cam')
+
+  const aanpakFrezenFilled = documents.filter(d => d.documentType === 'aanpak_frezen').length > 0
+  const allCamChecked      = camChecks.every(Boolean) && aanpakFrezenFilled && camEmployee !== null
+
   const [showEditor, setShowEditor]         = useState(false)
   const [editorContent, setEditorContent]   = useState('')
   const [editorOriginal, setEditorOriginal] = useState('')
@@ -1621,84 +1652,153 @@ function CncInfoTab({ step, setupId }: { step: Step; setupId: string }) {
 
   return (
     <div className="p-5 space-y-6 max-w-4xl">
-      {/* Nulpunt + Opmerkingen + Checklist */}
-      <div className="flex gap-8 items-start">
-        <section className="shrink-0">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Nulpunt (Work Zero)</h3>
-          <div className="flex gap-4">
-            {(['zeroX', 'zeroY', 'zeroZ'] as const).map(axis => (
-              <div key={axis}>
-                <label className="text-xs text-gray-500 block mb-1">{axis.replace('zero', '')}</label>
-                <input
-                  type="text"
-                  className="w-28 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
-                  defaultValue={step[axis] ?? ''}
-                  onBlur={e => patchStep.mutate({ [axis]: e.target.value.trim() || null })}
-                />
+      {/* CAM Checklist */}
+      <section>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <ListChecks size={13} />
+          CAM Checklist
+        </h3>
+        {step.camChecklistCompleted ? (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+            <div>
+              <div className="flex items-center gap-2 text-sm text-green-700 font-medium">
+                <CheckCircle2 size={15} className="text-green-500 shrink-0" />
+                CAM Checklist voltooid
               </div>
-            ))}
+              <p className="text-xs text-green-600 mt-0.5 ml-6">
+                Vrijgegeven door {step.camReleasedByName} op {new Date(step.camReleasedAt!).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+            <button
+              onClick={() => patchStep.mutate({ camChecklistCompleted: false, camReleasedById: null, camReleasedByName: null, camReleasedAt: null })}
+              className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
+            >
+              Opnieuw
+            </button>
           </div>
-        </section>
-        <div className="flex-1 grid gap-12 items-start" style={{ gridTemplateColumns: '1fr 200px' }}>
-        <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Opmerkingen</h3>
-          <textarea
-            key={step.id}
-            className="w-full h-28 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 resize-none focus:outline-none focus:ring-1 focus:ring-teal-400"
-            placeholder="Opmerkingen voor deze stap…"
-            defaultValue={step.opmerkingen ?? ''}
-            onBlur={e => patchStep.mutate({ opmerkingen: e.target.value.trim() || null })}
-          />
-        </section>
-        <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-            <ClipboardCheck size={13} />
-            Checklist
-          </h3>
-          {step.checklistCompleted ? (
-            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center gap-2 text-xs text-green-700 font-medium">
-                <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                Checklist voltooid
-              </div>
-              <button
-                onClick={() => { patchStep.mutate({ checklistCompleted: false }); setChecks(Array(5).fill(false)) }}
-                className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
-              >
-                Opnieuw
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {CHECKLIST_ITEMS.map((item, i) => (
-                <label key={i} className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={checks[i]}
-                    onChange={e => setChecks(c => c.map((v, j) => j === i ? e.target.checked : v))}
-                    className="mt-0.5 accent-teal-600"
-                  />
-                  <span className="text-xs text-gray-700 leading-snug">{item}</span>
-                </label>
-              ))}
-              <button
-                disabled={!allChecked || patchStep.isPending}
-                onClick={() => patchStep.mutate({ checklistCompleted: true })}
-                className={cn(
-                  'mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                  allChecked
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+        ) : (
+          <div className="space-y-3 max-w-lg">
+            {CAM_ITEMS.map((item, i) => (
+              <label key={i} className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={camChecks[i]}
+                  onChange={e => setCamChecks(c => c.map((v, j) => j === i ? e.target.checked : v))}
+                  className="mt-0.5 accent-teal-600 shrink-0"
+                />
+                <div>
+                  <span className="text-sm text-gray-700">{item.label}</span>
+                  {item.subtitle && <p className="text-xs text-gray-400 mt-0.5">{item.subtitle}</p>}
+                </div>
+              </label>
+            ))}
+            {/* Item 5: aanpak frezen (auto) */}
+            <div className="flex items-start gap-3">
+              <CheckCircle2
+                size={16}
+                className={cn('mt-0.5 shrink-0', aanpakFrezenFilled ? 'text-green-500' : 'text-gray-300')}
+              />
+              <div>
+                <span className="text-sm text-gray-700">Aanpak frezen is ingevuld</span>
+                {!aanpakFrezenFilled && (
+                  <p className="text-xs text-orange-500 mt-0.5">Upload aanpak frezen via Algemene informatie</p>
                 )}
-              >
-                <Check size={12} />
-                Bevestig checklist
-              </button>
+              </div>
             </div>
-          )}
-        </section>
-        </div>
-      </div>
+            {/* Item 6: medewerker picker */}
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                'mt-1 w-3.5 h-3.5 rounded-full border-2 shrink-0',
+                camEmployee ? 'border-green-500 bg-green-500' : 'border-gray-300'
+              )} />
+              <div>
+                <span className="text-sm text-gray-700">Programma is vrijgegeven voor overdracht</span>
+                <div className="mt-1">
+                  <button onClick={() => setShowCamPicker(true)} className="text-xs text-teal-600 hover:underline">
+                    {camEmployee ? `${camEmployee.name} (wijzig)` : 'Selecteer CAM programmeur'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              disabled={!allCamChecked || patchStep.isPending}
+              onClick={() => patchStep.mutate({
+                camChecklistCompleted: true,
+                camReleasedById:   camEmployee!.id,
+                camReleasedByName: camEmployee!.name,
+                camReleasedAt:     new Date().toISOString(),
+              })}
+              className={cn(
+                'mt-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                allCamChecked
+                  ? 'bg-teal-600 text-white hover:bg-teal-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              )}
+            >
+              <Check size={14} />
+              Bevestig CAM checklist
+            </button>
+          </div>
+        )}
+        {showCamPicker && (
+          <EmployeePickerModal
+            employees={camEmployees}
+            selected={camEmployee?.id ?? null}
+            title="CAM programmeur selecteren"
+            onSelect={emp => { setCamEmployee({ id: emp.id, name: emp.name }); setShowCamPicker(false) }}
+            onClose={() => setShowCamPicker(false)}
+          />
+        )}
+      </section>
+
+      {/* Operator Checklist */}
+      <section>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <ClipboardCheck size={13} />
+          Checklist operator
+        </h3>
+        {step.checklistCompleted ? (
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center gap-2 text-xs text-green-700 font-medium">
+              <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+              Checklist voltooid
+            </div>
+            <button
+              onClick={() => { patchStep.mutate({ checklistCompleted: false }); setChecks(Array(5).fill(false)) }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
+            >
+              Opnieuw
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2 max-w-sm">
+            {CHECKLIST_ITEMS.map((item, i) => (
+              <label key={i} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checks[i]}
+                  onChange={e => setChecks(c => c.map((v, j) => j === i ? e.target.checked : v))}
+                  className="mt-0.5 accent-teal-600"
+                />
+                <span className="text-xs text-gray-700 leading-snug">{item}</span>
+              </label>
+            ))}
+            <button
+              disabled={!allChecked || patchStep.isPending}
+              onClick={() => patchStep.mutate({ checklistCompleted: true })}
+              className={cn(
+                'mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                allChecked
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              )}
+            >
+              <Check size={12} />
+              Bevestig checklist
+            </button>
+          </div>
+        )}
+      </section>
 
       {/* Bestandspad instelling */}
       <section>

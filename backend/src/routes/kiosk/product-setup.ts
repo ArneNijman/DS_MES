@@ -210,9 +210,13 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         stepDescription:      productSetupSteps.stepDescription,
         opmerkingen:          productSetupSteps.opmerkingen,
         ncFilePath:           productSetupSteps.ncFilePath,
-        checklistCompleted:   productSetupSteps.checklistCompleted,
-        createdAt:            productSetupSteps.createdAt,
-        updatedAt:            productSetupSteps.updatedAt,
+        checklistCompleted:    productSetupSteps.checklistCompleted,
+        camChecklistCompleted: productSetupSteps.camChecklistCompleted,
+        camReleasedById:       productSetupSteps.camReleasedById,
+        camReleasedByName:     productSetupSteps.camReleasedByName,
+        camReleasedAt:         productSetupSteps.camReleasedAt,
+        createdAt:             productSetupSteps.createdAt,
+        updatedAt:             productSetupSteps.updatedAt,
       })
       .from(productSetupSteps)
       .leftJoin(machines, eq(machines.id, productSetupSteps.machineId))
@@ -366,8 +370,12 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
       zeroZ?:              number | null
       stepDescription?:    string | null
       opmerkingen?:        string | null
-      ncFilePath?:         string | null
-      checklistCompleted?: boolean
+      ncFilePath?:            string | null
+      checklistCompleted?:    boolean
+      camChecklistCompleted?: boolean
+      camReleasedById?:       string | null
+      camReleasedByName?:     string | null
+      camReleasedAt?:         string | null
     }
 
     const [updated] = await fastify.db
@@ -382,7 +390,11 @@ export async function productSetupRoutes(fastify: FastifyInstance) {
         ...(body.stepDescription    !== undefined && { stepDescription:    body.stepDescription || null }),
         ...(body.opmerkingen        !== undefined && { opmerkingen:        body.opmerkingen || null }),
         ...(body.ncFilePath         !== undefined && { ncFilePath:         body.ncFilePath || null }),
-        ...(body.checklistCompleted !== undefined && { checklistCompleted: body.checklistCompleted }),
+        ...(body.checklistCompleted    !== undefined && { checklistCompleted:    body.checklistCompleted }),
+        ...(body.camChecklistCompleted !== undefined && { camChecklistCompleted: body.camChecklistCompleted }),
+        ...(body.camReleasedById       !== undefined && { camReleasedById:       body.camReleasedById ?? null }),
+        ...(body.camReleasedByName     !== undefined && { camReleasedByName:     body.camReleasedByName ?? null }),
+        ...(body.camReleasedAt         !== undefined && { camReleasedAt:         body.camReleasedAt ? new Date(body.camReleasedAt) : null }),
         updatedAt: new Date(),
       })
       .where(eq(productSetupSteps.id, stepId))
