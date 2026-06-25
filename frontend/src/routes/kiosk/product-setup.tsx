@@ -1707,20 +1707,18 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
               </div>
             </div>
             {/* Item 6: medewerker picker */}
-            <div className="flex items-start gap-3">
+            <button onClick={() => setShowCamPicker(true)} className="flex items-start gap-3 cursor-pointer text-left">
               <div className={cn(
                 'mt-1 w-3.5 h-3.5 rounded-full border-2 shrink-0',
                 camEmployee ? 'border-green-500 bg-green-500' : 'border-gray-300'
               )} />
               <div>
                 <span className="text-sm text-gray-700">Programma is vrijgegeven voor overdracht</span>
-                <div className="mt-1">
-                  <button onClick={() => setShowCamPicker(true)} className="text-xs text-teal-600 hover:underline">
-                    {camEmployee ? `${camEmployee.name} (wijzig)` : 'Selecteer CAM programmeur'}
-                  </button>
-                </div>
+                <p className="text-xs text-teal-600 mt-0.5">
+                  {camEmployee ? `${camEmployee.name} (wijzig)` : 'Selecteer CAM programmeur'}
+                </p>
               </div>
-            </div>
+            </button>
             <button
               disabled={!allCamChecked || patchStep.isPending}
               onClick={() => patchStep.mutate({
