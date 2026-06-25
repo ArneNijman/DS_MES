@@ -1678,9 +1678,9 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {CAM_ITEMS.map((item, i) => (
-              <label key={i} className="flex items-start gap-3 cursor-pointer">
+              <label key={i} className="flex items-start gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={camChecks[i]}
@@ -1688,33 +1688,33 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
                   className="mt-0.5 accent-teal-600 shrink-0"
                 />
                 <div>
-                  <span className="text-sm text-gray-700">{item.label}</span>
-                  {item.subtitle && <p className="text-xs text-gray-400 mt-0.5">{item.subtitle}</p>}
+                  <span className="text-xs text-gray-700 leading-snug">{item.label}</span>
+                  {item.subtitle && <p className="text-xs text-gray-400 leading-snug">{item.subtitle}</p>}
                 </div>
               </label>
             ))}
             {/* Item 5: aanpak frezen (auto) */}
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-2">
               <CheckCircle2
-                size={16}
+                size={14}
                 className={cn('mt-0.5 shrink-0', aanpakFrezenFilled ? 'text-green-500' : 'text-gray-300')}
               />
               <div>
-                <span className="text-sm text-gray-700">Aanpak frezen is ingevuld</span>
+                <span className="text-xs text-gray-700 leading-snug">Aanpak frezen is ingevuld</span>
                 {!aanpakFrezenFilled && (
-                  <p className="text-xs text-orange-500 mt-0.5">Upload aanpak frezen via Algemene informatie</p>
+                  <p className="text-xs text-orange-500 leading-snug">Upload aanpak frezen via Algemene informatie</p>
                 )}
               </div>
             </div>
             {/* Item 6: medewerker picker */}
-            <button onClick={() => setShowCamPicker(true)} className="flex items-start gap-3 cursor-pointer text-left">
+            <button onClick={() => setShowCamPicker(true)} className="flex items-start gap-2 cursor-pointer text-left">
               <div className={cn(
-                'mt-1 w-3.5 h-3.5 rounded-full border-2 shrink-0',
+                'mt-0.5 w-3.5 h-3.5 rounded-full border-2 shrink-0',
                 camEmployee ? 'border-green-500 bg-green-500' : 'border-gray-300'
               )} />
               <div>
-                <span className="text-sm text-gray-700">Programma is vrijgegeven voor overdracht</span>
-                <p className="text-xs text-teal-600 mt-0.5">
+                <span className="text-xs text-gray-700 leading-snug">Programma is vrijgegeven voor overdracht</span>
+                <p className="text-xs text-teal-600 leading-snug">
                   {camEmployee ? `${camEmployee.name} (wijzig)` : 'Selecteer CAM programmeur'}
                 </p>
               </div>
@@ -1728,13 +1728,13 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
                 camReleasedAt:     new Date().toISOString(),
               })}
               className={cn(
-                'mt-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                'mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                 allCamChecked
                   ? 'bg-teal-600 text-white hover:bg-teal-700'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               )}
             >
-              <Check size={14} />
+              <Check size={12} />
               Bevestig CAM checklist
             </button>
           </div>
