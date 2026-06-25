@@ -1652,8 +1652,9 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
 
   return (
     <div className="p-5 space-y-6 max-w-4xl">
+      <div className="flex gap-10 items-start">
       {/* CAM Checklist */}
-      <section>
+      <section className="flex-1">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
           <ListChecks size={13} />
           CAM Checklist
@@ -1677,7 +1678,7 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
             </button>
           </div>
         ) : (
-          <div className="space-y-3 max-w-lg">
+          <div className="space-y-3">
             {CAM_ITEMS.map((item, i) => (
               <label key={i} className="flex items-start gap-3 cursor-pointer">
                 <input
@@ -1752,7 +1753,7 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
       </section>
 
       {/* Operator Checklist */}
-      <section>
+      <section className="shrink-0">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
           <ClipboardCheck size={13} />
           Checklist operator
@@ -1799,6 +1800,7 @@ function CncInfoTab({ step, setupId, documents }: { step: Step; setupId: string;
           </div>
         )}
       </section>
+      </div>
 
       {/* Bestandspad instelling */}
       <section>
