@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowLeft, Clock, Info, ChevronDown } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { Activity, ArrowLeft, Clock, Info, ChevronDown, Search, ChevronRight } from 'lucide-react'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { apiFetch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import AdminSidebar from '@/components/AdminSidebar'
@@ -1053,7 +1053,636 @@ function getSinceDate(days: number): string {
   return d.toISOString()
 }
 
-type DashboardTab = 'beschikbaarheid' | 'spindeluren' | 'verspaantijd'
+// ── Projectanalyse types ───────────────────────────────────────────────────
+
+interface ParetoArticle {
+  article:         string
+  totalSeconds:    number
+  runCount:        number
+  completedRuns:   number
+  interruptedRuns: number
+}
+
+interface ParetoData { articles: ParetoArticle[] }
+
+interface ArticleDetail {
+  article:        string
+  totalSeconds:   number
+  runCount:       number
+  completedRuns:  number
+  byMachine: { id: string; name: string; seconds: number; runCount: number; completedRuns: number }[]
+  runs: { id: string; machineName: string; startedAt: string; durationSeconds: number | null; status: string }[]
+}
+
+// ── Berekent downtime die overlaps met de looptijd van de runs ────────────
+
+function computeRunOverlap(
+  runs:    ArticleDetail['runs'],
+  periods: DowntimePeriod[],
+): { alarmstilstandMin: number; stilstandMin: number; offlineMin: number } {
+  const nowMs = Date.now()
+
+  const runWindows = runs
+    .filter(r => r.durationSeconds != null && r.durationSeconds > 0)
+    .map(r => ({
+      startMs: new Date(r.startedAt).getTime(),
+      endMs:   new Date(r.startedAt).getTime() + r.durationSeconds! * 1000,
+    }))
+
+  const allPeriods = periods.map(p => ({
+    type:    p.type,
+    startMs: new Date(p.startedAt).getTime(),
+    endMs:   p.endedAt ? new Date(p.endedAt).getTime() : nowMs,
+  }))
+
+  let alarmMs = 0
+  let stilMs  = 0
+  let offMs   = 0
+
+  for (const run of runWindows) {
+    for (const p of allPeriods) {
+      const ov = overlapMs(run.startMs, run.endMs, p.startMs, p.endMs)
+      if (ov <= 0) continue
+      if (p.type === 'alarmstilstand') alarmMs += ov
+      else if (p.type === 'stilstand') stilMs  += ov
+      else if (p.type === 'offline')   offMs   += ov
+    }
+  }
+
+  return {
+    alarmstilstandMin: Math.round(alarmMs / 60_000),
+    stilstandMin:      Math.round(stilMs  / 60_000),
+    offlineMin:        Math.round(offMs   / 60_000),
+  }
+}
+
+// ── PeriodBar ──────────────────────────────────────────────────────────────
+// Toont de 4 categorieën als % van de totale looptijd (runs van dit artikel)
+
+function PeriodBar({ verspaanMin, alarmMin, stilstandMin, offlineMin, since, machineName, article }: {
+  verspaanMin: number; alarmMin: number; stilstandMin: number; offlineMin: number
+  since: string; machineName: string; article: string
+}) {
+  const totalMin = Math.max(1, verspaanMin + alarmMin + stilstandMin + offlineMin)
+  const pct = (m: number) => `${Math.max(0.4, m / totalMin * 100).toFixed(2)}%`
+
+  const segments = [
+    { key: 'running',        label: 'Verspaantijd',   min: verspaanMin,  color: '#0d9488' },
+    { key: 'alarmstilstand', label: 'Alarmstilstand', min: alarmMin,     color: '#ef4444' },
+    { key: 'stilstand',      label: 'Stilstand',      min: stilstandMin, color: '#f59e0b' },
+    { key: 'offline',        label: 'Offline',        min: offlineMin,   color: '#9ca3af' },
+  ]
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+        {machineName} · artikel {article}
+      </h3>
+
+      <p className="text-xs text-gray-400 mb-3">
+        {new Date(since).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' })} – nu
+      </p>
+
+      <div className="h-10 rounded-xl overflow-hidden flex w-full mb-4">
+        {segments.map(s => s.min > 0 && (
+          <div
+            key={s.key}
+            style={{ width: pct(s.min), backgroundColor: s.color }}
+            className="h-full"
+            title={`${s.label}: ${fmtSeconds(s.min * 60)} (${Math.round(s.min / totalMin * 100)}%)`}
+          />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {segments.filter(s => s.min > 0).map(s => (
+          <div key={s.key} className="flex items-start gap-2">
+            <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: s.color }} />
+            <div>
+              <p className="text-xs font-medium text-gray-700">{s.label}</p>
+              <p className="text-xs text-gray-400">{fmtSeconds(s.min * 60)} · {Math.round(s.min / totalMin * 100)}%</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── ProjectAnalyseTab ──────────────────────────────────────────────────────
+
+function fmtSeconds(sec: number): string {
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (h > 0) return `${h}u ${m > 0 ? `${m}m` : ''}`.trim()
+  return `${m}m`
+}
+
+function fmtRunDate(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    + ' ' + d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDuration(sec: number | null): string {
+  if (sec == null) return '—'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// ── Dagelijkse activiteitsberekening per artikel ────────────────────────────
+
+interface DayActivity {
+  date:           string   // "dd-mm"
+  verspaantijd:   number   // minuten — looptijd van dit artikel
+  alarmstilstand: number   // minuten — alarmstilstand op de machine (alle periodes)
+  stilstand:      number   // minuten — stilstand op de machine (alle periodes)
+  offline:        number   // minuten — machine offline (alle periodes)
+}
+
+function overlapMs(
+  aStart: number, aEnd: number,
+  bStart: number, bEnd: number,
+): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart))
+}
+
+function buildDayActivity(
+  runs: ArticleDetail['runs'],
+  periods: DowntimePeriod[],
+  since: string,
+): DayActivity[] {
+  const nowMs   = Date.now()
+  const sinceMs = new Date(since).getTime()
+
+  // Alle downtime-periodes van de machine (niet alleen overlap met runs)
+  const allPeriods = periods.map(p => ({
+    type:    p.type,
+    startMs: new Date(p.startedAt).getTime(),
+    endMs:   p.endedAt ? new Date(p.endedAt).getTime() : nowMs,
+  }))
+
+  const runWindows = runs
+    .filter(r => r.durationSeconds != null && r.durationSeconds > 0)
+    .map(r => ({
+      startMs: new Date(r.startedAt).getTime(),
+      endMs:   new Date(r.startedAt).getTime() + r.durationSeconds! * 1000,
+    }))
+
+  const result: DayActivity[] = []
+  const cursor = new Date(sinceMs)
+  cursor.setHours(0, 0, 0, 0)
+
+  while (cursor.getTime() < nowMs) {
+    const dayStart = cursor.getTime()
+    cursor.setDate(cursor.getDate() + 1)
+    const dayEnd = Math.min(cursor.getTime(), nowMs)
+
+    // Verspaantijd = looptijd van dit artikel op deze dag
+    let verspaantijdMs = 0
+    for (const run of runWindows) {
+      verspaantijdMs += overlapMs(run.startMs, run.endMs, dayStart, dayEnd)
+    }
+
+    // Downtime-categorieën van de machine (zelfde logica als beschikbaarheidstab)
+    let alarmstilstandMs = 0
+    let stilstandMs      = 0
+    let offlineMs        = 0
+    for (const p of allPeriods) {
+      const ov = overlapMs(p.startMs, p.endMs, dayStart, dayEnd)
+      if (p.type === 'alarmstilstand') alarmstilstandMs += ov
+      else if (p.type === 'stilstand') stilstandMs      += ov
+      else if (p.type === 'offline')   offlineMs        += ov
+    }
+
+    if (verspaantijdMs > 0 || alarmstilstandMs > 0 || stilstandMs > 0 || offlineMs > 0) {
+      result.push({
+        date:           new Date(dayStart).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' }),
+        verspaantijd:   Math.round(verspaantijdMs   / 60_000),
+        alarmstilstand: Math.round(alarmstilstandMs / 60_000),
+        stilstand:      Math.round(stilstandMs      / 60_000),
+        offline:        Math.round(offlineMs        / 60_000),
+      })
+    }
+  }
+
+  return result
+}
+
+function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; days: number }) {
+  const [selectedMachine, setSelectedMachine]   = useState<MachineSummary | null>(null)
+  const [selectedArticle, setSelectedArticle]   = useState<string | null>(null)
+  const [articleSearch, setArticleSearch]       = useState('')
+  const [debouncedSearch, setDebouncedSearch]   = useState('')
+  const [showAllRuns, setShowAllRuns]           = useState(false)
+  const [showInfoN2, setShowInfoN2]             = useState(false)
+  const [showInfoN3, setShowInfoN3]             = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(articleSearch.trim()), 350)
+    return () => clearTimeout(t)
+  }, [articleSearch])
+
+  // Reset bij periode- of artikelwissel
+  useEffect(() => { setSelectedArticle(null); setShowAllRuns(false) }, [days])
+  useEffect(() => { setShowAllRuns(false) }, [selectedArticle])
+
+  const since = getSinceDate(days)
+
+  const selectMachine = (m: MachineSummary) => {
+    setSelectedMachine(m)
+    setSelectedArticle(null)
+    setArticleSearch('')
+    setDebouncedSearch('')
+  }
+
+  // Pareto query — backend doet ILIKE als debouncedSearch gevuld is
+  const { data: paretoData, isLoading: paretoLoading } = useQuery<ParetoData>({
+    queryKey: ['cnc-pareto', since, selectedMachine?.id ?? '', debouncedSearch],
+    queryFn:  () => apiFetch(
+      `/admin/cnc-project-analysis/pareto?since=${since}&machineId=${selectedMachine!.id}&limit=50${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+    ) as Promise<ParetoData>,
+    enabled:  !!selectedMachine && !selectedArticle,
+    staleTime: 60_000,
+  })
+
+  const { data: detailData, isLoading: detailLoading } = useQuery<ArticleDetail>({
+    queryKey: ['cnc-article-detail', selectedArticle, since, selectedMachine?.id ?? ''],
+    queryFn:  () => apiFetch(
+      `/admin/cnc-project-analysis/detail?article=${encodeURIComponent(selectedArticle!)}&since=${since}${selectedMachine ? `&machineId=${selectedMachine.id}` : ''}`,
+    ) as Promise<ArticleDetail>,
+    enabled:  !!selectedArticle,
+    staleTime: 60_000,
+  })
+
+  // ── Niveau 1 — Machine-tegels ────────────────────────────────────────────
+  if (!selectedMachine) {
+    return (
+      <div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {machines.map(m => (
+            <button
+              key={m.id}
+              onClick={() => selectMachine(m)}
+              className="bg-white rounded-xl border border-gray-100 overflow-hidden text-left hover:border-teal-300 hover:shadow-sm transition-all"
+            >
+              <div className="h-28 bg-gray-50 flex items-center justify-center overflow-hidden">
+                {m.photoUrl
+                  ? <img src={m.photoUrl} alt={m.name} className="w-full h-full object-contain" />
+                  : <Activity size={28} className="text-gray-200" />
+                }
+              </div>
+              <div className="p-3">
+                <p className="text-sm font-semibold text-gray-800 truncate">{m.name}</p>
+                <div className="flex items-center gap-1 mt-1.5">
+                  <ChevronRight size={12} className="text-teal-500 shrink-0" />
+                  <p className="text-xs text-teal-600">Bekijk projecten</p>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Niveau 2 — Pareto artikelen ───────────────────────────────────────────
+  if (!selectedArticle) {
+    const articles = paretoData?.articles ?? []
+    const maxSec   = articles[0]?.totalSeconds || 1
+    const isSearching = debouncedSearch.length > 0
+
+    return (
+      <div>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
+          <button onClick={() => { setSelectedMachine(null); setArticleSearch(''); setDebouncedSearch('') }} className="hover:text-teal-600 transition-colors">
+            Alle machines
+          </button>
+          <ChevronRight size={14} className="text-gray-300" />
+          <span className="font-medium text-gray-800">{selectedMachine.name}</span>
+        </div>
+
+        {/* Zoekbalk */}
+        <div className="relative max-w-xs mb-4">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Zoek artikelnummer..."
+            value={articleSearch}
+            onChange={e => setArticleSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const first = articles[0]
+                if (first) setSelectedArticle(first.article)
+                else if (articleSearch.trim()) setSelectedArticle(articleSearch.trim())
+              }
+            }}
+            className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+          {paretoLoading && isSearching && (
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 text-xs">…</span>
+          )}
+        </div>
+
+        {paretoLoading && !isSearching ? (
+          <p className="text-sm text-gray-400 text-center py-12">Laden...</p>
+        ) : !articles.length ? (
+          <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
+            {isSearching ? (
+              <>
+                <p className="text-sm text-gray-400">Geen artikelen gevonden voor <strong>"{debouncedSearch}"</strong></p>
+                <p className="text-xs text-gray-300 mt-1">Probeer een kortere zoekterm</p>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400">Geen runs gevonden voor {selectedMachine.name} in deze periode</p>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                {isSearching
+                  ? `${articles.length} artikel${articles.length !== 1 ? 'en' : ''} gevonden voor "${debouncedSearch}"`
+                  : `Verspaantijd per artikel — ${selectedMachine.name}`}
+              </h3>
+              <button
+                onClick={() => setShowInfoN2(v => !v)}
+                className="w-5 h-5 rounded-full border border-gray-300 text-gray-400 hover:border-teal-400 hover:text-teal-600 text-xs font-bold flex items-center justify-center transition-colors shrink-0"
+                aria-label="Uitleg"
+              >i</button>
+            </div>
+            {showInfoN2 && (
+              <div className="mb-4 bg-gray-50 border border-gray-100 rounded-xl p-4 text-xs text-gray-600 space-y-2">
+                <p className="font-semibold text-gray-700">Wat toont deze lijst?</p>
+                <p>Alle artikelen die op <strong>{selectedMachine.name}</strong> zijn vervaardigd in de geselecteerde periode, gerangschikt op verspaantijd (langste bovenaan).</p>
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-teal-500" />
+                    <p><strong>Groen</strong> — aandeel voltooide runs (status: voltooid of gestopt).</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-red-400" />
+                    <p><strong>Rood</strong> — aandeel onderbroken runs (onderbroken door alarm, netwerk of handmatig gestopt).</p>
+                  </div>
+                </div>
+                <p className="text-gray-400">Klik op een artikel om de detailweergave te openen.</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {articles.map(a => {
+                const completedPct     = a.runCount > 0 ? (a.completedRuns / a.runCount * 100) : 0
+                const barWidth         = Math.round((a.totalSeconds / maxSec) * 100)
+                const interruptedPart  = a.runCount > 0 ? Math.round((a.interruptedRuns / a.runCount) * barWidth) : 0
+                const completedPart    = barWidth - interruptedPart
+                return (
+                  <button
+                    key={a.article}
+                    onClick={() => setSelectedArticle(a.article)}
+                    className="w-full text-left group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-40 shrink-0">
+                        <p className="text-xs font-medium text-gray-700 truncate group-hover:text-teal-600 transition-colors" title={a.article}>
+                          {a.article}
+                        </p>
+                        <p className="text-xs text-gray-400">{a.runCount} runs · {Math.round(completedPct)}% voltooid</p>
+                      </div>
+                      <div className="flex-1 flex h-5 rounded overflow-hidden bg-gray-100">
+                        {completedPart > 0 && <div className="bg-teal-500 h-full" style={{ width: `${completedPart}%` }} />}
+                        {interruptedPart > 0 && <div className="bg-red-400 h-full" style={{ width: `${interruptedPart}%` }} />}
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium w-16 text-right shrink-0">
+                        {fmtSeconds(a.totalSeconds)}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="w-3 h-3 rounded-sm bg-teal-500 shrink-0" /> Voltooid
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="w-3 h-3 rounded-sm bg-red-400 shrink-0" /> Onderbroken
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Niveau 3 — Artikeldetail ──────────────────────────────────────────────
+  const completionPct = detailData && detailData.runCount > 0
+    ? Math.round(detailData.completedRuns / detailData.runCount * 100)
+    : 0
+
+  // Machine-brede downtime (zelfde logica/bron als beschikbaarheidstab)
+  const machineAlarmMin = selectedMachine.byType?.alarmstilstand ?? 0
+  const machineStilMin  = selectedMachine.byType?.stilstand       ?? 0
+  const machineOffMin   = selectedMachine.byType?.offline         ?? 0
+
+  return (
+    <div>
+      {/* Breadcrumb + info knop */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+          <button
+            onClick={() => { setSelectedMachine(null); setSelectedArticle(null); setArticleSearch(''); setDebouncedSearch('') }}
+            className="hover:text-teal-600 transition-colors"
+          >
+            Alle machines
+          </button>
+          <ChevronRight size={14} className="text-gray-300" />
+          <button onClick={() => setSelectedArticle(null)} className="hover:text-teal-600 transition-colors font-medium text-gray-700">
+            {selectedMachine.name}
+          </button>
+          <ChevronRight size={14} className="text-gray-300" />
+          <span className="font-medium text-gray-800">{selectedArticle}</span>
+        </div>
+        <button
+          onClick={() => setShowInfoN3(v => !v)}
+          className="w-5 h-5 rounded-full border border-gray-300 text-gray-400 hover:border-teal-400 hover:text-teal-600 text-xs font-bold flex items-center justify-center transition-colors shrink-0"
+          aria-label="Uitleg"
+        >i</button>
+      </div>
+
+      {showInfoN3 && (
+        <div className="mb-4 bg-gray-50 border border-gray-100 rounded-xl p-4 text-xs text-gray-600 space-y-2">
+          <p className="font-semibold text-gray-700">Wat toont deze weergave?</p>
+          <p>Alle programma-runs van artikel <strong>{selectedArticle}</strong> op <strong>{selectedMachine.name}</strong> in de geselecteerde periode, met een uitsplitsing van hoe de machine-tijd verdeeld is.</p>
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-teal-500" />
+              <p><strong>Verspaantijd</strong> — totale looptijd van alle runs van dit artikel op deze machine.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-red-500" />
+              <p><strong>Alarmstilstand</strong> — machine stond stil door een alarm. Machine-breed gemeten in deze periode.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-amber-400" />
+              <p><strong>Stilstand</strong> — geen programma actief voor meer dan 10 minuten. Machine-breed gemeten in deze periode.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 w-3 h-3 rounded-sm flex-shrink-0 bg-gray-400" />
+              <p><strong>Offline</strong> — machine niet bereikbaar via het netwerk. Machine-breed gemeten in deze periode.</p>
+            </div>
+          </div>
+          <p className="text-gray-400">De percentages geven het aandeel van elke categorie ten opzichte van de som van alle vier. De balk en waarden verversen automatisch.</p>
+        </div>
+      )}
+
+      {detailLoading ? (
+        <p className="text-sm text-gray-400 text-center py-12">Laden...</p>
+      ) : !detailData ? (
+        <p className="text-sm text-red-400 text-center py-12">Laden mislukt — controleer backend logs</p>
+      ) : (
+        <div className="space-y-4">
+          {/* KPI-kaarten met percentage — som altijd exact 100% */}
+          {(() => {
+            const verspaanMin = Math.round(detailData.totalSeconds / 60)
+            const totalMin    = Math.max(1, verspaanMin + machineAlarmMin + machineStilMin + machineOffMin)
+            const r = (m: number) => Math.round(m / totalMin * 100)
+            const p1 = r(verspaanMin)
+            const p2 = r(machineAlarmMin)
+            const p3 = r(machineStilMin)
+            const p4 = Math.max(0, 100 - p1 - p2 - p3)
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-teal-500">
+                  <p className="text-xs text-gray-400 mb-1">Verspaantijd</p>
+                  <p className="text-xl font-bold text-teal-700">{fmtSeconds(detailData.totalSeconds)}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{p1}% · {detailData.runCount} runs</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-red-500">
+                  <p className="text-xs text-gray-400 mb-1">Alarmstilstand</p>
+                  <p className="text-xl font-bold text-red-600">
+                    {machineAlarmMin > 0 ? fmtSeconds(machineAlarmMin * 60) : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {machineAlarmMin > 0 ? `${p2}% · ` : ''}{selectedMachine.name}
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-amber-400">
+                  <p className="text-xs text-gray-400 mb-1">Stilstand</p>
+                  <p className="text-xl font-bold text-amber-500">
+                    {machineStilMin > 0 ? fmtSeconds(machineStilMin * 60) : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {machineStilMin > 0 ? `${p3}% · ` : ''}&gt; 10 min zonder programma
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-gray-400">
+                  <p className="text-xs text-gray-400 mb-1">Offline</p>
+                  <p className="text-xl font-bold text-gray-500">
+                    {machineOffMin > 0 ? fmtSeconds(machineOffMin * 60) : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {machineOffMin > 0 ? `${p4}% · ` : ''}niet bereikbaar
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Enkelvoudige gesegmenteerde tijdbalk voor de geselecteerde periode */}
+          <PeriodBar
+            verspaanMin={Math.round(detailData.totalSeconds / 60)}
+            alarmMin={machineAlarmMin}
+            stilstandMin={machineStilMin}
+            offlineMin={machineOffMin}
+            since={since}
+            machineName={selectedMachine.name}
+            article={selectedArticle!}
+          />
+
+
+          {/* Per machine — alleen tonen als meerdere machines */}
+          {detailData.byMachine.length > 1 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Verdeling per machine</h3>
+              <div className="space-y-2">
+                {detailData.byMachine.map(m => {
+                  const pct = Math.round(m.seconds / detailData.totalSeconds * 100)
+                  return (
+                    <div key={m.id} className="flex items-center gap-3">
+                      <p className="text-xs font-medium text-gray-700 w-24 shrink-0 truncate">{m.name}</p>
+                      <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+                        <div className="bg-teal-500 h-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 w-24 text-right shrink-0">
+                        {fmtSeconds(m.seconds)} ({m.runCount} runs)
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Run-tabel — standaard 10 rijen */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Runs ({detailData.runs.length}{detailData.runs.length === 100 ? '+' : ''})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left pb-2 font-medium">Machine</th>
+                    <th className="text-left pb-2 font-medium">Gestart</th>
+                    <th className="text-left pb-2 font-medium">Duur</th>
+                    <th className="text-left pb-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {(showAllRuns ? detailData.runs : detailData.runs.slice(0, 10)).map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="py-2 pr-4 font-medium text-gray-700">{r.machineName}</td>
+                      <td className="py-2 pr-4 text-gray-500 whitespace-nowrap">{fmtRunDate(r.startedAt)}</td>
+                      <td className="py-2 pr-4 font-mono text-gray-700">{fmtDuration(r.durationSeconds)}</td>
+                      <td className="py-2">
+                        {r.status === 'completed' || r.status === 'stopped' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                            {r.status === 'completed' ? 'Voltooid' : 'Gestopt'}
+                          </span>
+                        ) : r.status === 'interrupted' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Onderbroken</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">{r.status}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {detailData.runs.length > 10 && (
+              <button
+                onClick={() => setShowAllRuns(v => !v)}
+                className="mt-3 w-full text-xs text-teal-600 hover:text-teal-700 font-medium py-2 border border-teal-100 rounded-lg hover:bg-teal-50 transition-colors"
+              >
+                {showAllRuns
+                  ? 'Minder tonen'
+                  : `Toon alle ${detailData.runs.length}${detailData.runs.length === 100 ? '+' : ''} runs`}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── einde ProjectAnalyseTab ─────────────────────────────────────────────────
+
+type DashboardTab = 'beschikbaarheid' | 'spindeluren' | 'verspaantijd' | 'projectanalyse'
 
 export function MachineDashboardContent() {
   const [days, setDays] = useState(0)
@@ -1108,6 +1737,7 @@ export function MachineDashboardContent() {
             { key: 'beschikbaarheid', label: 'Beschikbaarheid' },
             { key: 'spindeluren',     label: 'Spindeluren' },
             { key: 'verspaantijd',    label: 'Verspaantijd' },
+            { key: 'projectanalyse',  label: 'Projectanalyse' },
           ] as { key: DashboardTab; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -1151,6 +1781,10 @@ export function MachineDashboardContent() {
             )}
 
             {tab === 'verspaantijd' && <VerspaantijdSectie days={days} />}
+
+            {tab === 'projectanalyse' && (
+              <ProjectAnalyseTab machines={data.machines} days={days} />
+            )}
           </>
         )}
       </div>
