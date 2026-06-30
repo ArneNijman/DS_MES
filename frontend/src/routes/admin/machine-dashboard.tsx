@@ -1082,12 +1082,20 @@ function computeRunOverlap(
 ): { alarmstilstandMin: number; stilstandMin: number; offlineMin: number } {
   const nowMs = Date.now()
 
-  const runWindows = runs
-    .filter(r => r.durationSeconds != null && r.durationSeconds > 0)
-    .map(r => ({
-      startMs: new Date(r.startedAt).getTime(),
-      endMs:   new Date(r.startedAt).getTime() + r.durationSeconds! * 1000,
-    }))
+  // Bouw per dag een venster van eerste run-start tot laatste run-einde.
+  // Stilstand/alarmstilstand valt tussen runs in — door het dagvenster te gebruiken
+  // worden die meegenomen zonder downtime na de laatste run van de dag mee te tellen.
+  const dayMap = new Map<string, { startMs: number; endMs: number }>()
+  for (const r of runs) {
+    if (!r.durationSeconds || r.durationSeconds <= 0) continue
+    const startMs = new Date(r.startedAt).getTime()
+    const endMs   = startMs + r.durationSeconds * 1000
+    const day     = new Date(r.startedAt).toDateString()
+    const w       = dayMap.get(day)
+    if (!w) dayMap.set(day, { startMs, endMs })
+    else    { w.startMs = Math.min(w.startMs, startMs); w.endMs = Math.max(w.endMs, endMs) }
+  }
+  const dayWindows = [...dayMap.values()]
 
   const allPeriods = periods.map(p => ({
     type:    p.type,
@@ -1099,9 +1107,9 @@ function computeRunOverlap(
   let stilMs  = 0
   let offMs   = 0
 
-  for (const run of runWindows) {
+  for (const w of dayWindows) {
     for (const p of allPeriods) {
-      const ov = overlapMs(run.startMs, run.endMs, p.startMs, p.endMs)
+      const ov = overlapMs(w.startMs, w.endMs, p.startMs, p.endMs)
       if (ov <= 0) continue
       if (p.type === 'alarmstilstand') alarmMs += ov
       else if (p.type === 'stilstand') stilMs  += ov
@@ -1247,16 +1255,16 @@ function buildDayActivity(
       verspaantijdMs += overlapMs(run.startMs, run.endMs, dayStart, dayEnd)
     }
 
-    // Downtime — alleen overlap met de run-vensters van dit artikel op deze dag
+    // Downtime — gebruik dagvenster (eerste run-start tot laatste run-einde op deze dag)
+    // zodat stilstand/alarmstilstand tussen runs in ook wordt meegenomen.
     let alarmstilstandMs = 0
     let stilstandMs      = 0
     let offlineMs        = 0
-    for (const run of runWindows) {
-      const runDayStart = Math.max(run.startMs, dayStart)
-      const runDayEnd   = Math.min(run.endMs,   dayEnd)
-      if (runDayStart >= runDayEnd) continue
+    if (verspaantijdMs > 0) {
+      const dayRunStart = Math.max(dayStart, Math.min(...runWindows.filter(r => overlapMs(r.startMs, r.endMs, dayStart, dayEnd) > 0).map(r => r.startMs)))
+      const dayRunEnd   = Math.min(dayEnd,   Math.max(...runWindows.filter(r => overlapMs(r.startMs, r.endMs, dayStart, dayEnd) > 0).map(r => r.endMs)))
       for (const p of allPeriods) {
-        const ov = overlapMs(p.startMs, p.endMs, runDayStart, runDayEnd)
+        const ov = overlapMs(p.startMs, p.endMs, dayRunStart, dayRunEnd)
         if (p.type === 'alarmstilstand') alarmstilstandMs += ov
         else if (p.type === 'stilstand') stilstandMs      += ov
         else if (p.type === 'offline')   offlineMs        += ov
