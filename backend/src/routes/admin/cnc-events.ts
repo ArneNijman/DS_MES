@@ -448,6 +448,17 @@ export async function cncEventsRoutes(fastify: FastifyInstance) {
           })
           .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
       }
+
+      if (ev.eventType === 'MACHINE_OFFLINE') {
+        await fastify.db
+          .update(cncProgramRuns)
+          .set({
+            endedAt:         t,
+            durationSeconds: sql`EXTRACT(EPOCH FROM (${t.toISOString()}::timestamptz - started_at))::int`,
+            status:          'interrupted',
+          })
+          .where(and(eq(cncProgramRuns.machineId, id), isNull(cncProgramRuns.endedAt)))
+      }
     }
 
     return { inserted: rows.length }
