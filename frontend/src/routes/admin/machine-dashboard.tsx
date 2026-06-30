@@ -1247,18 +1247,23 @@ function buildDayActivity(
       verspaantijdMs += overlapMs(run.startMs, run.endMs, dayStart, dayEnd)
     }
 
-    // Downtime-categorieën van de machine (zelfde logica als beschikbaarheidstab)
+    // Downtime — alleen overlap met de run-vensters van dit artikel op deze dag
     let alarmstilstandMs = 0
     let stilstandMs      = 0
     let offlineMs        = 0
-    for (const p of allPeriods) {
-      const ov = overlapMs(p.startMs, p.endMs, dayStart, dayEnd)
-      if (p.type === 'alarmstilstand') alarmstilstandMs += ov
-      else if (p.type === 'stilstand') stilstandMs      += ov
-      else if (p.type === 'offline')   offlineMs        += ov
+    for (const run of runWindows) {
+      const runDayStart = Math.max(run.startMs, dayStart)
+      const runDayEnd   = Math.min(run.endMs,   dayEnd)
+      if (runDayStart >= runDayEnd) continue
+      for (const p of allPeriods) {
+        const ov = overlapMs(p.startMs, p.endMs, runDayStart, runDayEnd)
+        if (p.type === 'alarmstilstand') alarmstilstandMs += ov
+        else if (p.type === 'stilstand') stilstandMs      += ov
+        else if (p.type === 'offline')   offlineMs        += ov
+      }
     }
 
-    if (verspaantijdMs > 0 || alarmstilstandMs > 0 || stilstandMs > 0 || offlineMs > 0) {
+    if (verspaantijdMs > 0) {
       result.push({
         date:           new Date(dayStart).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' }),
         verspaantijd:   Math.round(verspaantijdMs   / 60_000),
@@ -1482,10 +1487,13 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
     ? Math.round(detailData.completedRuns / detailData.runCount * 100)
     : 0
 
-  // Machine-brede downtime (zelfde logica/bron als beschikbaarheidstab)
-  const machineAlarmMin = selectedMachine.byType?.alarmstilstand ?? 0
-  const machineStilMin  = selectedMachine.byType?.stilstand       ?? 0
-  const machineOffMin   = selectedMachine.byType?.offline         ?? 0
+  // Downtime die overlapt met de run-vensters van dit artikel (niet machine-breed)
+  const runOverlap = detailData
+    ? computeRunOverlap(detailData.runs, selectedMachine.periods)
+    : { alarmstilstandMin: 0, stilstandMin: 0, offlineMin: 0 }
+  const machineAlarmMin = runOverlap.alarmstilstandMin
+  const machineStilMin  = runOverlap.stilstandMin
+  const machineOffMin   = runOverlap.offlineMin
 
   return (
     <div>
