@@ -69,9 +69,10 @@ export async function cncProjectAnalysisRoutes(fastify: FastifyInstance) {
         SELECT
           m.id,
           m.name,
-          SUM(r.duration_seconds)::int                         AS seconds,
-          COUNT(*)::int                                        AS run_count,
-          COUNT(*) FILTER (WHERE r.status IN ('completed','stopped'))::int AS completed_runs
+          SUM(r.duration_seconds)::int                                               AS seconds,
+          COUNT(*)::int                                                               AS run_count,
+          COUNT(*) FILTER (WHERE r.status IN ('completed','stopped'))::int           AS completed_runs,
+          COALESCE(SUM(r.duration_seconds) FILTER (WHERE r.status = 'interrupted'), 0)::int AS interrupted_seconds
         FROM cnc_program_runs r
         JOIN machines m ON m.id = r.machine_id
         WHERE SPLIT_PART(REPLACE(r.program_name, '\\', '/'), '/', 3) = ${article}
@@ -103,22 +104,25 @@ export async function cncProjectAnalysisRoutes(fastify: FastifyInstance) {
     ])
 
     const byMachine = byMachineRows.map(r => ({
-      id:            r.id as string,
-      name:          r.name as string,
-      seconds:       Number(r.seconds),
-      runCount:      Number(r.run_count),
-      completedRuns: Number(r.completed_runs),
+      id:                 r.id as string,
+      name:               r.name as string,
+      seconds:            Number(r.seconds),
+      runCount:           Number(r.run_count),
+      completedRuns:      Number(r.completed_runs),
+      interruptedSeconds: Number(r.interrupted_seconds),
     }))
 
-    const totalSeconds  = byMachine.reduce((s, m) => s + m.seconds, 0)
-    const runCount      = byMachine.reduce((s, m) => s + m.runCount, 0)
-    const completedRuns = byMachine.reduce((s, m) => s + m.completedRuns, 0)
+    const totalSeconds       = byMachine.reduce((s, m) => s + m.seconds, 0)
+    const runCount           = byMachine.reduce((s, m) => s + m.runCount, 0)
+    const completedRuns      = byMachine.reduce((s, m) => s + m.completedRuns, 0)
+    const interruptedSeconds = byMachine.reduce((s, m) => s + m.interruptedSeconds, 0)
 
     return {
       article,
       totalSeconds,
       runCount,
       completedRuns,
+      interruptedSeconds,
       byMachine,
       runs: runRows.map(r => ({
         id:              r.id as string,

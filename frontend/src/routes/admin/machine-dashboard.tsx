@@ -1066,11 +1066,12 @@ interface ParetoArticle {
 interface ParetoData { articles: ParetoArticle[] }
 
 interface ArticleDetail {
-  article:        string
-  totalSeconds:   number
-  runCount:       number
-  completedRuns:  number
-  byMachine: { id: string; name: string; seconds: number; runCount: number; completedRuns: number }[]
+  article:             string
+  totalSeconds:        number
+  runCount:            number
+  completedRuns:       number
+  interruptedSeconds:  number
+  byMachine: { id: string; name: string; seconds: number; runCount: number; completedRuns: number; interruptedSeconds: number }[]
   runs: { id: string; machineName: string; startedAt: string; durationSeconds: number | null; status: string }[]
 }
 
@@ -1560,48 +1561,45 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
         <p className="text-sm text-red-400 text-center py-12">Laden mislukt — controleer backend logs</p>
       ) : (
         <div className="space-y-4">
-          {/* KPI-kaarten met percentage — som altijd exact 100% */}
+          {/* KPI-kaarten */}
           {(() => {
-            const verspaanMin = Math.round(detailData.totalSeconds / 60)
-            const totalMin    = Math.max(1, verspaanMin + machineAlarmMin + machineStilMin + machineOffMin)
-            const r = (m: number) => Math.round(m / totalMin * 100)
-            const p1 = r(verspaanMin)
-            const p2 = r(machineAlarmMin)
-            const p3 = r(machineStilMin)
-            const p4 = Math.max(0, 100 - p1 - p2 - p3)
+            const interruptedMin = Math.round((detailData.interruptedSeconds ?? 0) / 60)
             return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-teal-500">
                   <p className="text-xs text-gray-400 mb-1">Verspaantijd</p>
                   <p className="text-xl font-bold text-teal-700">{fmtSeconds(detailData.totalSeconds)}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{p1}% · {detailData.runCount} runs</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{detailData.runCount} runs</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-orange-500">
+                  <p className="text-xs text-gray-400 mb-1">Onderbroken</p>
+                  <p className="text-xl font-bold text-orange-600">
+                    {interruptedMin > 0 ? fmtSeconds(interruptedMin * 60) : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {interruptedMin > 0 ? `${detailData.runCount - detailData.completedRuns} runs afgebroken` : 'geen onderbroken runs'}
+                  </p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-red-500">
                   <p className="text-xs text-gray-400 mb-1">Alarmstilstand</p>
                   <p className="text-xl font-bold text-red-600">
                     {machineAlarmMin > 0 ? fmtSeconds(machineAlarmMin * 60) : '—'}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {machineAlarmMin > 0 ? `${p2}% · ` : ''}{selectedMachine.name}
-                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">{selectedMachine.name}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-amber-400">
                   <p className="text-xs text-gray-400 mb-1">Stilstand</p>
                   <p className="text-xl font-bold text-amber-500">
                     {machineStilMin > 0 ? fmtSeconds(machineStilMin * 60) : '—'}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {machineStilMin > 0 ? `${p3}% · ` : ''}&gt; 10 min zonder programma
-                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">&gt; 10 min zonder programma</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-gray-400">
                   <p className="text-xs text-gray-400 mb-1">Offline</p>
                   <p className="text-xl font-bold text-gray-500">
                     {machineOffMin > 0 ? fmtSeconds(machineOffMin * 60) : '—'}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {machineOffMin > 0 ? `${p4}% · ` : ''}niet bereikbaar
-                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">niet bereikbaar</p>
                 </div>
               </div>
             )
