@@ -4,8 +4,8 @@ import { cncProgramRuns, cncMachineEvents } from '../db/schema.js'
 
 // Snelle detectie: MACHINE_OFFLINE ouder dan 30 minuten → run sluiten
 const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000   // 30 minuten
-// Harde grens: elke run ouder dan 24 uur wordt sowieso gesloten (veiligheidsnet)
-const HARD_CUTOFF_MS       = 24 * 60 * 60 * 1000  // 24 uur
+// Harde grens: run ouder dan 8 uur zonder afsluiting → phantom (programma was al klaar)
+const HARD_CUTOFF_MS       =  8 * 60 * 60 * 1000  //  8 uur
 const CHECK_INTERVAL_MS    =  5 * 60 * 1000   //  5 minuten
 
 async function closeStaleRuns(fastify: FastifyInstance) {
@@ -24,28 +24,16 @@ async function closeStaleRuns(fastify: FastifyInstance) {
   for (const run of openRuns) {
     const runAgeMs = now.getTime() - run.startedAt.getTime()
 
-    // Harde grens: run ouder dan 16 uur → altijd sluiten
+    // Harde grens: run ouder dan 8 uur → phantom (programma was waarschijnlijk al klaar)
+    // duration_seconds=0 zodat de `> 0` filter in project analyse deze uitsluit
     if (runAgeMs >= HARD_CUTOFF_MS) {
-      const [lastEvent] = await fastify.db
-        .select({ occurredAt: cncMachineEvents.occurredAt })
-        .from(cncMachineEvents)
-        .where(and(
-          eq(cncMachineEvents.machineId, run.machineId),
-          gt(cncMachineEvents.occurredAt, run.startedAt),
-        ))
-        .orderBy(desc(cncMachineEvents.occurredAt))
-        .limit(1)
-
-      const endedAt = lastEvent?.occurredAt ?? new Date(run.startedAt.getTime() + HARD_CUTOFF_MS)
-      const durationSeconds = Math.round((endedAt.getTime() - run.startedAt.getTime()) / 1000)
-
       await fastify.db
         .update(cncProgramRuns)
-        .set({ endedAt, durationSeconds, status: 'interrupted' })
+        .set({ endedAt: new Date(), durationSeconds: 0, status: 'phantom' })
         .where(eq(cncProgramRuns.id, run.id))
 
       fastify.log.warn(
-        `Stale run (>16u) gesloten: machine=${run.machineId} programma="${run.programName}" ` +
+        `Stale run (>8u) als phantom gesloten: machine=${run.machineId} programma="${run.programName}" ` +
         `gestart=${run.startedAt.toISOString()}`,
       )
       continue
