@@ -77,6 +77,7 @@ export async function cncProjectAnalysisRoutes(fastify: FastifyInstance) {
         WHERE SPLIT_PART(REPLACE(r.program_name, '\\', '/'), '/', 3) = ${article}
           AND r.started_at >= ${sinceIso}::timestamptz
           AND r.duration_seconds IS NOT NULL
+          AND r.duration_seconds > 0
           ${machineId ? sql`AND r.machine_id = ${machineId}::uuid` : sql``}
         GROUP BY m.id, m.name
         ORDER BY seconds DESC
@@ -93,6 +94,8 @@ export async function cncProjectAnalysisRoutes(fastify: FastifyInstance) {
         JOIN machines m ON m.id = r.machine_id
         WHERE SPLIT_PART(REPLACE(r.program_name, '\\', '/'), '/', 3) = ${article}
           AND r.started_at >= ${sinceIso}::timestamptz
+          AND r.duration_seconds IS NOT NULL
+          AND r.duration_seconds > 0
           ${machineId ? sql`AND r.machine_id = ${machineId}::uuid` : sql``}
         ORDER BY r.started_at DESC
         LIMIT 100
