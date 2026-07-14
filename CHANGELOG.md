@@ -9,6 +9,18 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [v1.8 — 2026-07-14] — Versie-changelog in navigatie + projectanalyse verbeteringen
+
+### Toegevoegd
+- **Versie-changelog in navigatie** — `v 1.8 · Wijzigingen` link onderaan de Factory Assistant header; klik opent modal met volledige versiegeschiedenis inclusief Nieuw/Fix/Beter badges
+- **Info (i) knoppen op KPI-kaarten** — artikeldetail in projectanalyse toont per kaart (Verspaantijd, Onderbroken, Alarmstilstand, Stilstand, Offline) een klikbare uitleg
+
+### Opgelost
+- **9 phantom runs van exact 24:00:00** — door de oude stale-checker (24u cutoff) afgesloten als `interrupted`; omgezet naar `phantom` + `duration_seconds=0` via migratie 0076 zodat ze nooit meer meetellen in de Onderbroken KPI
+- **Stale run checker grens verlaagd van 24u naar 8u** — phantom runs krijgen nu `duration_seconds=0` zodat ze automatisch worden uitgesloten door de `> 0` filter in project analyse
+
+---
+
 ## [2026-06-23] — Deployment fix: update.sh brak dev-modus op testserver
 
 ### Opgelost

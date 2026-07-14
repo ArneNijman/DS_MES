@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3, Activity, Archive } from 'lucide-react'
+import { LogOut, Wrench, ClipboardX, CheckSquare, ShieldCheck, MessageSquare, ChevronDown, ListTodo, Gauge, Cpu, Package, Layers, Ruler, BarChart3, Activity, Archive, Sparkles, Bug, Zap, X } from 'lucide-react'
 import { EMPLOYEE_TOKEN_KEY, removeToken } from '@/lib/auth'
+import { CHANGELOG, LATEST_VERSION, type EntryType } from '@/lib/changelog'
 import { apiFetch } from '@/lib/api'
 import { MachinesContent } from '@/routes/admin/machines'
 import { NCRContent } from '@/routes/kiosk/ncr'
@@ -77,6 +78,57 @@ function setFaviconBadge(count: number) {
   link.href = canvas.toDataURL()
 }
 
+const ENTRY_ICON: Record<EntryType, { icon: React.ReactNode; color: string; label: string }> = {
+  feat:        { icon: <Sparkles size={11} />, color: 'bg-teal-100 text-teal-700',   label: 'Nieuw' },
+  fix:         { icon: <Bug       size={11} />, color: 'bg-red-100 text-red-600',     label: 'Fix'   },
+  improvement: { icon: <Zap       size={11} />, color: 'bg-blue-100 text-blue-700',   label: 'Beter' },
+}
+
+function ChangelogModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Wijzigingen</p>
+            <p className="text-xs text-gray-400">Factory Assistant — MES</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-5 space-y-6">
+          {CHANGELOG.map(v => (
+            <div key={v.version}>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-xs font-bold text-gray-800">v{v.version}</span>
+                <span className="text-[10px] text-gray-400">{v.date}</span>
+                <span className="text-xs text-gray-500">{v.title}</span>
+              </div>
+              <div className="space-y-1.5">
+                {v.entries.map((e, i) => {
+                  const { icon, color, label } = ENTRY_ICON[e.type]
+                  return (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 mt-0.5 ${color}`}>
+                        {icon}{label}
+                      </span>
+                      <p className="text-xs text-gray-600 leading-relaxed">{e.text}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 async function requestAndNotify(newCount: number) {
   if (!('Notification' in window)) return
   if (Notification.permission === 'default') {
@@ -130,6 +182,7 @@ export default function KioskDashboard() {
   const [pendingArchiefSetupId, setPendingArchiefSetupId] = useState<string | null>(null)
   const KWAL_KEYS: NavKey[] = ['ncr', 'preventief', 'klantmelding', 'ncr_statistieken']
   const [kwalOpen, setKwalOpen] = useState(false)
+  const [showChangelog, setShowChangelog] = useState(false)
 
 
   const myTaskCount = useMyTaskCount()
@@ -199,12 +252,18 @@ export default function KioskDashboard() {
     <div className="flex h-screen overflow-hidden">
       {/* Kiosk sidebar */}
       <aside className="flex flex-col w-52 shrink-0 bg-gray-900 text-white">
-        {/* Header: logo + naam */}
+        {/* Header: logo + naam + versie */}
         <div className="px-3 pt-4 pb-3 border-b border-gray-700">
           <div className="flex items-center gap-2 min-w-0">
             <img src="/logo.png" alt="Dutch Shape" className="h-6 w-auto shrink-0" />
             <span className="text-sm font-semibold leading-tight truncate text-white">Factory Assistant</span>
           </div>
+          <button
+            onClick={() => setShowChangelog(true)}
+            className="mt-1.5 text-[10px] text-gray-400 hover:text-white transition-colors"
+          >
+            v {LATEST_VERSION} · Wijzigingen
+          </button>
         </div>
 
         {/* Navigatie */}
@@ -339,6 +398,8 @@ export default function KioskDashboard() {
           </div>
         </div>
       </aside>
+
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
