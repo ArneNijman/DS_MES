@@ -1294,6 +1294,7 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
   const [showAllRuns, setShowAllRuns]           = useState(false)
   const [showInfoN2, setShowInfoN2]             = useState(false)
   const [showInfoN3, setShowInfoN3]             = useState(false)
+  const [openKpiInfo, setOpenKpiInfo]           = useState<string | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(articleSearch.trim()), 350)
@@ -1567,39 +1568,79 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
             return (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-teal-500">
-                  <p className="text-xs text-gray-400 mb-1">Verspaantijd</p>
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-xs text-gray-400">Verspaantijd</p>
+                    <button onClick={() => setOpenKpiInfo(v => v === 'verspaantijd' ? null : 'verspaantijd')} className="w-4 h-4 rounded-full border border-gray-200 text-gray-400 hover:border-teal-400 hover:text-teal-600 text-[10px] font-bold flex items-center justify-center transition-colors shrink-0 mt-0.5">i</button>
+                  </div>
                   <p className="text-xl font-bold text-teal-700">{fmtSeconds(detailData.totalSeconds)}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{detailData.runCount} runs</p>
+                  {openKpiInfo === 'verspaantijd' && (
+                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
+                      Totale duur van alle afgeronde en gestopte runs voor dit artikel. Runs met duur 0 (phantom) worden uitgesloten.
+                    </p>
+                  )}
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-orange-500">
-                  <p className="text-xs text-gray-400 mb-1">Onderbroken</p>
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-xs text-gray-400">Onderbroken</p>
+                    <button onClick={() => setOpenKpiInfo(v => v === 'onderbroken' ? null : 'onderbroken')} className="w-4 h-4 rounded-full border border-gray-200 text-gray-400 hover:border-orange-400 hover:text-orange-600 text-[10px] font-bold flex items-center justify-center transition-colors shrink-0 mt-0.5">i</button>
+                  </div>
                   <p className="text-xl font-bold text-orange-600">
                     {interruptedMin > 0 ? fmtSeconds(interruptedMin * 60) : '—'}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {interruptedMin > 0 ? `${detailData.runCount - detailData.completedRuns} runs afgebroken` : 'geen onderbroken runs'}
                   </p>
+                  {openKpiInfo === 'onderbroken' && (
+                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
+                      Verspaantijd van runs die niet normaal zijn afgerond — programma afgebroken of gestopt zonder een volgend programma te starten.
+                    </p>
+                  )}
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-red-500">
-                  <p className="text-xs text-gray-400 mb-1">Alarmstilstand</p>
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-xs text-gray-400">Alarmstilstand</p>
+                    <button onClick={() => setOpenKpiInfo(v => v === 'alarm' ? null : 'alarm')} className="w-4 h-4 rounded-full border border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-600 text-[10px] font-bold flex items-center justify-center transition-colors shrink-0 mt-0.5">i</button>
+                  </div>
                   <p className="text-xl font-bold text-red-600">
                     {machineAlarmMin > 0 ? fmtSeconds(machineAlarmMin * 60) : '—'}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">{selectedMachine.name}</p>
+                  {openKpiInfo === 'alarm' && (
+                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
+                      Stilstand door machine-alarmen, beperkt tot de perioden dat dit artikel werd verwerkt (van eerste run-start tot laatste run-einde per dag).
+                    </p>
+                  )}
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-amber-400">
-                  <p className="text-xs text-gray-400 mb-1">Stilstand</p>
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-xs text-gray-400">Stilstand</p>
+                    <button onClick={() => setOpenKpiInfo(v => v === 'stilstand' ? null : 'stilstand')} className="w-4 h-4 rounded-full border border-gray-200 text-gray-400 hover:border-amber-400 hover:text-amber-600 text-[10px] font-bold flex items-center justify-center transition-colors shrink-0 mt-0.5">i</button>
+                  </div>
                   <p className="text-xl font-bold text-amber-500">
                     {machineStilMin > 0 ? fmtSeconds(machineStilMin * 60) : '—'}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">&gt; 10 min zonder programma</p>
+                  {openKpiInfo === 'stilstand' && (
+                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
+                      Machine stond aan maar startte meer dan 10 minuten geen nieuw programma. Beperkt tot de run-vensters van dit artikel.
+                    </p>
+                  )}
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 p-4 border-l-4 border-l-gray-400">
-                  <p className="text-xs text-gray-400 mb-1">Offline</p>
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-xs text-gray-400">Offline</p>
+                    <button onClick={() => setOpenKpiInfo(v => v === 'offline' ? null : 'offline')} className="w-4 h-4 rounded-full border border-gray-200 text-gray-400 hover:border-gray-500 hover:text-gray-600 text-[10px] font-bold flex items-center justify-center transition-colors shrink-0 mt-0.5">i</button>
+                  </div>
                   <p className="text-xl font-bold text-gray-500">
                     {machineOffMin > 0 ? fmtSeconds(machineOffMin * 60) : '—'}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">niet bereikbaar</p>
+                  {openKpiInfo === 'offline' && (
+                    <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
+                      Machine was niet bereikbaar via netwerk. Beperkt tot de run-vensters van dit artikel. Perioden korter dan 5 min worden genegeerd.
+                    </p>
+                  )}
                 </div>
               </div>
             )
