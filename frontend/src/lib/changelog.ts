@@ -14,6 +14,19 @@ export interface ChangelogVersion {
 
 export const CHANGELOG: ChangelogVersion[] = [
   {
+    version: '1.9',
+    date: '2026-07-14',
+    title: 'Systeem monitoring pagina',
+    entries: [
+      { type: 'feat',        text: 'Nieuwe pagina /admin/system: systeemgezondheid, API-prestaties en live request monitoring' },
+      { type: 'feat',        text: 'Ring buffer: laatste 200 API requests getimed (methode, URL, status, ms) via Fastify hooks' },
+      { type: 'feat',        text: 'Per-route aggregatie: gem. / min / max / P95 ms + foutenteller, gesorteerd op traagste route' },
+      { type: 'feat',        text: 'Redis stats: geheugen, uptime en verbonden clients via ioredis.info()' },
+      { type: 'feat',        text: 'BullMQ queue stats: waiting / active / completed / failed / delayed voor bc-sync queue' },
+      { type: 'feat',        text: 'Systeem-item toegevoegd aan admin navigatie en dashboard' },
+    ],
+  },
+  {
     version: '1.8',
     date: '2026-07-14',
     title: 'Projectanalyse KPI-uitleg & phantom run opschoning',

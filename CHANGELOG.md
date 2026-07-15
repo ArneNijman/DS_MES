@@ -9,6 +9,19 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [v1.9 — 2026-07-14] — Systeem monitoring pagina
+
+### Toegevoegd
+- **Systeem pagina** (`/admin/system`) — nieuwe beheerpagina met systeemgezondheid, runtime metrics en API monitoring
+- **API ring buffer** — Fastify hooks timen alle requests; laatste 200 opgeslagen in-memory
+- **Per-route aggregatie** — gem. / min / max / P95 ms en foutenteller per genormaliseerde route, gesorteerd op traagste bovenaan
+- **Live request tabel** — laatste 50 requests met tijdstip, methode, URL, statuscode en duur; ververst elke 3 seconden
+- **Redis stats** — geheugen, uptime en verbonden clients via `ioredis.info()`
+- **BullMQ queue stats** — waiting / active / completed / failed / delayed voor de `bc-sync` queue
+- **Systeem-item in navigatie** — Server-icoon item in AdminSidebar en kaart op admin dashboard
+
+---
+
 ## [v1.8 — 2026-07-14] — Versie-changelog in navigatie + projectanalyse verbeteringen
 
 ### Toegevoegd

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url'
 import dbPlugin from './plugins/db.js'
 import redisPlugin from './plugins/redis.js'
 import authPlugin from './plugins/auth.js'
+import requestMetricsPlugin from './plugins/requestMetrics.js'
 
 import { healthRoutes } from './routes/health.js'
 import { adminAuthRoutes, seedAdminUser } from './routes/admin/auth.js'
@@ -38,6 +39,7 @@ import { cncProjectAnalysisRoutes } from './routes/admin/cnc-project-analysis.js
 import smtpRoutes from './routes/admin/smtp.js'
 import { ncrStatsRoutes } from './routes/kiosk/ncr-stats.js'
 import { systemHealthRoutes } from './routes/admin/system-health.js'
+import { systemRoutes } from './routes/admin/system.js'
 import { cncToolingUsageRoutes } from './routes/admin/cnc-tooling-usage.js'
 import { syncToolingArticles } from './cnc/syncToolingArticles.js'
 
@@ -63,6 +65,7 @@ async function main() {
   await fastify.register(dbPlugin)
   await fastify.register(redisPlugin)
   await fastify.register(authPlugin)
+  await fastify.register(requestMetricsPlugin)
   await fastify.register(staticFiles, {
     root: '/app/uploads',
     prefix: '/uploads/',
@@ -108,6 +111,7 @@ async function main() {
   await fastify.register(cncProjectAnalysisRoutes,  { prefix: '/api' })
   await fastify.register(smtpRoutes,       { prefix: '/api' })
   await fastify.register(systemHealthRoutes,      { prefix: '/api' })
+  await fastify.register(systemRoutes,            { prefix: '/api' })
   await fastify.register(cncToolingUsageRoutes,   { prefix: '/api' })
 
   startEmailReminders(fastify)

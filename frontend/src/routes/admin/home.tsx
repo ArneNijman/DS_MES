@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Link2, Users, Map, Mail } from 'lucide-react'
+import { Link2, Users, Map, Mail, Server } from 'lucide-react'
 import AdminSidebar from '@/components/AdminSidebar'
 
 const cards = [
@@ -34,6 +34,14 @@ const cards = [
     description: 'SMTP configureren voor notificaties en herinneringen',
     color: 'text-orange-600',
     bg: 'bg-orange-50',
+  },
+  {
+    to: '/admin/system',
+    icon: Server,
+    title: 'Systeem',
+    description: 'Systeemgezondheid, API-prestaties en request monitoring',
+    color: 'text-slate-600',
+    bg: 'bg-slate-50',
   },
 ]
 

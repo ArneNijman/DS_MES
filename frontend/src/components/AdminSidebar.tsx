@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Link2, Map, LogOut, Activity, X } from 'lucide-react'
+import { LayoutDashboard, Users, Link2, Map, LogOut, Activity, Server, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { removeToken } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/admin/machine-dashboard',icon: Activity,        label: 'Machine Dashboard' },
   { to: '/admin/bc-config',        icon: Link2,           label: 'BC Configuratie' },
   { to: '/admin/bc-field-map',     icon: Map,             label: 'Veldmapping' },
+  { to: '/admin/system',           icon: Server,          label: 'Systeem' },
 ]
 
 type CheckStatus = 'ok' | 'warn' | 'fail'

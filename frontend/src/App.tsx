@@ -11,6 +11,7 @@ const AdminBcFieldMap = lazy(() => import('@/routes/admin/bc-field-map'))
 const AdminMachines = lazy(() => import('@/routes/admin/machines'))
 const AdminMachineDashboard = lazy(() => import('@/routes/admin/machine-dashboard'))
 const AdminSmtpSettings = lazy(() => import('@/routes/admin/smtp-settings'))
+const AdminSystem = lazy(() => import('@/routes/admin/system'))
 const KioskIndex = lazy(() => import('@/routes/kiosk/index'))
 const KioskDashboard = lazy(() => import('@/routes/kiosk/dashboard'))
 
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/admin/machines" element={<AdminRoute><AdminMachines /></AdminRoute>} />
             <Route path="/admin/machine-dashboard" element={<AdminRoute><AdminMachineDashboard /></AdminRoute>} />
             <Route path="/admin/smtp-settings" element={<AdminRoute><AdminSmtpSettings /></AdminRoute>} />
+            <Route path="/admin/system" element={<AdminRoute><AdminSystem /></AdminRoute>} />
 
             {/* Standaard → kiosk */}
             <Route path="*" element={<Navigate to="/kiosk" replace />} />
