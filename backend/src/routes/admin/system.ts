@@ -43,7 +43,14 @@ export async function systemRoutes(fastify: FastifyInstance) {
     let queues: { name: string; waiting: number; active: number; completed: number; failed: number; delayed: number }[] = []
     try {
       const counts = await bcSyncQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed')
-      queues = [{ name: 'bc-sync', ...counts }]
+      queues = [{
+        name:      'bc-sync',
+        waiting:   counts.waiting   ?? 0,
+        active:    counts.active    ?? 0,
+        completed: counts.completed ?? 0,
+        failed:    counts.failed    ?? 0,
+        delayed:   counts.delayed   ?? 0,
+      }]
     } catch {
       queues = []
     }
