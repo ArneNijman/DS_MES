@@ -216,8 +216,8 @@ export default function AdminSystem() {
                       <td className={cn('px-4 py-2 text-right font-medium', msColor(r.p95Ms))}>{r.p95Ms}ms</td>
                       <td className="px-4 py-2 text-right">
                         {r.errorCount > 0 ? (
-                          <span className="text-red-600 font-medium" title={Object.entries(r.errorsByCode).map(([code, n]) => `${n}× ${code}`).join(', ')}>
-                            {Object.entries(r.errorsByCode).map(([code, n]) => `${n}×${code}`).join(' ')}
+                          <span className="text-red-600 font-medium" title={Object.entries(r.errorsByCode ?? {}).map(([code, n]) => `${n}× ${code}`).join(', ')}>
+                            {Object.entries(r.errorsByCode ?? {}).map(([code, n]) => `${n}×${code}`).join(' ') || r.errorCount}
                           </span>
                         ) : (
                           <span className="text-gray-300">—</span>
