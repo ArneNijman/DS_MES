@@ -1684,14 +1684,14 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
             </div>
           )}
 
-          {/* Run-tabel — standaard 10 rijen */}
+          {/* Run-tabel */}
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Runs ({detailData.runs.length}{detailData.runs.length === 100 ? '+' : ''})
             </h3>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-96 overflow-y-auto">
               <table className="w-full text-xs">
-                <thead>
+                <thead className="sticky top-0 bg-white">
                   <tr className="text-gray-400 border-b border-gray-100">
                     <th className="text-left pb-2 font-medium">Machine</th>
                     <th className="text-left pb-2 font-medium">Gestart</th>
