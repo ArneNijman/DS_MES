@@ -9,6 +9,13 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [v2.1 — 2026-07-15] — Spindeluren dag/vandaag fix
+
+### Opgelost
+- **Spindeluren leeg bij dag/vandaag** — referentiepunt voor delta-berekening werd weggegooid; query haalt nu 1 dag extra op als buffer
+
+---
+
 ## [v2.0 — 2026-07-15] — Projectanalyse tijdbalk & runs verbeteringen
 
 ### Opgelost

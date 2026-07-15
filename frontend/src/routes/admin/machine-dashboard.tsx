@@ -239,9 +239,14 @@ interface MetricPoint { date: string; value: number }
 
 function SpindleChart({ machineId, machineName, days }: { machineId: string; machineName: string; days: number }) {
   const since = getSinceDate(days)
+  // Voor vandaag/dag: haal 1 dag extra op als referentiepunt voor de delta-berekening.
+  // Zonder referentiepunt wordt de eerste meting door .slice(1) weggegooid → leeg chart.
+  const sinceFetch = days <= 1
+    ? (() => { const d = new Date(since); d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); return d.toISOString() })()
+    : since
   const { data } = useQuery<{ data: MetricPoint[] }>({
     queryKey: ['cnc-metrics', machineId, since],
-    queryFn:  () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&since=${since}`) as Promise<{ data: MetricPoint[] }>,
+    queryFn:  () => apiFetch(`/admin/machines/${machineId}/cnc-metrics?metric=spindle_hours&since=${sinceFetch}`) as Promise<{ data: MetricPoint[] }>,
     staleTime: 5 * 60_000,
   })
 

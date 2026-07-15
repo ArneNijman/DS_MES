@@ -14,6 +14,14 @@ export interface ChangelogVersion {
 
 export const CHANGELOG: ChangelogVersion[] = [
   {
+    version: '2.1',
+    date: '2026-07-15',
+    title: 'Spindeluren dag/vandaag fix',
+    entries: [
+      { type: 'fix', text: 'Spindeluren toonde "Nog geen spindeluren" bij dag- en vandaag-weergave terwijl er wel data was — referentiepunt werd weggegooid' },
+    ],
+  },
+  {
     version: '2.0',
     date: '2026-07-15',
     title: 'Projectanalyse tijdbalk & runs verbeteringen',
