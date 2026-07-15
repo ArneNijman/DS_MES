@@ -1595,7 +1595,7 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
                   </p>
                   {openKpiInfo === 'onderbroken' && (
                     <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-relaxed">
-                      Tijd verloren aan runs die werden afgebroken en daarna niet opnieuw is gestart.
+                      Productietijd verloren door runs die voortijdig zijn afgebroken en daarna niet hervat.
                     </p>
                   )}
                 </div>
