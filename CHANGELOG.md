@@ -9,6 +9,17 @@ Formaat gebaseerd op [Keep a Changelog](https://keepachangelog.com/nl/1.0.0/).
 
 ---
 
+## [v2.0 — 2026-07-15] — Projectanalyse tijdbalk & runs verbeteringen
+
+### Opgelost
+- **Onderbroken ontbrak in tijdbalk** — oranje segment toegevoegd aan PeriodBar in artikeldetail
+
+### Verbeterd
+- **Runs-tabel toont standaard alle runs** — was voorheen beperkt tot 10 rijen
+- **Runs-tabel scrollbaar** — max 384px hoogte met sticky kolomkoppen
+
+---
+
 ## [v1.9 — 2026-07-14] — Systeem monitoring pagina
 
 ### Toegevoegd

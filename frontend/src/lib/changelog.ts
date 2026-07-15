@@ -14,6 +14,16 @@ export interface ChangelogVersion {
 
 export const CHANGELOG: ChangelogVersion[] = [
   {
+    version: '2.0',
+    date: '2026-07-15',
+    title: 'Projectanalyse tijdbalk & runs verbeteringen',
+    entries: [
+      { type: 'fix',         text: 'Onderbroken segment (oranje) toegevoegd aan tijdbalk in artikeldetail — was volledig afwezig' },
+      { type: 'improvement', text: 'Runs-tabel toont standaard alle runs in plaats van eerste 10' },
+      { type: 'improvement', text: 'Runs-tabel scrollbaar (max 384px) met sticky kolomkoppen' },
+    ],
+  },
+  {
     version: '1.9',
     date: '2026-07-14',
     title: 'Systeem monitoring pagina',
