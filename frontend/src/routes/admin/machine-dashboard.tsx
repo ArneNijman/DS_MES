@@ -1126,20 +1126,22 @@ function computeRunOverlap(
 }
 
 // ── PeriodBar ──────────────────────────────────────────────────────────────
-// Toont de 4 categorieën als % van de totale looptijd (runs van dit artikel)
+// Toont de 5 categorieën als % van de totale looptijd (runs van dit artikel)
 
-function PeriodBar({ verspaanMin, alarmMin, stilstandMin, offlineMin, since, machineName, article }: {
-  verspaanMin: number; alarmMin: number; stilstandMin: number; offlineMin: number
+function PeriodBar({ verspaanMin, interruptedMin, alarmMin, stilstandMin, offlineMin, since, machineName, article }: {
+  verspaanMin: number; interruptedMin: number; alarmMin: number; stilstandMin: number; offlineMin: number
   since: string; machineName: string; article: string
 }) {
   const totalMin = Math.max(1, verspaanMin + alarmMin + stilstandMin + offlineMin)
   const pct = (m: number) => `${Math.max(0.4, m / totalMin * 100).toFixed(2)}%`
+  const completedMin = Math.max(0, verspaanMin - interruptedMin)
 
   const segments = [
-    { key: 'running',        label: 'Verspaantijd',   min: verspaanMin,  color: '#0d9488' },
-    { key: 'alarmstilstand', label: 'Alarmstilstand', min: alarmMin,     color: '#ef4444' },
-    { key: 'stilstand',      label: 'Stilstand',      min: stilstandMin, color: '#f59e0b' },
-    { key: 'offline',        label: 'Offline',        min: offlineMin,   color: '#9ca3af' },
+    { key: 'running',        label: 'Verspaantijd',   min: completedMin,    color: '#0d9488' },
+    { key: 'interrupted',    label: 'Onderbroken',    min: interruptedMin,  color: '#f97316' },
+    { key: 'alarmstilstand', label: 'Alarmstilstand', min: alarmMin,        color: '#ef4444' },
+    { key: 'stilstand',      label: 'Stilstand',      min: stilstandMin,    color: '#f59e0b' },
+    { key: 'offline',        label: 'Offline',        min: offlineMin,      color: '#9ca3af' },
   ]
 
   return (
@@ -1649,6 +1651,7 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
           {/* Enkelvoudige gesegmenteerde tijdbalk voor de geselecteerde periode */}
           <PeriodBar
             verspaanMin={Math.round(detailData.totalSeconds / 60)}
+            interruptedMin={Math.round((detailData.interruptedSeconds ?? 0) / 60)}
             alarmMin={machineAlarmMin}
             stilstandMin={machineStilMin}
             offlineMin={machineOffMin}
