@@ -60,27 +60,33 @@ export async function systemRoutes(fastify: FastifyInstance) {
     const recent = [...buffer].reverse().slice(0, 50)
 
     // Aggregeren per route
-    const routeMap = new Map<string, { durations: number[]; errors: number }>()
+    const routeMap = new Map<string, { durations: number[]; errorCodes: number[] }>()
     for (const r of buffer) {
       const key = `${r.method} ${r.route}`
-      if (!routeMap.has(key)) routeMap.set(key, { durations: [], errors: 0 })
+      if (!routeMap.has(key)) routeMap.set(key, { durations: [], errorCodes: [] })
       const entry = routeMap.get(key)!
       entry.durations.push(r.durationMs)
-      if (r.statusCode >= 400) entry.errors++
+      if (r.statusCode >= 400) entry.errorCodes.push(r.statusCode)
     }
 
     const byRoute = [...routeMap.entries()]
-      .map(([route, { durations, errors }]) => {
+      .map(([route, { durations, errorCodes }]) => {
         const sorted = [...durations].sort((a, b) => a - b)
         const avg = Math.round(durations.reduce((s, v) => s + v, 0) / durations.length)
+        // Tel unieke statuscodes: { 401: 2, 500: 1 }
+        const errorsByCode = errorCodes.reduce<Record<number, number>>((acc, code) => {
+          acc[code] = (acc[code] ?? 0) + 1
+          return acc
+        }, {})
         return {
           route,
-          count:      durations.length,
-          avgMs:      avg,
-          minMs:      sorted[0],
-          maxMs:      sorted[sorted.length - 1],
-          p95Ms:      p95(durations),
-          errorCount: errors,
+          count:        durations.length,
+          avgMs:        avg,
+          minMs:        sorted[0],
+          maxMs:        sorted[sorted.length - 1],
+          p95Ms:        p95(durations),
+          errorCount:   errorCodes.length,
+          errorsByCode,
         }
       })
       .sort((a, b) => b.avgMs - a.avgMs)

@@ -17,6 +17,7 @@ interface RouteStats {
   maxMs: number
   p95Ms: number
   errorCount: number
+  errorsByCode: Record<string, number>
 }
 
 interface RequestRecord {
@@ -214,9 +215,13 @@ export default function AdminSystem() {
                       <td className="px-4 py-2 text-right text-gray-400">{r.maxMs}ms</td>
                       <td className={cn('px-4 py-2 text-right font-medium', msColor(r.p95Ms))}>{r.p95Ms}ms</td>
                       <td className="px-4 py-2 text-right">
-                        {r.errorCount > 0
-                          ? <span className="text-red-600 font-medium">{r.errorCount}</span>
-                          : <span className="text-gray-300">—</span>}
+                        {r.errorCount > 0 ? (
+                          <span className="text-red-600 font-medium" title={Object.entries(r.errorsByCode).map(([code, n]) => `${n}× ${code}`).join(', ')}>
+                            {Object.entries(r.errorsByCode).map(([code, n]) => `${n}×${code}`).join(' ')}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
