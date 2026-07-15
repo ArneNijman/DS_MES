@@ -1293,7 +1293,7 @@ function ProjectAnalyseTab({ machines, days }: { machines: MachineSummary[]; day
   const [selectedArticle, setSelectedArticle]   = useState<string | null>(null)
   const [articleSearch, setArticleSearch]       = useState('')
   const [debouncedSearch, setDebouncedSearch]   = useState('')
-  const [showAllRuns, setShowAllRuns]           = useState(false)
+  const [showAllRuns, setShowAllRuns]           = useState(true)
   const [showInfoN2, setShowInfoN2]             = useState(false)
   const [showInfoN3, setShowInfoN3]             = useState(false)
   const [openKpiInfo, setOpenKpiInfo]           = useState<string | null>(null)
